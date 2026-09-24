@@ -58,3 +58,5 @@ textarea { width:100%; min-height:145px; resize:vertical; border:1px solid var(-
 button:disabled { opacity:.48; cursor:not-allowed; }
 .email-body { white-space:pre-wrap; overflow-wrap:anywhere; }
 @media(max-width:650px) { .toolbar { flex-wrap:wrap; } .toolbar input { flex-basis:100%; } .reader-head {flex-direction:column;} }
+
+.source-tag { display:inline-block; background:#e8f0f7; color:#1f4f7a; padding:3px 7px; border-radius:5px; font-size:11px; margin-top:7px; font-weight:700; }

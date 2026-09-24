@@ -27,7 +27,7 @@
   <header class="topbar">
     <div>
       <h1>Inbox</h1>
-      <p>Read, organize, and reply to customer emails.</p>
+      <p>Only approved dealership leads from your Gmail inbox.</p>
     </div>
     <span class="badge" id="connectionBadge">Checking Gmail...</span>
   </header>
@@ -36,9 +36,16 @@
   <div class="toolbar card">
     <input id="searchInput" type="search" placeholder="Search emails..." />
     <select id="statusFilter">
-      <option value="all">All emails</option>
+      <option value="all">All leads</option>
       <option value="unread">Unread</option>
       <option value="read">Read</option>
+    </select>
+    <select id="sourceFilter" aria-label="Lead source">
+      <option value="all">All lead sources</option>
+      <option value="Cars.com">Cars.com</option>
+      <option value="CarZing">CarZing</option>
+      <option value="Credit Union of Texas">Credit Union of Texas</option>
+      <option value="Other lead">Other leads</option>
     </select>
     <button type="button" id="refreshInbox">Refresh</button>
   </div>

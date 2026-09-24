@@ -26,22 +26,49 @@
 <main class="main">
   <header class="topbar">
     <div>
-      <h1>Analytics</h1>
-      <p>Preview only. Live reports will be connected after the Gmail inbox.</p>
+      <h1>Lead Analytics</h1>
+      <p>Historical Gmail lead volume, including older months and archived leads.</p>
     </div>
-    <span class="badge">Sample chart — not live Gmail data</span>
+    <span class="badge">Live Gmail · Read only</span>
   </header>
 
-  <section class="stats">
-    <div class="card metric"><span>Sample emails processed</span><strong>386</strong></div>
-    <div class="card metric"><span>Sample AI drafts</span><strong>248</strong></div>
-    <div class="card metric"><span>Sample response time</span><strong>3.4 min</strong></div>
+  <section class="card report-picker">
+    <div class="report-group">
+      <label for="monthInput">Choose a month</label>
+      <div class="input-line">
+        <input type="month" id="monthInput" />
+        <button type="button" id="viewMonth">View month</button>
+      </div>
+    </div>
+    <div class="report-group">
+      <label>Or select a custom range</label>
+      <div class="input-line">
+        <input type="date" id="startDate" aria-label="From date" />
+        <span>to</span>
+        <input type="date" id="endDate" aria-label="Through date" />
+        <button type="button" id="applyRange">Apply</button>
+      </div>
+    </div>
+    <p class="report-help">Includes all matching leads in Gmail, including archived messages. Counts individual emails, not unique customers. Dates use Central Time.</p>
+  </section>
+
+  <div id="reportNotice" class="report-notice" role="status">Connecting to Gmail...</div>
+
+  <section class="stats" aria-label="Lead report summary">
+    <div class="card metric"><span>Matching lead emails</span><strong id="totalLeads">—</strong></div>
+    <div class="card metric"><span>Average per day</span><strong id="avgLeads">—</strong></div>
+    <div class="card metric"><span>Busiest period</span><strong id="peakLeads">—</strong><small id="peakLabel"></small></div>
   </section>
 
   <section class="card chart-card">
-    <h2>Example Weekly Email Volume</h2>
-    <div id="bars" class="bars"></div>
+    <div class="chart-head"><h2 id="chartTitle">Lead Volume</h2><span id="chartRange"></span></div>
+    <div id="bars" class="bars"><p class="no-data">Select a month or date range to view real Gmail data.</p></div>
   </section>
+  <section class="card breakdown-card">
+    <h2>Report details</h2>
+    <div id="reportDetails" class="report-details">No data loaded yet.</div>
+  </section>
+
 </main>
 </div>
 <script src="../auth-logout.js"></script>

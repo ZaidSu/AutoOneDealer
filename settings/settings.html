@@ -50,6 +50,14 @@
     </div>
 
     <div class="card setting-card wide">
+      <h2>Approved Lead Sources</h2>
+      <p>Only messages matching the server-side Gmail filter appear in the Inbox, Dashboard and Analytics. Update the filter in Vercel; it does not grant access to other mailboxes.</p>
+      <div class="connection-row"><span>Current Gmail search</span><b id="filterMode">Loading...</b></div>
+      <pre class="query-box" id="leadQuery">Connect Gmail to view the active filter.</pre>
+      <p>For missing leads, copy the exact sender address from Gmail and add it to your <code>LEAD_GMAIL_QUERY</code> Vercel environment variable. Examples and instructions are in the README.</p>
+    </div>
+
+    <div class="card setting-card wide">
       <h2>Dealership Instructions</h2>
       <p>Preview only. Saving dealership instructions will be added with the AI feature.</p>
       <textarea disabled>Be friendly and professional. Never promise financing approval, exact down payments, refunds, or vehicle availability unless verified. If unsure, send the conversation for human review.</textarea>

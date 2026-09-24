@@ -1,45 +1,39 @@
-# Auto One Email System — Gmail Read-Only Test
+# Auto One Email System v0.3 — Lead-Only Inbox and Live Historical Analytics
 
-This is the next version of the original HTML/CSS/JS UI. It uses **your existing OAuth Client ID** and Vercel URL. It **does not send, reply to, modify, or mark emails read**.
+This update builds on v0.2 and uses the **same existing Google Cloud OAuth client** and same Vercel deployment. No new OAuth scope, Client ID, Supabase, or API service is required. Gmail remains **read-only**.
 
-## 1. Google Cloud
+## Changes
 
-Use your EXISTING Google Cloud OAuth web client. Authorized redirect URI must be exactly:
+- Dashboard now counts **all matching lead messages received today / this month**, not just the first 15 emails.
+- Inbox fetches **30 lead emails per page**, with Load More. The server filters Gmail *before* returning the message bodies. Search and source tabs work on the loaded pages only.
+- Only matching dealership leads appear, using a single configurable Gmail search query. Starter query: `from:salesleads@cars.com`, other senders containing `salesleads`, `from:carzing.com`, `from:cutx.org`, and `from:credituniontexas.org`. The latter domain guesses **must be checked against actual Gmail sender addresses**; the example from Cars.com is confirmed from the provided screen.
+- Analytics reads historic matching Gmail leads. Select January or any other month, or choose custom dates up to 366 days. Charts automatically group by day, week, or month. Counts paginate through all Gmail search results (up to 12,500 per bucket), rather than using estimates or sample data. Analytics searches mail including *archived* matching leads; Inbox stays in Inbox only.
+- Historical date boundaries follow `America/Chicago`, including DST. Empty months are shown as zero rather than sample numbers.
+- Other messages (auction updates, personal correspondence, receipts) should not match this filter unless their sender also matches an approved rule.
 
-`https://auto-one-dealer.vercel.app/api/google-callback`
+## Deploy
 
-In Google Auth Platform > Audience, add your dealership Gmail address as a **test user**. Data Access must include `https://www.googleapis.com/auth/gmail.readonly`. The Gmail API must be enabled.
+1. Unzip the project. Copy **the files and folders inside** `auto-one-email-system-v0.3/` into your current GitHub repository root, replacing old files. Preserve `api/`, `dashboard/`, `inbox/`, `analytics/`, `settings/`.
+2. Vercel redeploys on commit. Keep your existing `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`, `GOOGLE_REDIRECT_URI`, `GMAIL_ALLOWED_EMAIL`, `SESSION_SECRET` environment variables.
+3. Open `https://auto-one-dealer.vercel.app/settings/settings.html` to confirm the connected mailbox and view the active Gmail query.
+4. Open Inbox to see lead-only messages, then Analytics and select a past month or custom date range.
+5. If some leads from CarZing or Credit Union of Texas are missing, open one of their **real messages in Gmail** and copy its **actual From email address**. In Vercel, set the optional `LEAD_GMAIL_QUERY` environment variable. For example:
 
-## 2. Vercel environment variables
+   `{from:salesleads@cars.com from:leads@ACTUAL-CARZING-DOMAIN.com from:ACTUAL-CUTX-DOMAIN.org}`
 
-Set these in Vercel Project > Settings > Environment Variables:
+   Replace placeholders with verified sender addresses or domains. Entries inside braces use OR. Save to **Production** and redeploy. This entirely replaces the starter query. Do not paste credentials into the query.
 
-- `GOOGLE_CLIENT_ID`: your existing client ID
-- `GOOGLE_CLIENT_SECRET`: your private client secret
-- `GOOGLE_REDIRECT_URI`: `https://auto-one-dealer.vercel.app/api/google-callback`
-- `GMAIL_ALLOWED_EMAIL`: the exact Gmail address the dealership will connect (e.g. `txautoone@gmail.com` if that is the actual mailbox)
-- `SESSION_SECRET`: generate a long random value, at least 32 characters, with `node -e "console.log(require('crypto').randomBytes(32).toString('hex'))"`
+6. Test the query directly in Gmail's search box first. It should return lead emails and exclude personal/auction mail.
 
-Do not place your secret values in GitHub, screenshots, or client-side JS. Use Vercel **Secret** variables. For the preview domain, ensure they're assigned to the correct environment and redeploy after adding.
+## Measurement rules
 
-## 3. Deploy
+- One received Gmail message = one lead email. It does not deduplicate repeat inquiries, forwarded notifications, or multiple lead messages from the same customer. Later, the CRM can count unique leads separately.
+- Inbox restricts to matching leads that are still in Gmail **Inbox**. Analytics counts historical matching leads wherever Gmail search finds them except Spam, Trash and Sent. The Dashboard's today/month cards follow Analytics' all-mail matching rule; its Recent Leads widget follows the lead-only Inbox rule.
+- Gmail's `resultSizeEstimate` is approximate and is not used to produce Analytics totals.
+- Reports are read live from Gmail. A broad query or a long range may take longer, and Gmail rate limits still apply. If an unusually large report cannot complete, narrow its date range.
+- UI still uses **demo login**, not secure application authentication. Only test privately; do not expose this app as a customer portal until real authentication is added. The current encrypted Gmail OAuth session is stored in the authorized browser, not Supabase. No automated background Gmail processing yet. The report endpoints are configured for up to 60 seconds on Vercel. Extremely large ranges may need to be split into smaller ranges.
+- Google OAuth External/Testing refresh tokens normally expire in seven days for Gmail access. You may need to reconnect during testing.
 
-Upload/commit **the contents** of this project folder to the root of your existing GitHub repository. Keep the Vercel Framework Preset at **Other**, leave Build Command empty unless your project already needs one, and deploy. Node >=20 is required. Vercel discovers the `api/` serverless functions automatically.
+## Structure
 
-## 4. Connect
-
-Visit `https://auto-one-dealer.vercel.app/settings/settings.html`, click **Connect Gmail**, choose your approved dealership email address, and consent to Gmail read-only permission. Then open **Inbox**. The initial inbox batch contains up to 15 of your newest Inbox messages; click **Load more emails** for older messages. Search and filters operate on the fetched batches.
-
-## Notes / limitations
-
-- **This is a testing-only sign-in UI**. The root login accepts anything; it is not actual authentication. Gmail API calls require a separate encrypted Google OAuth session and the exact configured `GMAIL_ALLOWED_EMAIL`. Do not use this for public/customer data access until real application login is added.
-- OAuth refresh tokens for an External/Testing Google consent screen expire after about seven days when Gmail scopes are used. Reconnect as needed while testing.
-- For now, the Google token is stored encrypted in an HttpOnly Secure browser cookie using AES-256-GCM. No Supabase project is needed to *read* Gmail at this stage. This browser-specific approach is not suitable for unattended 24/7 background checks; a future version should store encrypted credentials server-side behind real application authentication.
-- This version only requests `gmail.readonly`; it does not send messages or store emails in Supabase.
-- The Dashboard shows only the latest fetched batch; Analytics remains clearly labeled **sample data**.
-- Plain-text email bodies are displayed as text. HTML-only messages fall back to Gmail's snippet for safety. Attachments are not downloaded.
-- If connecting fails, check that the authorized redirect URI matches **exactly**, test user is whitelisted, all five environment variables are set, and deployment is current.
-
-## Layout
-
-`index.html`, `script.js`, `style.css`; sections `dashboard/`, `inbox/`, `analytics/`, `settings/`; backend `api/`; all remain separate.
+`index.html`, `style.css`, `script.js` plus per-page files in `dashboard/`, `inbox/`, `analytics/`, `settings/`. Backend in `api/` including new `_leads.js`, `analytics.js`, and `overview.js`.

@@ -1,0 +1,7 @@
+{
+  "functions": {
+    "api/analytics.js": { "maxDuration": 60 },
+    "api/overview.js": { "maxDuration": 60 },
+    "api/emails.js": { "maxDuration": 60 }
+  }
+}

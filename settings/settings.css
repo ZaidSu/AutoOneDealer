@@ -36,3 +36,5 @@ textarea { width:100%; min-height:160px; border:1px solid var(--line); border-ra
 button.secondary {background:#e8f0f7;color:#1f4f7a;margin-left:8px;}
 button:disabled { opacity:.5;cursor:not-allowed; }
 #gmailMessage {line-height:1.5;}
+
+.query-box { padding:14px; background:#eef3f8; color:#123653; border:1px solid #c9d9e6; border-radius:9px; white-space:pre-wrap; overflow-wrap:anywhere; font-size:12px; margin:12px 0 16px; line-height:1.6; }

@@ -2,6 +2,8 @@ const statusLabel = document.getElementById('gmailConnection');
 const message = document.getElementById('gmailMessage');
 const connect = document.getElementById('connectGmail');
 const disconnect = document.getElementById('disconnectGmail');
+const queryBox = document.getElementById('leadQuery');
+const filterMode = document.getElementById('filterMode');
 
 async function refreshStatus() {
   try {
@@ -12,6 +14,8 @@ async function refreshStatus() {
       statusLabel.textContent = 'Connected';
       statusLabel.style.color = '#14804a';
       message.textContent = `${data.email} · Read-only Gmail access.`;
+      queryBox.textContent = data.leadQuery || 'No filter available';
+      filterMode.textContent = data.customFilter ? 'Custom' : 'Starter defaults';
       connect.textContent = 'Reconnect Gmail';
       disconnect.hidden = false;
     } else {
@@ -19,6 +23,8 @@ async function refreshStatus() {
       message.textContent = 'Connect the approved dealership Gmail account to read incoming messages.';
       connect.textContent = 'Connect Gmail';
       disconnect.hidden = true;
+      queryBox.textContent = 'Connect Gmail to view the active filter.';
+      filterMode.textContent = 'Not connected';
     }
   } catch (error) {
     statusLabel.textContent = 'Connection error';

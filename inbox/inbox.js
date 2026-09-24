@@ -1,6 +1,7 @@
 const list = document.getElementById('emailList');
 const search = document.getElementById('searchInput');
 const filter = document.getElementById('statusFilter');
+const sourceFilter = document.getElementById('sourceFilter');
 const notice = document.getElementById('inboxNotice');
 const badge = document.getElementById('connectionBadge');
 const moreButton = document.getElementById('loadMore');
@@ -23,7 +24,7 @@ async function getEmails(append = false) {
   loading = true;
   document.getElementById('refreshInbox').disabled = true;
   moreButton.disabled = true;
-  if (!append) showNotice('Loading your real Gmail inbox...');
+  if (!append) showNotice('Loading dealership lead emails from Gmail...');
   try {
     const url = '/api/emails' + (append && nextPageToken ? '?pageToken=' + encodeURIComponent(nextPageToken) : '');
     const res = await fetch(url, { credentials: 'same-origin', cache: 'no-store' });
@@ -32,7 +33,7 @@ async function getEmails(append = false) {
     emails = append ? [...emails, ...data.emails] : data.emails;
     nextPageToken = data.nextPageToken;
     badge.textContent = 'Gmail connected · Read only';
-    showNotice(`Displaying ${emails.length} Gmail inbox messages. No replies will be sent.`);
+    showNotice(`Displaying ${emails.length} approved lead emails${nextPageToken ? ' so far · older leads available' : ''}. Read-only; no replies will be sent.`);
     renderList();
   } catch (error) {
     badge.textContent = 'Gmail not connected';
@@ -49,15 +50,16 @@ async function getEmails(append = false) {
 function renderList() {
   const term = search.value.toLowerCase().trim();
   const wanted = filter.value;
+  const source = sourceFilter.value;
   const visible = emails.filter(email => {
     const haystack = `${email.from} ${email.subject} ${email.snippet} ${email.body}`.toLowerCase();
-    return haystack.includes(term) && (wanted === 'all' || (wanted === 'unread' ? email.unread : !email.unread));
+    return haystack.includes(term) && (source === 'all' || email.source === source) && (wanted === 'all' || (wanted === 'unread' ? email.unread : !email.unread));
   });
   list.replaceChildren();
   if (!visible.length) {
     const empty = document.createElement('p');
     empty.className = 'empty-list';
-    empty.textContent = emails.length ? 'No emails match your filters.' : 'No inbox messages loaded.';
+    empty.textContent = emails.length ? 'No emails match your filters.' : 'No matching lead emails loaded. Check Settings if a lead source is missing.';
     list.appendChild(empty);
   }
   for (const email of visible) {
@@ -68,8 +70,9 @@ function renderList() {
     const date = document.createElement('small'); date.textContent = new Date(email.date).toLocaleString();
     row.append(from, date);
     const subject = document.createElement('strong'); subject.textContent = email.subject;
+    const sourceTag = document.createElement('span'); sourceTag.className = 'source-tag'; sourceTag.textContent = email.source || 'Other lead';
     const preview = document.createElement('p'); preview.textContent = email.snippet;
-    item.append(row, subject, preview);
+    item.append(row, subject, sourceTag, preview);
     if (email.unread) item.classList.add('unread');
     item.addEventListener('click', () => openEmail(email));
     list.appendChild(item);
@@ -82,13 +85,14 @@ function openEmail(email) {
   document.getElementById('emailView').classList.remove('hidden');
   document.getElementById('emailSubject').textContent = email.subject;
   document.getElementById('emailMeta').textContent = `${email.from} · ${new Date(email.date).toLocaleString()}`;
-  document.getElementById('emailStatus').textContent = email.unread ? 'Unread in Gmail' : 'Read in Gmail';
+  document.getElementById('emailStatus').textContent = `${email.source || 'Lead'} · ${email.unread ? 'Unread' : 'Read'}`;
   document.getElementById('emailBody').textContent = email.body;
   renderList();
 }
 
 search.addEventListener('input', renderList);
 filter.addEventListener('change', renderList);
+sourceFilter.addEventListener('change', renderList);
 moreButton.addEventListener('click', () => getEmails(true));
 document.getElementById('refreshInbox').addEventListener('click', () => getEmails());
 getEmails();
