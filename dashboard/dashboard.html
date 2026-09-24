@@ -33,10 +33,10 @@
   </header>
 
   <section class="stats">
-    <div class="card stat"><span>Emails Today</span><strong id="emailsToday">12</strong><small>Incoming customer emails</small></div>
-    <div class="card stat"><span>This Month</span><strong id="emailsMonth">386</strong><small>Processed conversations</small></div>
-    <div class="card stat"><span>AI Replies</span><strong id="aiReplies">248</strong><small>Generated responses</small></div>
-    <div class="card stat"><span>Needs Review</span><strong id="reviewCount">7</strong><small>Waiting for a person</small></div>
+    <div class="card stat"><span>Today (loaded inbox)</span><strong id="emailsToday">—</strong><small>Among latest fetched messages</small></div>
+    <div class="card stat"><span>Loaded messages</span><strong id="emailsMonth">—</strong><small>Latest Gmail inbox page</small></div>
+    <div class="card stat"><span>AI Replies</span><strong id="aiReplies">—</strong><small>Not enabled yet</small></div>
+    <div class="card stat"><span>Unread (loaded)</span><strong id="reviewCount">—</strong><small>Unread Gmail messages</small></div>
   </section>
 
   <section class="grid">
@@ -46,15 +46,16 @@
     </div>
     <div class="card panel">
       <div class="panel-head"><h2>System Status</h2></div>
-      <div class="status-row"><span>Gmail</span><b class="warning">Not connected</b></div>
+      <div class="status-row"><span>Gmail</span><b id="gmailStatus" class="warning">Checking...</b></div>
       <div class="status-row"><span>AI Replies</span><b>Draft only</b></div>
       <div class="status-row"><span>Auto Send</span><b>Off</b></div>
       <button id="connectButton">Connect Gmail</button>
-      <p class="hint">The Gmail button is a UI placeholder. We will wire OAuth/API next.</p>
+      <p class="hint" id="dashboardHint">This testing version reads Gmail only; email sending is disabled.</p>
     </div>
   </section>
 </main>
 </div>
+<script src="../auth-logout.js"></script>
 <script src="dashboard.js"></script>
 </body>
 </html>

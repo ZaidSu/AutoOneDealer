@@ -1,128 +1,94 @@
-const emails = [
-  {
-    id: 1,
-    from: "Michael R.",
-    email: "michael@example.com",
-    subject: "Financing question",
-    preview: "Do you work with people that have bad credit?",
-    body: "Hi, I saw one of your cars online. Do you work with people that have bad credit? I am interested in financing if possible.",
-    time: "11:42 AM",
-    status: "new"
-  },
-  {
-    id: 2,
-    from: "Sarah M.",
-    email: "sarah@example.com",
-    subject: "Is the Camry still available?",
-    preview: "I wanted to check if the Toyota Camry is still there.",
-    body: "Hello, I wanted to check if the Toyota Camry I saw online is still available. I may be able to come by this afternoon.",
-    time: "10:18 AM",
-    status: "review"
-  },
-  {
-    id: 3,
-    from: "Daniel T.",
-    email: "daniel@example.com",
-    subject: "Appointment for Saturday",
-    preview: "Can I come by around 2 PM Saturday?",
-    body: "Can I come by around 2 PM Saturday to look at the Accord? Please let me know if that works.",
-    time: "9:36 AM",
-    status: "ai"
-  },
-  {
-    id: 4,
-    from: "Jennifer K.",
-    email: "jennifer@example.com",
-    subject: "Trade-in question",
-    preview: "Do you take trade-ins?",
-    body: "Hi, do you take trade-ins? I have a 2014 Nissan Altima and I am looking at one of your SUVs.",
-    time: "Yesterday",
-    status: "new"
-  }
-];
-
-const list = document.getElementById("emailList");
-const search = document.getElementById("searchInput");
-const filter = document.getElementById("statusFilter");
-
+const list = document.getElementById('emailList');
+const search = document.getElementById('searchInput');
+const filter = document.getElementById('statusFilter');
+const notice = document.getElementById('inboxNotice');
+const badge = document.getElementById('connectionBadge');
+const moreButton = document.getElementById('loadMore');
+let emails = [];
 let selectedEmail = null;
+let nextPageToken = null;
+let loading = false;
 
-function labelFor(status) {
-  if (status === "new") return "New";
-  if (status === "review") return "Needs Review";
-  if (status === "ai") return "AI Replied";
-  return status;
+function showNotice(message, isError = false) {
+  notice.textContent = message + ' ';
+  notice.classList.toggle('error', isError);
+  const link = document.createElement('a');
+  link.href = '../settings/settings.html';
+  link.textContent = 'Gmail Settings';
+  notice.appendChild(link);
+}
+
+async function getEmails(append = false) {
+  if (loading) return;
+  loading = true;
+  document.getElementById('refreshInbox').disabled = true;
+  moreButton.disabled = true;
+  if (!append) showNotice('Loading your real Gmail inbox...');
+  try {
+    const url = '/api/emails' + (append && nextPageToken ? '?pageToken=' + encodeURIComponent(nextPageToken) : '');
+    const res = await fetch(url, { credentials: 'same-origin', cache: 'no-store' });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error || 'Could not load Gmail.');
+    emails = append ? [...emails, ...data.emails] : data.emails;
+    nextPageToken = data.nextPageToken;
+    badge.textContent = 'Gmail connected · Read only';
+    showNotice(`Displaying ${emails.length} Gmail inbox messages. No replies will be sent.`);
+    renderList();
+  } catch (error) {
+    badge.textContent = 'Gmail not connected';
+    showNotice(error.message, true);
+    if (!append) { emails = []; nextPageToken = null; renderList(); }
+  } finally {
+    loading = false;
+    document.getElementById('refreshInbox').disabled = false;
+    moreButton.disabled = false;
+    moreButton.classList.toggle('hidden', !nextPageToken);
+  }
 }
 
 function renderList() {
-  const term = search.value.toLowerCase();
+  const term = search.value.toLowerCase().trim();
   const wanted = filter.value;
-
-  const filtered = emails.filter(email => {
-    const matchesSearch = `${email.from} ${email.subject} ${email.preview}`.toLowerCase().includes(term);
-    const matchesFilter = wanted === "all" || email.status === wanted;
-    return matchesSearch && matchesFilter;
+  const visible = emails.filter(email => {
+    const haystack = `${email.from} ${email.subject} ${email.snippet} ${email.body}`.toLowerCase();
+    return haystack.includes(term) && (wanted === 'all' || (wanted === 'unread' ? email.unread : !email.unread));
   });
-
-  list.innerHTML = "";
-
-  filtered.forEach(email => {
-    const item = document.createElement("div");
-    item.className = "email-item" + (selectedEmail?.id === email.id ? " active" : "");
-    item.innerHTML = `
-      <div class="row">
-        <h3>${email.from}</h3>
-        <small>${email.time}</small>
-      </div>
-      <strong>${email.subject}</strong>
-      <p>${email.preview}</p>
-    `;
-    item.addEventListener("click", () => openEmail(email));
+  list.replaceChildren();
+  if (!visible.length) {
+    const empty = document.createElement('p');
+    empty.className = 'empty-list';
+    empty.textContent = emails.length ? 'No emails match your filters.' : 'No inbox messages loaded.';
+    list.appendChild(empty);
+  }
+  for (const email of visible) {
+    const item = document.createElement('div');
+    item.className = 'email-item' + (selectedEmail?.id === email.id ? ' active' : '');
+    const row = document.createElement('div'); row.className = 'row';
+    const from = document.createElement('h3'); from.textContent = email.from;
+    const date = document.createElement('small'); date.textContent = new Date(email.date).toLocaleString();
+    row.append(from, date);
+    const subject = document.createElement('strong'); subject.textContent = email.subject;
+    const preview = document.createElement('p'); preview.textContent = email.snippet;
+    item.append(row, subject, preview);
+    if (email.unread) item.classList.add('unread');
+    item.addEventListener('click', () => openEmail(email));
     list.appendChild(item);
-  });
+  }
 }
 
 function openEmail(email) {
   selectedEmail = email;
-  document.getElementById("emptyState").classList.add("hidden");
-  document.getElementById("emailView").classList.remove("hidden");
-  document.getElementById("emailSubject").textContent = email.subject;
-  document.getElementById("emailMeta").textContent = `${email.from} <${email.email}>`;
-  document.getElementById("emailStatus").textContent = labelFor(email.status);
-  document.getElementById("emailBody").textContent = email.body;
-  document.getElementById("replyText").value = "";
+  document.getElementById('emptyState').classList.add('hidden');
+  document.getElementById('emailView').classList.remove('hidden');
+  document.getElementById('emailSubject').textContent = email.subject;
+  document.getElementById('emailMeta').textContent = `${email.from} · ${new Date(email.date).toLocaleString()}`;
+  document.getElementById('emailStatus').textContent = email.unread ? 'Unread in Gmail' : 'Read in Gmail';
+  document.getElementById('emailBody').textContent = email.body;
   renderList();
 }
 
-document.getElementById("generateReply").addEventListener("click", () => {
-  if (!selectedEmail) return;
-
-  let reply = `Hi ${selectedEmail.from.split(" ")[0]},\n\nThank you for reaching out to Auto One Motors. `;
-
-  if (selectedEmail.subject.toLowerCase().includes("financing")) {
-    reply += "We work with customers in many different credit situations and would be happy to go over your options. Which vehicle are you interested in?";
-  } else if (selectedEmail.subject.toLowerCase().includes("available")) {
-    reply += "I'd be happy to help check the vehicle's availability for you. We will confirm the current status before your visit.";
-  } else if (selectedEmail.subject.toLowerCase().includes("appointment")) {
-    reply += "We'd be happy to help schedule your visit. We can confirm the requested time before you come in.";
-  } else if (selectedEmail.subject.toLowerCase().includes("trade")) {
-    reply += "Yes, we can look at trade-ins. You can bring the vehicle with you so our team can take a look and discuss the next steps.";
-  } else {
-    reply += "We received your message and would be happy to help.";
-  }
-
-  reply += "\n\nAuto One Motors";
-  document.getElementById("replyText").value = reply;
-});
-
-document.getElementById("saveDraft").addEventListener("click", () => {
-  alert("Draft saved locally for testing. Supabase will be connected later.");
-});
-
-document.getElementById("sendReply").addEventListener("click", () => {
-  alert("Sending is disabled in this UI version. Gmail API comes next.");
-});
-
-search.addEventListener("input", renderList);
-filter.addEventListener("change", renderList);
-renderList();
+search.addEventListener('input', renderList);
+filter.addEventListener('change', renderList);
+moreButton.addEventListener('click', () => getEmails(true));
+document.getElementById('refreshInbox').addEventListener('click', () => getEmails());
+getEmails();

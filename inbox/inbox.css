@@ -48,3 +48,13 @@ button { border:0; border-radius:8px; padding:10px 14px; background:var(--accent
 textarea { width:100%; min-height:145px; resize:vertical; border:1px solid var(--line); border-radius:10px; padding:13px; font-family:inherit; line-height:1.5; }
 .reply-actions { display:flex; justify-content:flex-end; gap:10px; margin-top:10px; }
 @media(max-width:1050px){ .inbox-layout{grid-template-columns:1fr}.list{max-height:350px;overflow:auto} }
+
+.notice { margin:0 0 16px; border:1px solid #bed0e0; padding:12px 15px; border-radius:9px; background:#eef4fa; color:#163a59; font-size:14px; line-height:1.5; }
+.notice a { color:#1f4f7a; font-weight:700; }
+.notice.error { background:#fff4e8; border-color:#f0cba0; color:#8b4300; }
+.load-more { margin:12px; width:calc(100% - 24px); background:#e8f0f7; color:#1f4f7a; }
+.list { overflow-y:auto; max-height:720px; }
+.email-list .empty-list { color:#6b7280; padding:25px; text-align:center; line-height:1.5; }
+button:disabled { opacity:.48; cursor:not-allowed; }
+.email-body { white-space:pre-wrap; overflow-wrap:anywhere; }
+@media(max-width:650px) { .toolbar { flex-wrap:wrap; } .toolbar input { flex-basis:100%; } .reader-head {flex-direction:column;} }

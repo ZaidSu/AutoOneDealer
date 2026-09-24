@@ -1,0 +1,13 @@
+{
+  "name": "auto-one-email-system",
+  "version": "0.2.0",
+  "private": true,
+  "type": "module",
+  "description": "Gmail read-only testing integration for Auto One Email System",
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "check": "node --check api/google-login.js && node --check api/google-callback.js && node --check api/emails.js && node --check api/status.js && node --check api/disconnect.js"
+  }
+}
