@@ -1,1 +1,49 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Analytics | Auto One Email System</title>
+  <link rel="stylesheet" href="analytics.css" />
+</head>
+<body>
+<div class="app">
 
+<aside class="sidebar">
+  <div class="logo">A1</div>
+  <div class="dealer-name">Auto One<br><span>Email System</span></div>
+
+  <nav>
+    <a href="../dashboard/dashboard.html" class="">Dashboard</a>
+    <a href="../inbox/inbox.html" class="">Inbox</a>
+    <a href="../analytics/analytics.html" class="active">Analytics</a>
+    <a href="../settings/settings.html" class="">Settings</a>
+  </nav>
+
+  <a class="logout" href="../index.html">Log Out</a>
+</aside>
+
+<main class="main">
+  <header class="topbar">
+    <div>
+      <h1>Analytics</h1>
+      <p>Email activity and response performance.</p>
+    </div>
+    <span class="badge">September</span>
+  </header>
+
+  <section class="stats">
+    <div class="card metric"><span>Emails Processed</span><strong>386</strong></div>
+    <div class="card metric"><span>AI Drafts</span><strong>248</strong></div>
+    <div class="card metric"><span>Average Response</span><strong>3.4 min</strong></div>
+  </section>
+
+  <section class="card chart-card">
+    <h2>Email Volume</h2>
+    <div id="bars" class="bars"></div>
+  </section>
+</main>
+</div>
+<script src="analytics.js"></script>
+</body>
+</html>
