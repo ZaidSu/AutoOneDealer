@@ -1,1 +1,60 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Dashboard | Auto One Email System</title>
+  <link rel="stylesheet" href="dashboard.css" />
+</head>
+<body>
+<div class="app">
 
+<aside class="sidebar">
+  <div class="logo">A1</div>
+  <div class="dealer-name">Auto One<br><span>Email System</span></div>
+
+  <nav>
+    <a href="../dashboard/dashboard.html" class="active">Dashboard</a>
+    <a href="../inbox/inbox.html" class="">Inbox</a>
+    <a href="../analytics/analytics.html" class="">Analytics</a>
+    <a href="../settings/settings.html" class="">Settings</a>
+  </nav>
+
+  <a class="logout" href="../index.html">Log Out</a>
+</aside>
+
+<main class="main">
+  <header class="topbar">
+    <div>
+      <h1>Dashboard</h1>
+      <p>Overview of dealership email activity.</p>
+    </div>
+    <span class="badge">Testing Mode</span>
+  </header>
+
+  <section class="stats">
+    <div class="card stat"><span>Emails Today</span><strong id="emailsToday">12</strong><small>Incoming customer emails</small></div>
+    <div class="card stat"><span>This Month</span><strong id="emailsMonth">386</strong><small>Processed conversations</small></div>
+    <div class="card stat"><span>AI Replies</span><strong id="aiReplies">248</strong><small>Generated responses</small></div>
+    <div class="card stat"><span>Needs Review</span><strong id="reviewCount">7</strong><small>Waiting for a person</small></div>
+  </section>
+
+  <section class="grid">
+    <div class="card panel">
+      <div class="panel-head"><h2>Recent Emails</h2><a href="../inbox/inbox.html">View inbox</a></div>
+      <div id="recentEmails"></div>
+    </div>
+    <div class="card panel">
+      <div class="panel-head"><h2>System Status</h2></div>
+      <div class="status-row"><span>Gmail</span><b class="warning">Not connected</b></div>
+      <div class="status-row"><span>AI Replies</span><b>Draft only</b></div>
+      <div class="status-row"><span>Auto Send</span><b>Off</b></div>
+      <button id="connectButton">Connect Gmail</button>
+      <p class="hint">The Gmail button is a UI placeholder. We will wire OAuth/API next.</p>
+    </div>
+  </section>
+</main>
+</div>
+<script src="dashboard.js"></script>
+</body>
+</html>
