@@ -10,68 +10,131 @@
 <div class="app">
 
 <aside class="sidebar">
-  <div class="logo">A1</div>
-  <div class="dealer-name">Auto One<br><span>Email System</span></div>
-
-  <nav>
+  <div class="sidebar-top"><div class="logo">A1</div><div class="brand"><strong>Auto One</strong><span>Email System</span></div></div>
+  <nav class="nav-links">
     <a href="../dashboard/dashboard.html" class="">Dashboard</a>
     <a href="../inbox/inbox.html" class="">Inbox</a>
+    <a href="../leads/leads.html" class="">Leads</a>
     <a href="../analytics/analytics.html" class="active">Analytics</a>
+    <a href="../train-ai/train-ai.html" class="">Train Your AI</a>
+    <a href="../templates/templates.html" class="">Templates</a>
+    <a href="../automation/automation.html" class="">Automation</a>
     <a href="../settings/settings.html" class="">Settings</a>
   </nav>
-
-  <a class="logout" href="../index.html">Log Out</a>
+  <div class="sidebar-bottom">
+    <div class="support-card"><small>Auto One Motors</small><strong>Lead response system</strong><p>Inbox, AI training, automation, follow-up, and analytics in one place.</p></div>
+    <a class="logout" href="../index.html">Log Out</a>
+  </div>
 </aside>
 
 <main class="main">
   <header class="topbar">
-    <div>
-      <h1>Lead Analytics</h1>
-      <p>Historical Gmail lead volume, including older months and archived leads.</p>
+    <div class="page-title">
+      <h1>Analytics</h1>
+      <p>Track lead volume across months, monitor response trends, and present the business value clearly. This is where monthly and custom Gmail date ranges can be shown.</p>
     </div>
-    <span class="badge">Live Gmail · Read only</span>
+    <div class="top-actions">
+      <span class="top-chip">Historical Gmail Data</span>
+      <span class="top-chip">Monthly + Custom Range</span>
+    </div>
   </header>
 
-  <section class="card report-picker">
-    <div class="report-group">
-      <label for="monthInput">Choose a month</label>
-      <div class="input-line">
-        <input type="month" id="monthInput" />
-        <button type="button" id="viewMonth">View month</button>
+  <section class="filters card">
+    <div class="filter-grid">
+      <div>
+        <label class="label">Quick Month</label>
+        <select>
+          <option>September 2026</option>
+          <option>August 2026</option>
+          <option>July 2026</option>
+          <option>January 2026</option>
+        </select>
+      </div>
+      <div>
+        <label class="label">Custom Start</label>
+        <input type="date" value="2026-07-01" />
+      </div>
+      <div>
+        <label class="label">Custom End</label>
+        <input type="date" value="2026-09-24" />
+      </div>
+      <div class="filter-action">
+        <button class="btn">Run Report</button>
       </div>
     </div>
-    <div class="report-group">
-      <label>Or select a custom range</label>
-      <div class="input-line">
-        <input type="date" id="startDate" aria-label="From date" />
-        <span>to</span>
-        <input type="date" id="endDate" aria-label="Through date" />
-        <button type="button" id="applyRange">Apply</button>
+  </section>
+
+  <section class="stats-grid">
+    <div class="card stat">
+      <span>Total Lead Emails</span>
+      <strong>1,520</strong>
+      <small>Across selected time range</small>
+    </div>
+    <div class="card stat">
+      <span>Average per Day</span>
+      <strong>16.7</strong>
+      <small>Useful for staffing and follow-up planning</small>
+    </div>
+    <div class="card stat">
+      <span>Busiest Source</span>
+      <strong>Cars.com</strong>
+      <small>Largest share of inbound leads</small>
+    </div>
+    <div class="card stat dark">
+      <span>Estimated Close Tracking</span>
+      <strong>Coming Next</strong>
+      <small>Later tie leads to appointments and sold units</small>
+    </div>
+  </section>
+
+  <section class="chart-grid">
+    <div class="card">
+      <div class="chart-head">
+        <div>
+          <h2>Lead Volume by Month</h2>
+          <p class="card-sub">Example layout for July, August, September, or any custom range.</p>
+        </div>
+        <span class="pill dark">Custom Report</span>
+      </div>
+
+      <div class="bars">
+        <div class="bar-wrap"><div class="bar" style="height:220px"></div><span>Jul</span><small>600</small></div>
+        <div class="bar-wrap"><div class="bar" style="height:184px"></div><span>Aug</span><small>500</small></div>
+        <div class="bar-wrap"><div class="bar" style="height:145px"></div><span>Sep</span><small>400</small></div>
       </div>
     </div>
-    <p class="report-help">Includes all matching leads in Gmail, including archived messages. Counts individual emails, not unique customers. Dates use Central Time.</p>
+
+    <div class="card">
+      <h2>Lead Source Breakdown</h2>
+      <div class="source-row"><span>Cars.com</span><b>48%</b></div>
+      <div class="source-row"><span>CarZing</span><b>21%</b></div>
+      <div class="source-row"><span>Credit Union of Texas</span><b>13%</b></div>
+      <div class="source-row"><span>Other Approved Sources</span><b>18%</b></div>
+    </div>
   </section>
 
-  <div id="reportNotice" class="report-notice" role="status">Connecting to Gmail...</div>
+  <section class="section-grid">
+    <div class="card">
+      <h2>Why this matters</h2>
+      <p class="card-sub">This page helps you show the dealership exactly what they are paying for — cleaner lead visibility, better reporting, and proof that follow-up volume is being handled.</p>
+      <ul class="benefits">
+        <li>Show total leads by month or custom dates</li>
+        <li>Compare busy season vs school season</li>
+        <li>Break down lead source performance</li>
+        <li>Eventually track appointments, replies, and outcomes</li>
+      </ul>
+    </div>
 
-  <section class="stats" aria-label="Lead report summary">
-    <div class="card metric"><span>Matching lead emails</span><strong id="totalLeads">—</strong></div>
-    <div class="card metric"><span>Average per day</span><strong id="avgLeads">—</strong></div>
-    <div class="card metric"><span>Busiest period</span><strong id="peakLeads">—</strong><small id="peakLabel"></small></div>
+    <div class="card">
+      <h2>Yes — this is possible</h2>
+      <p class="card-sub">Gmail can be queried by date ranges and sender rules, so monthly and custom historical reports are realistic. The UI here is ready for that flow.</p>
+      <div class="query-box">
+        after:2026/07/01 before:2026/10/01 (from:salesleads@cars.com OR from:leads@carzing.com)
+      </div>
+    </div>
   </section>
-
-  <section class="card chart-card">
-    <div class="chart-head"><h2 id="chartTitle">Lead Volume</h2><span id="chartRange"></span></div>
-    <div id="bars" class="bars"><p class="no-data">Select a month or date range to view real Gmail data.</p></div>
-  </section>
-  <section class="card breakdown-card">
-    <h2>Report details</h2>
-    <div id="reportDetails" class="report-details">No data loaded yet.</div>
-  </section>
-
 </main>
 </div>
-<script src="../auth-logout.js"></script>
 <script src="analytics.js"></script>
 </body>
 </html>

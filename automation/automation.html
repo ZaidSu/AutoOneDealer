@@ -1,0 +1,26 @@
+<!DOCTYPE html><html lang="en"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><title>Automation | Auto One Email System</title><link rel="stylesheet" href="automation.css"></head><body><div class="app"><aside class="sidebar">
+  <div class="sidebar-top"><div class="logo">A1</div><div class="brand"><strong>Auto One</strong><span>Email System</span></div></div>
+  <nav class="nav-links">
+    <a href="../dashboard/dashboard.html" class="">Dashboard</a>
+    <a href="../inbox/inbox.html" class="">Inbox</a>
+    <a href="../leads/leads.html" class="">Leads</a>
+    <a href="../analytics/analytics.html" class="">Analytics</a>
+    <a href="../train-ai/train-ai.html" class="">Train Your AI</a>
+    <a href="../templates/templates.html" class="">Templates</a>
+    <a href="../automation/automation.html" class="active">Automation</a>
+    <a href="../settings/settings.html" class="">Settings</a>
+  </nav>
+  <div class="sidebar-bottom">
+    <div class="support-card"><small>Auto One Motors</small><strong>Lead response system</strong><p>Inbox, AI training, automation, follow-up, and analytics in one place.</p></div>
+    <a class="logout" href="../index.html">Log Out</a>
+  </div>
+</aside><main class="main">
+<header class="topbar"><div class="page-title"><h1>Automation</h1><p>Control what the system can do automatically and what always requires a person to review first.</p></div><div class="top-actions"><span class="top-chip">Safe Mode</span><span class="top-chip">Human Review Rules</span></div></header>
+<section class="automation-grid">
+<div class="card"><h2>Automatic Drafts</h2><p class="card-sub">Generate reply drafts automatically when a new approved lead arrives.</p><div class="switch-row"><span>Enabled</span><input type="checkbox" checked></div></div>
+<div class="card"><h2>Automatic Sending</h2><p class="card-sub">Keep this off until responses have been tested and approved.</p><div class="switch-row"><span>Disabled</span><input type="checkbox"></div></div>
+<div class="card"><h2>Require Human Review</h2><div class="rule-row"><span>Financing approval questions</span><b>Always</b></div><div class="rule-row"><span>Exact payment / down payment</span><b>Always</b></div><div class="rule-row"><span>Refunds / disputes</span><b>Always</b></div><div class="rule-row"><span>Legal complaints</span><b>Always</b></div></div>
+<div class="card"><h2>Allowed Auto-Reply Topics</h2><div class="rule-row"><span>Business hours</span><b>Allowed</b></div><div class="rule-row"><span>Location / directions</span><b>Allowed</b></div><div class="rule-row"><span>General financing interest</span><b>Draft</b></div><div class="rule-row"><span>Appointment request</span><b>Draft</b></div></div>
+</section>
+<section class="card workflow"><h2>Workflow Preview</h2><div class="flow"><div>New Lead</div><span>→</span><div>Filter Source</div><span>→</span><div>AI Reads</div><span>→</span><div>Draft Reply</div><span>→</span><div>Human Review</div><span>→</span><div>Send</div></div></section>
+</main></div><script src="automation.js"></script></body></html>

@@ -10,52 +10,155 @@
 <div class="app">
 
 <aside class="sidebar">
-  <div class="logo">A1</div>
-  <div class="dealer-name">Auto One<br><span>Email System</span></div>
-
-  <nav>
+  <div class="sidebar-top"><div class="logo">A1</div><div class="brand"><strong>Auto One</strong><span>Email System</span></div></div>
+  <nav class="nav-links">
     <a href="../dashboard/dashboard.html" class="active">Dashboard</a>
     <a href="../inbox/inbox.html" class="">Inbox</a>
+    <a href="../leads/leads.html" class="">Leads</a>
     <a href="../analytics/analytics.html" class="">Analytics</a>
+    <a href="../train-ai/train-ai.html" class="">Train Your AI</a>
+    <a href="../templates/templates.html" class="">Templates</a>
+    <a href="../automation/automation.html" class="">Automation</a>
     <a href="../settings/settings.html" class="">Settings</a>
   </nav>
-
-  <a class="logout" href="../index.html">Log Out</a>
+  <div class="sidebar-bottom">
+    <div class="support-card"><small>Auto One Motors</small><strong>Lead response system</strong><p>Inbox, AI training, automation, follow-up, and analytics in one place.</p></div>
+    <a class="logout" href="../index.html">Log Out</a>
+  </div>
 </aside>
 
 <main class="main">
   <header class="topbar">
-    <div>
+    <div class="page-title">
       <h1>Dashboard</h1>
-      <p>Live activity from approved lead sources only.</p>
+      <p>A cleaner overview of lead activity, inbox performance, and AI readiness. This version is built to feel more like a real product you can present and sell.</p>
     </div>
-    <span class="badge">Testing Mode</span>
+    <div class="top-actions">
+      <span class="top-chip">Black / White Theme</span>
+      <span class="top-chip">Presentation Mode</span>
+      <a class="btn secondary" href="../inbox/inbox.html">Open Inbox</a>
+    </div>
   </header>
 
-  <section class="stats">
-    <div class="card stat"><span>Leads Today</span><strong id="emailsToday">—</strong><small>All matching Gmail leads today</small></div>
-    <div class="card stat"><span>Leads This Month</span><strong id="emailsMonth">—</strong><small>All matching leads this month</small></div>
-    <div class="card stat"><span>AI Replies</span><strong id="aiReplies">—</strong><small>Not enabled yet</small></div>
-    <div class="card stat"><span>Unread This Month</span><strong id="reviewCount">—</strong><small>Matching unread lead emails</small></div>
+  <section class="hero card">
+    <div class="hero-copy">
+      <span class="hero-label">Auto One Dealer</span>
+      <h2>One place for dealership leads, replies, follow-up, and AI training.</h2>
+      <p>This system is focused on lead emails only — Cars.com, CarZing, Credit Union of Texas, and other approved sources — so your team sees what matters and not random mailbox clutter.</p>
+      <div class="hero-actions">
+        <a class="btn" href="../train-ai/train-ai.html">Train Your AI</a>
+        <a class="btn soft" href="../analytics/analytics.html">View Analytics</a>
+      </div>
+    </div>
+    <div class="hero-panel">
+      <div class="mini-stat">
+        <span>This Month</span>
+        <strong>428</strong>
+        <small>Lead emails matched</small>
+      </div>
+      <div class="mini-stat">
+        <span>Needs Review</span>
+        <strong>18</strong>
+        <small>Human follow-up needed</small>
+      </div>
+      <div class="mini-stat">
+        <span>AI Ready</span>
+        <strong>84%</strong>
+        <small>Knowledge base completeness</small>
+      </div>
+    </div>
   </section>
 
-  <section class="grid">
-    <div class="card panel">
-      <div class="panel-head"><h2>Recent Lead Emails</h2><a href="../inbox/inbox.html">View inbox</a></div>
-      <div id="recentEmails"></div>
+  <section class="stats-grid">
+    <div class="card stat-card">
+      <span class="stat-label">Lead Emails Today</span>
+      <strong>15</strong>
+      <small>From approved lead sources only</small>
     </div>
-    <div class="card panel">
-      <div class="panel-head"><h2>System Status</h2></div>
-      <div class="status-row"><span>Gmail</span><b id="gmailStatus" class="warning">Checking...</b></div>
-      <div class="status-row"><span>AI Replies</span><b>Draft only</b></div>
-      <div class="status-row"><span>Auto Send</span><b>Off</b></div>
-      <button id="connectButton">Connect Gmail</button>
-      <p class="hint" id="dashboardHint">This testing version reads Gmail only; email sending is disabled.</p>
+    <div class="card stat-card">
+      <span class="stat-label">Open Leads</span>
+      <strong>62</strong>
+      <small>Still waiting on a dealer reply or next step</small>
+    </div>
+    <div class="card stat-card">
+      <span class="stat-label">Average Reply Time</span>
+      <strong>7 min</strong>
+      <small>Target: under 10 minutes</small>
+    </div>
+    <div class="card stat-card dark">
+      <span class="stat-label">AI Status</span>
+      <strong>Draft Mode</strong>
+      <small>AI can suggest responses, not auto-send yet</small>
+    </div>
+  </section>
+
+  <section class="section-grid">
+    <div class="card">
+      <div class="panel-head">
+        <div>
+          <h2>Recent Lead Emails</h2>
+          <p class="card-sub">The inbox is designed to focus on sales leads only.</p>
+        </div>
+        <a class="btn soft" href="../inbox/inbox.html">View All</a>
+      </div>
+
+      <div class="lead-row">
+        <div>
+          <strong>Cars.com Lead — 2014 Chevrolet Tahoe</strong>
+          <p>salesleads@cars.com • Vehicle interest • New lead</p>
+        </div>
+        <span class="pill dark">Cars.com</span>
+      </div>
+
+      <div class="lead-row">
+        <div>
+          <strong>Credit Union of Texas — Financing Interest</strong>
+          <p>leads@cutx.org • Finance inquiry • Needs reply</p>
+        </div>
+        <span class="pill">Finance</span>
+      </div>
+
+      <div class="lead-row">
+        <div>
+          <strong>CarZing — 2017 Nissan Maxima</strong>
+          <p>leads@carzing.com • New customer inquiry</p>
+        </div>
+        <span class="pill">CarZing</span>
+      </div>
+
+      <div class="lead-row">
+        <div>
+          <strong>Cars.com Lead — 2020 Toyota Camry</strong>
+          <p>salesleads@cars.com • Follow-up needed</p>
+        </div>
+        <span class="pill warning">Pending</span>
+      </div>
+    </div>
+
+    <div class="stack">
+      <div class="card">
+        <h2>System Status</h2>
+        <div class="status-row"><span>Gmail</span><b>Connected</b></div>
+        <div class="status-row"><span>Lead Filter</span><b>Enabled</b></div>
+        <div class="status-row"><span>Auto Reply</span><b>Off</b></div>
+        <div class="status-row"><span>Analytics Range</span><b>Monthly + Custom</b></div>
+      </div>
+
+      <div class="card">
+        <h2>Train Your AI</h2>
+        <p class="card-sub">Teach the system what your dealership wants the AI to know before it replies to customers.</p>
+        <ul class="feature-list">
+          <li>Approved dealership tone</li>
+          <li>Financing guidelines</li>
+          <li>What the AI should never promise</li>
+          <li>Lead source rules and follow-up steps</li>
+        </ul>
+        <a class="btn" href="../train-ai/train-ai.html">Open AI Training</a>
+      </div>
     </div>
   </section>
 </main>
 </div>
-<script src="../auth-logout.js"></script>
 <script src="dashboard.js"></script>
 </body>
 </html>
