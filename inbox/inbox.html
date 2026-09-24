@@ -1,1 +1,79 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Inbox | Auto One Email System</title>
+  <link rel="stylesheet" href="inbox.css" />
+</head>
+<body>
+<div class="app">
 
+<aside class="sidebar">
+  <div class="logo">A1</div>
+  <div class="dealer-name">Auto One<br><span>Email System</span></div>
+
+  <nav>
+    <a href="../dashboard/dashboard.html" class="">Dashboard</a>
+    <a href="../inbox/inbox.html" class="active">Inbox</a>
+    <a href="../analytics/analytics.html" class="">Analytics</a>
+    <a href="../settings/settings.html" class="">Settings</a>
+  </nav>
+
+  <a class="logout" href="../index.html">Log Out</a>
+</aside>
+
+<main class="main">
+  <header class="topbar">
+    <div>
+      <h1>Inbox</h1>
+      <p>Read, organize, and reply to customer emails.</p>
+    </div>
+    <span class="badge">Sample Inbox</span>
+  </header>
+
+  <div class="toolbar card">
+    <input id="searchInput" type="search" placeholder="Search emails..." />
+    <select id="statusFilter">
+      <option value="all">All emails</option>
+      <option value="new">New</option>
+      <option value="review">Needs Review</option>
+      <option value="ai">AI Replied</option>
+    </select>
+  </div>
+
+  <section class="inbox-layout">
+    <div class="card list" id="emailList"></div>
+
+    <article class="card reader">
+      <div id="emptyState" class="empty">Select an email to open it.</div>
+      <div id="emailView" class="hidden">
+        <div class="reader-head">
+          <div>
+            <h2 id="emailSubject"></h2>
+            <p id="emailMeta"></p>
+          </div>
+          <span id="emailStatus" class="status-pill"></span>
+        </div>
+
+        <div id="emailBody" class="email-body"></div>
+
+        <div class="ai-box">
+          <div class="ai-title">
+            <strong>AI Reply Draft</strong>
+            <button id="generateReply">Generate Reply</button>
+          </div>
+          <textarea id="replyText" placeholder="AI-generated reply will appear here..."></textarea>
+          <div class="reply-actions">
+            <button class="secondary" id="saveDraft">Save Draft</button>
+            <button id="sendReply">Send Reply</button>
+          </div>
+        </div>
+      </div>
+    </article>
+  </section>
+</main>
+</div>
+<script src="inbox.js"></script>
+</body>
+</html>
