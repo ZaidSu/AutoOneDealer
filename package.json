@@ -1,13 +1,9 @@
 {
-  "name": "auto-one-email-system",
-  "version": "0.3.0",
+  "name": "auto-one-dealer",
+  "version": "1.0.0",
   "private": true,
   "type": "module",
-  "description": "Gmail read-only lead inbox and historical lead analytics for Auto One",
-  "engines": {
-    "node": ">=20"
-  },
-  "scripts": {
-    "check": "node tests/test.mjs"
-  }
+  "description": "Responsive live Gmail lead management and approval-based AI draft system for Auto One Motors",
+  "engines": { "node": ">=20" },
+  "scripts": { "check": "node tests/test.mjs" }
 }

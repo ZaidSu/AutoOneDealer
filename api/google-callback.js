@@ -1,4 +1,5 @@
-import { requiredConfig, getState, tokenRequest, googleGet, sessionCookie, clearStateCookie, clearSessionCookie } from './_utils.js';
+import { persistIntegration } from './_workflows.js';
+import { requiredConfig, getState, tokenRequest, googleGet, sessionCookie, clearStateCookie, clearSessionCookie, allowedEmail } from './_utils.js';
 
 function back(res, reason) {
   res.setHeader('Cache-Control', 'no-store');
@@ -19,7 +20,7 @@ export default async function handler(req, res) {
     const token = await tokenRequest({ grant_type: 'authorization_code', code, redirect_uri: process.env.GOOGLE_REDIRECT_URI });
     const profile = await googleGet('profile', token.access_token);
     const email = String(profile.emailAddress || '').toLowerCase();
-    if (email !== process.env.GMAIL_ALLOWED_EMAIL.trim().toLowerCase()) {
+    if (email !== allowedEmail()) {
       res.setHeader('Set-Cookie', [clearStateCookie(), clearSessionCookie()]);
       return back(res, 'wrong_account');
     }
@@ -28,8 +29,10 @@ export default async function handler(req, res) {
       email,
       access_token: token.access_token,
       refresh_token: token.refresh_token,
+      scopes: token.scope || '',
       expires_at: Date.now() + (token.expires_in || 3600) * 1000
     };
+    try { await persistIntegration(email, token.refresh_token); } catch (err) { console.error('Supabase connection persistence failed:', err.message); }
     res.setHeader('Set-Cookie', [clearStateCookie(), sessionCookie(session)]);
     return back(res, 'connected');
   } catch {

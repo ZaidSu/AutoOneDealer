@@ -5,8 +5,9 @@ const STATE_COOKIE = '__Host-a1_oauth_state';
 const COOKIE_AGE = 60 * 60 * 24 * 7;
 
 export function requiredConfig() {
-  const needed = ['GOOGLE_CLIENT_ID', 'GOOGLE_CLIENT_SECRET', 'GOOGLE_REDIRECT_URI', 'GMAIL_ALLOWED_EMAIL', 'SESSION_SECRET'];
+  const needed = ['GOOGLE_CLIENT_ID', 'GOOGLE_CLIENT_SECRET', 'GOOGLE_REDIRECT_URI', 'SESSION_SECRET'];
   const missing = needed.filter(name => !process.env[name]);
+  if (!process.env.GMAIL_ALLOWED_EMAIL && !process.env.GMAIL_ADDRESS) missing.push('GMAIL_ALLOWED_EMAIL (or GMAIL_ADDRESS)');
   if (missing.length) throw new Error('Missing Vercel environment variables: ' + missing.join(', '));
   if (process.env.SESSION_SECRET.length < 32) throw new Error('SESSION_SECRET must be at least 32 characters.');
 }
@@ -96,7 +97,7 @@ export async function googleGet(path, token, params={}) {
 
 export async function authorizedSession(req, res) {
   const saved = getSession(req);
-  if (!saved || saved.email !== process.env.GMAIL_ALLOWED_EMAIL?.trim().toLowerCase() || !saved.refresh_token) return null;
+  if (!saved || saved.email !== allowedEmail() || !saved.refresh_token) return null;
   if (saved.access_token && saved.expires_at > Date.now() + 60_000) return saved;
   const fresh = await tokenRequest({ grant_type: 'refresh_token', refresh_token: saved.refresh_token });
   const updated = {
@@ -106,6 +107,8 @@ export async function authorizedSession(req, res) {
   res.setHeader('Set-Cookie', sessionCookie(updated));
   return updated;
 }
+
+export function allowedEmail() { return (process.env.GMAIL_ALLOWED_EMAIL || process.env.GMAIL_ADDRESS || '').trim().toLowerCase(); }
 
 export function safeMessage(error) {
   const message = String(error?.message || 'Something went wrong.');
@@ -134,6 +137,9 @@ export function parseGmailMessage(message) {
     from: headers.from || 'Unknown sender',
     to: headers.to || '',
     subject: headers.subject || '(No subject)',
+    replyTo: headers['reply-to'] || '',
+    messageId: headers['message-id'] || '',
+    references: headers.references || '',
     date: Number(message.internalDate || Date.now()),
     snippet: message.snippet || '',
     body: plain.slice(0, 25000) || message.snippet || '(HTML-only email; plain-text preview shown.)',

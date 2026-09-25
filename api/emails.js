@@ -1,3 +1,5 @@
+import { proofFor } from './_workflows.js';
+import { trackEmails } from './_db.js';
 import { authorizedSession, googleGet, parseGmailMessage, method, json, safeMessage } from './_utils.js';
 import { inboxQuery, sourceFor } from './_leads.js';
 
@@ -24,9 +26,13 @@ export default async function handler(req, res) {
       emails.push(...batch);
     }
     emails.sort((a, b) => b.date - a.date);
+    let storage = { enabled: false, statuses: {} };
+    let storageWarning = null;
+    try { storage = await trackEmails(session.email, emails); } catch (error) { storageWarning = error.message; }
+    for (const item of emails) { item.proof = proofFor(item.id, session.email); item.status = storage.statuses[item.id]?.status || (item.unread ? 'new' : 'read'); item.draftId = storage.statuses[item.id]?.draft_id || null; }
     return json(res, 200, {
       emails, nextPageToken: listing.nextPageToken || null,
-      resultSizeEstimate: listing.resultSizeEstimate ?? null, readOnly: true, leadOnly: true
+      resultSizeEstimate: listing.resultSizeEstimate ?? null, leadOnly: true, storageEnabled: storage.enabled, storageWarning
     });
   } catch (error) {
     return json(res, 502, { error: safeMessage(error) });
