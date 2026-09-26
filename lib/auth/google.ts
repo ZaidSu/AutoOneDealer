@@ -43,7 +43,7 @@ async function tokenRequest(body: Record<string, string>): Promise<TokenResponse
   if (!response.ok || !data.access_token) {
     // Log Google's error code only; never log tokens.
     console.error("Google token request failed:", response.status, data?.error ?? "unknown");
-    throw new Error("google_token_failed");
+    throw new GoogleError("token", String(data?.error ?? response.status));
   }
   return data as TokenResponse;
 }
@@ -74,8 +74,38 @@ export async function fetchGmailProfile(accessToken: string): Promise<GmailProfi
     headers: { Authorization: `Bearer ${accessToken}` },
     cache: "no-store",
   });
-  if (!response.ok) throw new Error(response.status === 401 || response.status === 403 ? "gmail_denied" : "gmail_failed");
+  if (!response.ok) {
+    const body = await response.json().catch(() => ({}));
+    const reason = body?.error?.errors?.[0]?.reason ?? body?.error?.status ?? String(response.status);
+    console.error("Gmail profile request failed:", response.status, reason);
+    throw new GoogleError("gmail", `${response.status}:${reason}`);
+  }
   return response.json();
+}
+
+/** Carries Google's own error code (never tokens) so the app can explain what went wrong. */
+export class GoogleError extends Error {
+  constructor(readonly stage: "token" | "gmail", readonly code: string) {
+    super(`google_${stage}_${code}`);
+  }
+}
+
+/** Plain-English explanation for a failed Gmail check, plus a short code for troubleshooting. */
+export function explainGoogleError(error: unknown): { message: string; code: string } {
+  if (!(error instanceof GoogleError)) return { message: "Couldn't reach Google. Try again in a minute.", code: "network" };
+  const code = `${error.stage}:${error.code}`;
+  if (error.stage === "token") {
+    if (error.code === "invalid_grant")
+      return { code, message: "Google cancelled this connection. That happens if it was disconnected, the Google password changed, or the app is in Google's Testing mode for over 7 days. Click Reconnect Gmail." };
+    if (error.code === "invalid_client" || error.code === "unauthorized_client")
+      return { code, message: "This site's Google client ID or secret doesn't match Google Cloud. Check GOOGLE_CLIENT_ID and GOOGLE_CLIENT_SECRET in Vercel." };
+    return { code, message: "Google refused to refresh the connection. Click Reconnect Gmail." };
+  }
+  if (/accessNotConfigured|SERVICE_DISABLED/i.test(error.code))
+    return { code, message: "The Gmail API is turned off in Google Cloud. Turn on \"Gmail API\" for this project, then test again." };
+  if (/^(401|403)/.test(error.code))
+    return { code, message: "Google connected, but Gmail refused access. When reconnecting, make sure the box to let AutoDash read email is ticked on Google's screen." };
+  return { code, message: "Gmail didn't respond properly. Try again in a minute." };
 }
 
 export async function revokeToken(token: string): Promise<void> {

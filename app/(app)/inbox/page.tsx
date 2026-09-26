@@ -60,7 +60,7 @@ export default async function InboxPage({ searchParams }: { searchParams: Promis
       </div>
 
       {result.status !== "ok" ? (
-        <GmailState status={result.status} />
+        <GmailState {...result} />
       ) : result.data.length === 0 ? (
         <p className="max-w-2xl rounded-lg border border-dashed border-line p-6 text-muted">
           {search ? `Nothing matches “${search}”.` : "No email here."}

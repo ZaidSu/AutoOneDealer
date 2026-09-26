@@ -32,7 +32,7 @@ export default async function DashboardPage() {
       <PageHeader title={`${greeting()}, ${firstName}`} description="Here's what needs attention at the dealership." />
 
       {result.status !== "ok" ? (
-        <GmailState status={result.status} />
+        <GmailState {...result} />
       ) : (
         <>
           <section aria-label="Counts" className="grid max-w-5xl grid-cols-2 gap-px overflow-hidden rounded-lg border border-line bg-line lg:grid-cols-4">

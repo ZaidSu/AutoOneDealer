@@ -1,6 +1,6 @@
 // Read-only Gmail access for the connected dealership inbox. Server-only.
 import { createHash } from "node:crypto";
-import { refreshAccessToken } from "@/lib/auth/google";
+import { explainGoogleError, refreshAccessToken } from "@/lib/auth/google";
 import { getGmailConnection } from "@/lib/auth/session";
 import { parseLead, type ParsedLead } from "@/lib/parsers/leads";
 import { htmlToText } from "@/lib/parsers/html";
@@ -130,7 +130,7 @@ export function readableBody(message: FullMessage): string {
   return (fromHtml.length > text.length ? fromHtml : text).slice(0, 20000);
 }
 
-export type GmailResult<T> = { status: "not_connected" } | { status: "error" } | { status: "ok"; data: T; gmail: GmailClient };
+export type GmailResult<T> = { status: "not_connected" } | { status: "error"; message: string; code: string } | { status: "ok"; data: T; gmail: GmailClient };
 
 /** Runs `work` with the connected inbox, turning connection problems into states the page can explain. */
 export async function withGmail<T>(work: (gmail: GmailClient) => Promise<T>): Promise<GmailResult<T>> {
@@ -140,8 +140,9 @@ export async function withGmail<T>(work: (gmail: GmailClient) => Promise<T>): Pr
     const gmail = new GmailClient(await accessToken(connection.refreshToken), connection.mailbox);
     return { status: "ok", data: await work(gmail), gmail };
   } catch (error) {
-    console.error("Gmail read failed:", error instanceof Error ? error.message : "unknown");
-    return { status: "error" };
+    const explained = explainGoogleError(error);
+    console.error("Gmail read failed:", explained.code);
+    return { status: "error", ...explained };
   }
 }
 

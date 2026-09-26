@@ -19,7 +19,7 @@ export default async function EmailPage({ params }: { params: Promise<{ id: stri
     return message && { message, gmailUrl: gmail.gmailLink(id), mailbox: gmail.mailbox };
   });
 
-  if (result.status !== "ok") return <GmailState status={result.status} />;
+  if (result.status !== "ok") return <GmailState {...result} />;
   if (!result.data) notFound();
   const { message, gmailUrl, mailbox } = result.data;
   const lead = parseLead({ from: message.from, subject: message.subject, text: message.text, html: message.html, mailbox });

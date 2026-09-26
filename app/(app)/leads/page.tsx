@@ -53,7 +53,7 @@ export default async function LeadsPage({ searchParams }: { searchParams: Promis
       </div>
 
       {result.status !== "ok" ? (
-        <GmailState status={result.status} />
+        <GmailState {...result} />
       ) : result.data.leads.length === 0 ? (
         <p className="max-w-2xl rounded-lg border border-dashed border-line p-6 text-muted">
           {search ? `No leads match “${search}”.` : "No leads found yet. New lead emails will appear here automatically."}

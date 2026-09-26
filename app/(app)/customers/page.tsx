@@ -59,7 +59,7 @@ export default async function CustomersPage({ searchParams }: { searchParams: Pr
       </div>
 
       {result.status !== "ok" ? (
-        <GmailState status={result.status} />
+        <GmailState {...result} />
       ) : customers.length === 0 ? (
         <p className="max-w-2xl rounded-lg border border-dashed border-line p-6 text-muted">
           {search ? `No customers match “${search}”.` : "No customers yet. They'll appear as leads come in."}

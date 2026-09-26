@@ -4,7 +4,7 @@ import { useState } from "react";
 
 type Connection = { mailbox: string; connectedAt: number; connectedBy: string } | null;
 type Props = { connection: Connection; canManage: boolean; expectedMailbox: string; notice: { tone: "ok" | "error"; text: string } | null };
-type Result = { tone: "ok" | "error"; text: string } | null;
+type Result = { tone: "ok" | "error"; text: string; code?: string } | null;
 
 export default function GmailCard({ connection, canManage, expectedMailbox, notice }: Props) {
   const [busy, setBusy] = useState<"test" | "disconnect" | null>(null);
@@ -18,7 +18,7 @@ export default function GmailCard({ connection, canManage, expectedMailbox, noti
     try {
       const response = await fetch(`/api/integrations/gmail/${action}`, { method: "POST" });
       const data = await response.json().catch(() => ({}));
-      setResult({ tone: data.ok ? "ok" : "error", text: data.message ?? "Something went wrong. Try again." });
+      setResult({ tone: data.ok ? "ok" : "error", text: data.message ?? "Something went wrong. Try again.", code: data.code });
       if (action === "disconnect" && data.ok) setConnected(null);
     } catch {
       setResult({ tone: "error", text: "Couldn't reach AutoDash. Check your internet connection and try again." });
@@ -63,6 +63,7 @@ export default function GmailCard({ connection, canManage, expectedMailbox, noti
           }`}
         >
           {result.text}
+          {result.code && <span className="mt-1 block text-xs text-muted">Error code: {result.code}</span>}
         </p>
       )}
 

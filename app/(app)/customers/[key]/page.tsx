@@ -39,7 +39,7 @@ export default async function CustomerPage({ params }: { params: Promise<{ key: 
     return { customer, conversation };
   });
 
-  if (result.status !== "ok") return <GmailState status={result.status} />;
+  if (result.status !== "ok") return <GmailState {...result} />;
   const { customer, conversation } = result.data;
   if (!customer) notFound();
 

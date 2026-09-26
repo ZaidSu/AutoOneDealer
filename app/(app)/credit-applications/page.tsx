@@ -21,7 +21,7 @@ export default async function CreditApplicationsPage({ searchParams }: { searchP
         description="Every email with “Loan App” in the subject. A received application isn't an approval; the full application stays with the site it came from."
       />
       {result.status !== "ok" ? (
-        <GmailState status={result.status} />
+        <GmailState {...result} />
       ) : result.data.leads.length === 0 ? (
         <p className="max-w-2xl rounded-lg border border-dashed border-line p-6 text-muted">
           No credit applications yet. New ones will show up here as soon as they reach the inbox.

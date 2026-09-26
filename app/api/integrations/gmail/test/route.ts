@@ -1,7 +1,7 @@
 // Proves the saved Gmail connection still works by reading the mailbox profile (no message content).
 import { NextResponse, type NextRequest } from "next/server";
 import { can } from "@/lib/auth/access";
-import { fetchGmailProfile, refreshAccessToken } from "@/lib/auth/google";
+import { explainGoogleError, fetchGmailProfile, refreshAccessToken } from "@/lib/auth/google";
 import { isSameOrigin } from "@/lib/auth/request";
 import { GMAIL_COOKIE, readSealed, STAFF_COOKIE, validateStaff, type GmailConnection } from "@/lib/auth/session";
 
@@ -22,10 +22,9 @@ export async function POST(req: NextRequest) {
     const { access_token } = await refreshAccessToken(connection.refreshToken);
     const profile = await fetchGmailProfile(access_token);
     return NextResponse.json({ ok: true, mailbox: profile.emailAddress, message: `Connected to ${profile.emailAddress}.` });
-  } catch {
-    return NextResponse.json(
-      { ok: false, message: "Google no longer accepts this connection. Click Reconnect Gmail to fix it." },
-      { status: 502 },
-    );
+  } catch (error) {
+    const { message, code } = explainGoogleError(error);
+    console.error("Gmail test failed:", code);
+    return NextResponse.json({ ok: false, message, code }, { status: 502 });
   }
 }
