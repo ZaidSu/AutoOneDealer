@@ -21,7 +21,10 @@ rewrite. The previous version is preserved on `main` and in the tag `backup-befo
 
 Parsers live in `lib/parsers/carsforsale.ts` and are tested against fixtures matching the real layouts.
 
-Not built yet: Customers, lead statuses/notes/assignment, appointments, AI drafts, SMS. These need the
+- **Customers**: leads grouped into people by phone (then email), with every inquiry and application,
+  sites they came from, cars they asked about, and their email conversations with the dealership.
+
+Not built yet: lead statuses/notes/assignment, appointments, AI drafts, SMS. These need the
 shared database. They appear in the sidebar as "Soon".
 
 **Temporary limitation:** the Gmail connection is stored in an encrypted cookie in the connecting browser.

@@ -178,13 +178,38 @@ export async function fetchLeads(
   { filter = "all", extra = "", max = 40, pageToken }: { filter?: LeadFilter; extra?: string; max?: number; pageToken?: string } = {},
 ): Promise<{ leads: Lead[]; next: string | null }> {
   const page = await gmail.listPage(`${LEAD_QUERIES[filter]} ${extra}`.trim(), max, pageToken);
-  const messages = await mapLimit(page.ids, 10, (id) => gmail.full(id));
+  const results = await mapLimit(page.ids, 12, (id) => readLead(gmail, id));
+  return { leads: results.filter((l): l is Lead => l !== null), next: page.next };
+}
+
+// Emails never change, so parsed leads are remembered per message on a warm server instance.
+// Holds only what the pages display; cleared whenever the server restarts.
+const leadCache = new Map<string, Lead | null>();
+const LEAD_CACHE_LIMIT = 3000;
+
+async function readLead(gmail: GmailClient, id: string): Promise<Lead | null> {
+  const cacheKey = `${gmail.mailbox}:${id}`;
+  if (leadCache.has(cacheKey)) return leadCache.get(cacheKey)!;
+  const m = await gmail.full(id);
+  const parsed = parseLead({ from: m.from, subject: m.subject, text: m.text, html: m.html, mailbox: gmail.mailbox });
+  const lead = parsed && { ...parsed, messageId: m.id, receivedAt: m.receivedAt, subject: m.subject, gmailUrl: gmail.gmailLink(m.id) };
+  if (leadCache.size >= LEAD_CACHE_LIMIT) leadCache.delete(leadCache.keys().next().value!);
+  leadCache.set(cacheKey, lead);
+  return lead;
+}
+
+/** Reads several pages of leads (newest first) up to `limit` emails. */
+export async function fetchManyLeads(gmail: GmailClient, { extra = "", limit = 150 }: { extra?: string; limit?: number } = {}) {
   const leads: Lead[] = [];
-  for (const m of messages) {
-    const parsed = parseLead({ from: m.from, subject: m.subject, text: m.text, html: m.html, mailbox: gmail.mailbox });
-    if (parsed) leads.push({ ...parsed, messageId: m.id, receivedAt: m.receivedAt, subject: m.subject, gmailUrl: gmail.gmailLink(m.id) });
-  }
-  return { leads, next: page.next };
+  let token: string | undefined;
+  let scanned = 0;
+  do {
+    const page = await fetchLeads(gmail, { extra, max: Math.min(100, limit - scanned), pageToken: token });
+    leads.push(...page.leads);
+    scanned += Math.min(100, limit - scanned);
+    token = page.next ?? undefined;
+  } while (token && scanned < limit);
+  return { leads, more: Boolean(token) };
 }
 
 /** Gmail search accepts Unix seconds in after:, which lets "today" follow the dealership's time zone. */

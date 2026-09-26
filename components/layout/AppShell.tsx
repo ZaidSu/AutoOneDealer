@@ -12,7 +12,7 @@ const mainNav: NavItem[] = [
   { href: "/inbox", label: "Inbox", ready: true },
   { href: "/leads", label: "Leads", ready: true },
   { href: "/credit-applications", label: "Credit Applications", ready: true },
-  { href: "/customers", label: "Customers", ready: false },
+  { href: "/customers", label: "Customers", ready: true },
   { href: "/appointments", label: "Appointments", ready: false },
   { href: "/reports", label: "Reports", ready: false },
   { href: "/train-ai", label: "Train your AI", ready: false },
