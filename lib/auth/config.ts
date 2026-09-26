@@ -9,7 +9,17 @@ export const REQUIRED_VARS = [
   "GMAIL_ALLOWED_EMAIL",
 ] as const;
 
-export const OPTIONAL_VARS = ["STAFF_ACCESS"] as const;
+export const OPTIONAL_VARS = ["STAFF_ACCESS", "REQUIRE_GOOGLE_SIGNIN"] as const;
+
+/**
+ * Open login: the username/password screen lets anyone in without checking anything.
+ * Chosen deliberately for now (site shared only with trusted people).
+ * Set REQUIRE_GOOGLE_SIGNIN=true in Vercel to switch back to Google sign-in with the staff allowlist;
+ * existing open sessions stop working immediately when you do.
+ */
+export function openLoginEnabled(): boolean {
+  return process.env.REQUIRE_GOOGLE_SIGNIN !== "true";
+}
 
 export function missingConfig(): string[] {
   const missing: string[] = REQUIRED_VARS.filter((name) => !process.env[name]);

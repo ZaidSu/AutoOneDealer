@@ -30,6 +30,13 @@ shared database. They appear in the sidebar as "Soon".
 **Temporary limitation:** the Gmail connection is stored in an encrypted cookie in the connecting browser.
 It moves to the shared database in Phase 3 so the whole team and background jobs can use it.
 
+## Login mode
+
+The login screen currently has **open access**: username and password are optional and not checked
+(chosen deliberately while the site is shared only with trusted people). Sessions last 30 days.
+To require Google sign-in with the staff allowlist instead, set `REQUIRE_GOOGLE_SIGNIN=true` in Vercel
+and redeploy; open sessions stop working immediately.
+
 ## Setup
 
 1. `npm install`

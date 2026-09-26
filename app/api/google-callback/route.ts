@@ -70,7 +70,7 @@ export async function GET(req: NextRequest) {
     setGmailConnection(res, {
       mailbox: gmail.emailAddress.toLowerCase(),
       refreshToken: tokens.refresh_token,
-      connectedBy: staff.email,
+      connectedBy: staff.email || staff.name,
       connectedAt: Date.now(),
     });
     return res;

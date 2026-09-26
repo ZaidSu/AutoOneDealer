@@ -33,7 +33,7 @@ export default async function SettingsPage({ searchParams }: { searchParams: Pro
             <dt className="text-muted">Name</dt>
             <dd>{staff.name}</dd>
             <dt className="text-muted">Email</dt>
-            <dd className="break-all">{staff.email}</dd>
+            <dd className="break-all">{staff.email || "Not set"}</dd>
             <dt className="text-muted">Role</dt>
             <dd>{roleLabel[staff.role]}</dd>
           </dl>
