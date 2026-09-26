@@ -2,7 +2,7 @@
 import { createHash } from "node:crypto";
 import { refreshAccessToken } from "@/lib/auth/google";
 import { getGmailConnection } from "@/lib/auth/session";
-import { classifyCfs, parseFinanceApplication, parseWebsiteLead, type FinanceApplication, type WebsiteLead } from "@/lib/parsers/carsforsale";
+import { parseLead, type ParsedLead } from "@/lib/parsers/leads";
 import { htmlToText } from "@/lib/parsers/html";
 
 // Short-lived access tokens cached per warm server instance, keyed by a hash of the refresh token.
@@ -32,8 +32,24 @@ export class GmailClient {
   }
 
   async listIds(q: string, max = 25): Promise<string[]> {
-    const data = await this.get<{ messages?: { id: string }[] }>("messages", { q, maxResults: max });
-    return (data.messages ?? []).map((m) => m.id);
+    return (await this.listPage(q, max)).ids;
+  }
+
+  async listPage(q: string, max = 25, pageToken?: string): Promise<{ ids: string[]; next: string | null }> {
+    const data = await this.get<{ messages?: { id: string }[]; nextPageToken?: string }>("messages", { q, maxResults: max, pageToken });
+    return { ids: (data.messages ?? []).map((m) => m.id), next: data.nextPageToken ?? null };
+  }
+
+  /** Counts matching messages (up to `cap`) without downloading them. */
+  async count(q: string, cap = 500): Promise<number> {
+    let total = 0;
+    let token: string | undefined;
+    do {
+      const page = await this.listPage(q, Math.min(500, cap - total), token);
+      total += page.ids.length;
+      token = page.next ?? undefined;
+    } while (token && total < cap);
+    return total;
   }
 
   async inboxUnread(): Promise<number> {
@@ -144,26 +160,37 @@ export async function mapLimit<T, R>(items: T[], limit: number, fn: (item: T) =>
   return results;
 }
 
-// ---- CarsForSale lead queries ----
+// ---- Lead queries ----
+// Dealership rule: "Loan App" in the subject = credit application; "Lead" in the subject = lead. Any sender.
 
-export const CFS_APPLICATIONS_QUERY = 'from:carsforsalemail.com subject:"Loan App"';
-export const CFS_LEADS_QUERY = 'from:carsforsalemail.com subject:"New Lead"';
+const NOT_OURS = "-in:sent -in:drafts";
+export const LEAD_QUERIES = {
+  all: `(subject:lead OR subject:"loan app") ${NOT_OURS}`,
+  application: `subject:"loan app" ${NOT_OURS}`,
+  inquiry: `subject:lead -subject:"loan app" ${NOT_OURS}`,
+} as const;
+export type LeadFilter = keyof typeof LEAD_QUERIES;
 
-export type CreditApplication = FinanceApplication & { messageId: string; receivedAt: number; gmailUrl: string };
-export type WebLead = WebsiteLead & { messageId: string; receivedAt: number; gmailUrl: string };
+export type Lead = ParsedLead & { messageId: string; receivedAt: number; subject: string; gmailUrl: string };
 
-export async function creditApplications(gmail: GmailClient, window = "newer_than:180d", max = 50): Promise<CreditApplication[]> {
-  const ids = await gmail.listIds(`${CFS_APPLICATIONS_QUERY} ${window}`, max);
-  const messages = await mapLimit(ids, 8, (id) => gmail.full(id));
-  return messages
-    .filter((m) => classifyCfs(m.from, m.subject) === "finance_application")
-    .map((m) => ({ ...parseFinanceApplication(m.html || m.text), messageId: m.id, receivedAt: m.receivedAt, gmailUrl: gmail.gmailLink(m.id) }));
+export async function fetchLeads(
+  gmail: GmailClient,
+  { filter = "all", extra = "", max = 40, pageToken }: { filter?: LeadFilter; extra?: string; max?: number; pageToken?: string } = {},
+): Promise<{ leads: Lead[]; next: string | null }> {
+  const page = await gmail.listPage(`${LEAD_QUERIES[filter]} ${extra}`.trim(), max, pageToken);
+  const messages = await mapLimit(page.ids, 10, (id) => gmail.full(id));
+  const leads: Lead[] = [];
+  for (const m of messages) {
+    const parsed = parseLead({ from: m.from, subject: m.subject, text: m.text, html: m.html, mailbox: gmail.mailbox });
+    if (parsed) leads.push({ ...parsed, messageId: m.id, receivedAt: m.receivedAt, subject: m.subject, gmailUrl: gmail.gmailLink(m.id) });
+  }
+  return { leads, next: page.next };
 }
 
-export async function websiteLeads(gmail: GmailClient, window = "newer_than:180d", max = 50): Promise<WebLead[]> {
-  const ids = await gmail.listIds(`${CFS_LEADS_QUERY} ${window}`, max);
-  const messages = await mapLimit(ids, 8, (id) => gmail.full(id));
-  return messages
-    .filter((m) => classifyCfs(m.from, m.subject) === "website_lead")
-    .map((m) => ({ ...parseWebsiteLead(m.html || m.text), messageId: m.id, receivedAt: m.receivedAt, gmailUrl: gmail.gmailLink(m.id) }));
+/** Gmail search accepts Unix seconds in after:, which lets "today" follow the dealership's time zone. */
+export function startOfDealershipDay(timeZone: string, now = new Date()): number {
+  const parts = new Intl.DateTimeFormat("en-US", { timeZone, hour: "numeric", minute: "numeric", second: "numeric", hour12: false }).formatToParts(now);
+  const get = (type: string) => Number(parts.find((p) => p.type === type)?.value ?? 0) % 24;
+  const sinceMidnight = (get("hour") * 3600 + get("minute") * 60 + get("second")) * 1000;
+  return Math.floor((now.getTime() - sinceMidnight) / 1000);
 }

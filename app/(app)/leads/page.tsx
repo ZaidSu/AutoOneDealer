@@ -1,88 +1,73 @@
 import type { Metadata } from "next";
+import Link from "next/link";
 import GmailState from "@/components/gmail/GmailState";
-import Badge from "@/components/leads/Badge";
+import LeadList from "@/components/leads/LeadList";
+import LoadMore from "@/components/leads/LoadMore";
 import PageHeader from "@/components/ui/PageHeader";
-import { displayName, formatDateTime, formatMoney, formatPhone } from "@/lib/format";
-import { creditApplications, websiteLeads, withGmail } from "@/lib/gmail";
+import { fetchLeads, withGmail, type LeadFilter } from "@/lib/gmail";
 
 export const metadata: Metadata = { title: "Leads" };
 export const dynamic = "force-dynamic";
 
-type Row = {
-  id: string;
-  kind: "application" | "inquiry";
-  name: string | null;
-  phone: string | null;
-  email: string | null;
-  detail: string;
-  receivedAt: number;
-  gmailUrl: string;
-};
+const FILTERS: { key: LeadFilter; label: string }[] = [
+  { key: "all", label: "Everything" },
+  { key: "inquiry", label: "Leads" },
+  { key: "application", label: "Credit applications" },
+];
 
-export default async function LeadsPage() {
-  const result = await withGmail(async (gmail) => {
-    const [apps, inquiries] = await Promise.all([creditApplications(gmail), websiteLeads(gmail)]);
-    const rows: Row[] = [
-      ...apps.map((a) => ({
-        id: a.messageId,
-        kind: "application" as const,
-        name: a.name,
-        phone: a.phone,
-        email: a.email,
-        detail: [a.loanAmount !== null && `Loan ${formatMoney(a.loanAmount)}`, a.location].filter(Boolean).join(" · "),
-        receivedAt: a.receivedAt,
-        gmailUrl: a.gmailUrl,
-      })),
-      ...inquiries.map((l) => ({
-        id: l.messageId,
-        kind: "inquiry" as const,
-        name: l.name,
-        phone: l.phone,
-        email: l.email,
-        detail: l.comments ? `“${l.comments.slice(0, 140)}${l.comments.length > 140 ? "…" : ""}”` : l.source ?? "",
-        receivedAt: l.receivedAt,
-        gmailUrl: l.gmailUrl,
-      })),
-    ];
-    return rows.sort((a, b) => b.receivedAt - a.receivedAt);
-  });
+export default async function LeadsPage({ searchParams }: { searchParams: Promise<Record<string, string | undefined>> }) {
+  const params = await searchParams;
+  const filter = (FILTERS.find((f) => f.key === params.show)?.key ?? "all") as LeadFilter;
+  const search = (params.q ?? "").slice(0, 80).trim();
+  const page = params.page && /^[\w-]{1,200}$/.test(params.page) ? params.page : undefined;
+
+  const result = await withGmail((gmail) => fetchLeads(gmail, { filter, extra: search, pageToken: page }));
+  const keep: Record<string, string> = { show: filter, ...(search ? { q: search } : {}) };
 
   return (
     <>
-      <PageHeader title="Leads" description="Every CarsForSale credit application and website inquiry, newest first." />
+      <PageHeader
+        title="Leads"
+        description="Every email with “Lead” or “Loan App” in the subject: Cars.com, CarsForSale, Edmunds, CarGurus and anyone else."
+      />
+      <div className="mb-4 flex flex-wrap items-center gap-3">
+        <nav aria-label="Lead types" className="flex rounded-md bg-white p-1 ring-1 ring-line">
+          {FILTERS.map((f) => (
+            <Link
+              key={f.key}
+              href={{ pathname: "/leads", query: { show: f.key, ...(search ? { q: search } : {}) } }}
+              aria-current={filter === f.key ? "page" : undefined}
+              className={`rounded px-3 py-1.5 text-sm font-medium ${filter === f.key ? "bg-graphite text-white" : "text-muted hover:text-ink"}`}
+            >
+              {f.label}
+            </Link>
+          ))}
+        </nav>
+        <form action="/leads" className="flex min-w-0 flex-1 gap-2 sm:max-w-sm">
+          <input type="hidden" name="show" value={filter} />
+          <label htmlFor="lead-search" className="sr-only">Search leads</label>
+          <input id="lead-search" name="q" defaultValue={search} placeholder="Name, phone, car or site"
+            className="h-10 min-w-0 flex-1 rounded-md border border-line bg-white px-3 text-[15px] placeholder:text-muted/70" />
+          <button className="h-10 rounded-md px-4 font-semibold ring-1 ring-line hover:bg-white">Search</button>
+        </form>
+      </div>
+
       {result.status !== "ok" ? (
         <GmailState status={result.status} />
-      ) : result.data.length === 0 ? (
+      ) : result.data.leads.length === 0 ? (
         <p className="max-w-2xl rounded-lg border border-dashed border-line p-6 text-muted">
-          No leads in the last 6 months. New CarsForSale applications and inquiries will appear here automatically.
+          {search ? `No leads match “${search}”.` : "No leads found yet. New lead emails will appear here automatically."}
         </p>
       ) : (
         <>
-          <ul className="divide-y divide-line overflow-hidden rounded-lg border border-line bg-white">
-            {result.data.map((row) => (
-              <li key={row.id} className="grid gap-x-6 gap-y-1 px-4 py-4 sm:grid-cols-[minmax(0,1.3fr)_minmax(0,1fr)_auto] sm:items-center">
-                <div className="min-w-0">
-                  <div className="flex flex-wrap items-center gap-2">
-                    <p className="font-semibold">{displayName(row.name)}</p>
-                    <Badge tone={row.kind}>{row.kind === "application" ? "Credit application" : "Website inquiry"}</Badge>
-                  </div>
-                  {row.detail && <p className="mt-0.5 truncate text-sm text-muted">{row.detail}</p>}
-                </div>
-                <div className="text-[15px]">
-                  {row.phone && <a className="block hover:text-signal hover:underline" href={`tel:${row.phone}`}>{formatPhone(row.phone)}</a>}
-                  {row.email && <a className="block truncate text-sm text-muted hover:text-ink hover:underline" href={`mailto:${row.email}`}>{row.email}</a>}
-                  {!row.phone && !row.email && <span className="text-sm text-muted">No contact details in the email</span>}
-                </div>
-                <div className="flex items-center gap-4 text-sm sm:justify-end">
-                  <span className="whitespace-nowrap text-muted">{formatDateTime(row.receivedAt)}</span>
-                  <a className="font-semibold text-signal hover:underline" href={`/inbox/${row.id}`}>Open</a>
-                </div>
-              </li>
-            ))}
-          </ul>
-          <p className="mt-3 text-sm text-muted">
-            Statuses, notes and assigning a salesperson need the shared customer database, which is the next step.
-          </p>
+          {page && (
+            <Link href={{ pathname: "/leads", query: keep }} className="mb-3 inline-block text-sm font-semibold text-signal hover:underline">
+              Back to newest
+            </Link>
+          )}
+          <LeadList leads={result.data.leads} />
+          <LoadMore basePath="/leads" params={keep} next={result.data.next} />
+          <p className="mt-4 text-sm text-muted">Statuses, notes and assigning a salesperson arrive with the shared customer database.</p>
         </>
       )}
     </>

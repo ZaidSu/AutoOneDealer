@@ -5,14 +5,14 @@ import Badge from "@/components/leads/Badge";
 import PageHeader from "@/components/ui/PageHeader";
 import { formatDateTime } from "@/lib/format";
 import { mapLimit, withGmail } from "@/lib/gmail";
-import { classifyCfs } from "@/lib/parsers/carsforsale";
+import { leadKind, providerFor } from "@/lib/parsers/leads";
 
 export const metadata: Metadata = { title: "Inbox" };
 export const dynamic = "force-dynamic";
 
 const VIEWS = {
   all: { label: "All email", query: "in:inbox" },
-  leads: { label: "Leads only", query: "in:inbox (from:carsforsalemail.com OR from:hammer-corp.com) -subject:\"Login Activity\"" },
+  leads: { label: "Leads only", query: 'in:inbox (subject:lead OR subject:"loan app")' },
   unread: { label: "Unread", query: "in:inbox is:unread" },
 } as const;
 type View = keyof typeof VIEWS;
@@ -68,8 +68,7 @@ export default async function InboxPage({ searchParams }: { searchParams: Promis
       ) : (
         <ul className="divide-y divide-line overflow-hidden rounded-lg border border-line bg-white">
           {result.data.map((m) => {
-            const kind = classifyCfs(m.from, m.subject);
-            const hammer = /hammer-corp\.com/i.test(m.from);
+            const kind = leadKind(m.subject);
             return (
               <li key={m.id}>
                 <Link href={`/inbox/${m.id}`} className="grid gap-x-4 px-4 py-3.5 hover:bg-paper sm:grid-cols-[220px_minmax(0,1fr)_auto]">
@@ -80,9 +79,8 @@ export default async function InboxPage({ searchParams }: { searchParams: Promis
                   </div>
                   <div className="min-w-0 pl-4 sm:pl-0">
                     <div className="flex min-w-0 items-center gap-2">
-                      {kind === "finance_application" && <Badge tone="application">Credit app</Badge>}
-                      {kind === "website_lead" && <Badge tone="inquiry">Inquiry</Badge>}
-                      {hammer && <Badge tone="neutral">Hammer</Badge>}
+                      {kind === "application" && <Badge tone="application">Credit app</Badge>}
+                      {kind === "inquiry" && <Badge tone="inquiry">{providerFor(m.from, m.subject)} lead</Badge>}
                       <span className={`truncate ${m.unread ? "font-semibold" : ""}`}>{m.subject}</span>
                     </div>
                     <p className="truncate text-sm text-muted">{m.snippet}</p>

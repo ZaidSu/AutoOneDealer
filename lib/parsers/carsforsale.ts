@@ -1,6 +1,7 @@
 // Parses CarsForSale notification emails received by the dealership inbox.
 // Built from the real layouts seen in the Auto One inbox (September 2026).
 // Only reads what the email actually contains; missing fields stay null rather than being guessed.
+import { EMAIL, isPhone, readContact, type Contact } from "./contact.ts";
 import { htmlToLines, linkByText } from "./html.ts";
 
 export type CfsKind = "finance_application" | "website_lead" | "other";
@@ -12,8 +13,6 @@ export function classifyCfs(from: string, subject: string): CfsKind {
   return "other";
 }
 
-type Contact = { name: string | null; phone: string | null; email: string | null; location: string | null };
-
 export type FinanceApplication = Contact & {
   applicationId: string | null;
   loanAmount: number | null;
@@ -23,31 +22,6 @@ export type FinanceApplication = Contact & {
 };
 
 export type WebsiteLead = Contact & { source: string | null; comments: string | null; replyUrl: string | null };
-
-const PHONE_LINE = /^[+()\d\s.-]+$/;
-const EMAIL = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-const LOCATION = /,\s*[A-Za-z]{2}$/;
-
-function digits(value: string) {
-  return value.replace(/\D/g, "");
-}
-
-function isPhone(line: string) {
-  const d = digits(line);
-  return PHONE_LINE.test(line) && (d.length === 10 || (d.length === 11 && d.startsWith("1")));
-}
-
-/** Reads a block of name / phone / email / "City, ST" lines in any order. */
-function readContact(lines: string[]): Contact {
-  const contact: Contact = { name: null, phone: null, email: null, location: null };
-  for (const line of lines) {
-    if (!contact.phone && isPhone(line)) contact.phone = digits(line).slice(-10);
-    else if (!contact.email && EMAIL.test(line)) contact.email = line.toLowerCase();
-    else if (!contact.location && LOCATION.test(line)) contact.location = line.replace(/\s*,\s*/, ", ");
-    else if (!contact.name) contact.name = line;
-  }
-  return contact;
-}
 
 function money(value: string | undefined): number | null {
   if (!value) return null;
