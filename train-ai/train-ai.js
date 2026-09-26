@@ -1,1 +1,0 @@
-console.log('Train Your AI ready');

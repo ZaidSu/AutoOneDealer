@@ -1,0 +1,27 @@
+@import "tailwindcss";
+
+/* AutoDash tokens: graphite sidebar, restrained dealership red, light readable workspace. */
+@theme {
+  --font-sans: "Barlow", "Segoe UI", system-ui, -apple-system, sans-serif;
+  --color-graphite: #1e2228;
+  --color-graphite-2: #2a2f37;
+  --color-graphite-3: #3a404a;
+  --color-signal: #c8102e;
+  --color-signal-dark: #a00c24;
+  --color-paper: #f4f5f7;
+  --color-ink: #1d2129;
+  --color-muted: #5e6573;
+  --color-line: #e1e4e9;
+  --color-go: #1f7a4d;
+  --color-go-soft: #e6f3ec;
+  --color-warn-soft: #fdf1f2;
+}
+
+html { color-scheme: light; }
+body { background: var(--color-paper); color: var(--color-ink); -webkit-font-smoothing: antialiased; }
+
+:focus-visible { outline: 2px solid var(--color-signal); outline-offset: 2px; }
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { transition: none !important; animation: none !important; }
+}
