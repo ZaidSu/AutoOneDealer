@@ -13,7 +13,16 @@ rewrite. The previous version is preserved on `main` and in the tag `backup-befo
   "This page is meant for a developer" popup. Developer details are gated by role on the server.
 - `/api/health` to confirm server routes are deployed.
 
-Not built yet: lead detection, CRM, appointments, AI drafts, SMS. They appear in the sidebar as "Soon".
+- **Inbox** (read-only list, views, search, and a text-only reading view; email HTML is never rendered).
+- **Credit Applications**: CarsForSale "New Loan App Submitted" emails parsed into applicant, phone,
+  location, loan amount, down payment, application ID and a link to the full application in CarsForSale.
+- **Leads**: credit applications plus CarsForSale website inquiries ("New Lead"), newest first.
+- **Dashboard** counts from the live inbox (applications today/7 days, inquiries, unread).
+
+Parsers live in `lib/parsers/carsforsale.ts` and are tested against fixtures matching the real layouts.
+
+Not built yet: Customers, lead statuses/notes/assignment, appointments, AI drafts, SMS. These need the
+shared database. They appear in the sidebar as "Soon".
 
 **Temporary limitation:** the Gmail connection is stored in an encrypted cookie in the connecting browser.
 It moves to the shared database in Phase 3 so the whole team and background jobs can use it.

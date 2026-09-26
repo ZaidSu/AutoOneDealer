@@ -9,8 +9,9 @@ type NavItem = { href: string; label: string; ready: boolean };
 // Items marked ready: false keep the familiar navigation visible without pretending the page works yet.
 const mainNav: NavItem[] = [
   { href: "/dashboard", label: "Dashboard", ready: true },
-  { href: "/inbox", label: "Inbox", ready: false },
-  { href: "/leads", label: "Leads", ready: false },
+  { href: "/inbox", label: "Inbox", ready: true },
+  { href: "/leads", label: "Leads", ready: true },
+  { href: "/credit-applications", label: "Credit Applications", ready: true },
   { href: "/customers", label: "Customers", ready: false },
   { href: "/appointments", label: "Appointments", ready: false },
   { href: "/reports", label: "Reports", ready: false },

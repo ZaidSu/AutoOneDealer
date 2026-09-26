@@ -1,54 +1,87 @@
 import type { Metadata } from "next";
 import Link from "next/link";
+import GmailState from "@/components/gmail/GmailState";
+import Badge from "@/components/leads/Badge";
 import PageHeader from "@/components/ui/PageHeader";
-import { can } from "@/lib/auth/access";
-import { getGmailConnection, getStaffSession } from "@/lib/auth/session";
+import { getStaffSession } from "@/lib/auth/session";
 import { greeting } from "@/lib/dealership";
+import { displayName, formatDateTime, formatPhone, isSameDealershipDay } from "@/lib/format";
+import { creditApplications, websiteLeads, withGmail } from "@/lib/gmail";
 
 export const metadata: Metadata = { title: "Dashboard" };
+export const dynamic = "force-dynamic";
 
 export default async function DashboardPage() {
   const staff = (await getStaffSession())!;
-  const gmail = await getGmailConnection();
   const firstName = staff.name.split(" ")[0];
+
+  const result = await withGmail(async (gmail) => {
+    const [apps, inquiries, unread] = await Promise.all([
+      creditApplications(gmail, "newer_than:7d", 50),
+      websiteLeads(gmail, "newer_than:7d", 50),
+      gmail.inboxUnread(),
+    ]);
+    const latest = [
+      ...apps.map((a) => ({ id: a.messageId, kind: "application" as const, name: a.name, phone: a.phone, at: a.receivedAt })),
+      ...inquiries.map((l) => ({ id: l.messageId, kind: "inquiry" as const, name: l.name, phone: l.phone, at: l.receivedAt })),
+    ].sort((a, b) => b.at - a.at);
+    return {
+      appsToday: apps.filter((a) => isSameDealershipDay(a.receivedAt)).length,
+      appsWeek: apps.length,
+      inquiriesWeek: inquiries.length,
+      unread,
+      latest: latest.slice(0, 6),
+    };
+  });
 
   return (
     <>
       <PageHeader title={`${greeting()}, ${firstName}`} description="Here's what needs attention at the dealership." />
 
-      <section aria-labelledby="inbox-status" className="max-w-3xl rounded-lg border border-line bg-white p-6">
-        <h2 id="inbox-status" className="text-lg font-semibold">Dealership inbox</h2>
-        {gmail ? (
-          <p className="mt-1 text-muted">
-            Connected to <span className="font-medium text-ink">{gmail.mailbox}</span>. Automatic lead detection from
-            CarsForSale emails is the next part being built.
-          </p>
-        ) : (
-          <>
-            <p className="mt-1 text-muted">
-              Connect your inbox in Settings so new finance applications and customer emails show up here.
-            </p>
-            {can.manageIntegrations(staff.role) ? (
-              <Link
-                href="/settings"
-                className="mt-4 inline-flex h-10 items-center rounded-md bg-signal px-4 font-semibold text-white hover:bg-signal-dark"
-              >
-                Go to Settings
-              </Link>
-            ) : (
-              <p className="mt-3 text-sm text-muted">Ask an owner or manager to connect it.</p>
-            )}
-          </>
-        )}
-      </section>
+      {result.status !== "ok" ? (
+        <GmailState status={result.status} />
+      ) : (
+        <>
+          <section aria-label="This week" className="grid max-w-4xl grid-cols-2 gap-px overflow-hidden rounded-lg border border-line bg-line lg:grid-cols-4">
+            <Stat value={result.data.appsToday} label="Credit applications today" href="/credit-applications" highlight={result.data.appsToday > 0} />
+            <Stat value={result.data.appsWeek} label="Credit applications, last 7 days" href="/credit-applications" />
+            <Stat value={result.data.inquiriesWeek} label="Website inquiries, last 7 days" href="/leads" />
+            <Stat value={result.data.unread} label="Unread emails in the inbox" href="/inbox?view=unread" />
+          </section>
 
-      <section aria-labelledby="today" className="mt-6 max-w-3xl rounded-lg border border-dashed border-line p-6">
-        <h2 id="today" className="text-lg font-semibold">Today</h2>
-        <p className="mt-1 text-muted">
-          No leads, messages or appointments yet. They'll appear here once lead detection and appointments are switched
-          on. Nothing on this page is sample data.
-        </p>
-      </section>
+          <section aria-labelledby="latest" className="mt-8 max-w-4xl">
+            <div className="flex items-baseline justify-between">
+              <h2 id="latest" className="text-lg font-semibold">Newest leads</h2>
+              <Link href="/leads" className="text-sm font-semibold text-signal hover:underline">See all leads</Link>
+            </div>
+            {result.data.latest.length === 0 ? (
+              <p className="mt-3 rounded-lg border border-dashed border-line p-6 text-muted">No new leads in the last 7 days.</p>
+            ) : (
+              <ul className="mt-3 divide-y divide-line overflow-hidden rounded-lg border border-line bg-white">
+                {result.data.latest.map((lead) => (
+                  <li key={lead.id}>
+                    <Link href={`/inbox/${lead.id}`} className="flex flex-wrap items-center gap-x-4 gap-y-1 px-4 py-3 hover:bg-paper">
+                      <span className="font-semibold">{displayName(lead.name)}</span>
+                      <Badge tone={lead.kind}>{lead.kind === "application" ? "Credit application" : "Website inquiry"}</Badge>
+                      <span className="text-muted">{formatPhone(lead.phone)}</span>
+                      <span className="ml-auto text-sm text-muted">{formatDateTime(lead.at)}</span>
+                    </Link>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </section>
+        </>
+      )}
     </>
+  );
+}
+
+function Stat({ value, label, href, highlight }: { value: number; label: string; href: string; highlight?: boolean }) {
+  return (
+    <Link href={href} className="bg-white p-5 hover:bg-paper">
+      <p className={`text-3xl font-semibold tabular-nums ${highlight ? "text-signal" : ""}`}>{value}</p>
+      <p className="mt-1 text-sm text-muted">{label}</p>
+    </Link>
   );
 }
