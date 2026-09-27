@@ -87,9 +87,15 @@ export async function queryLeads({ filter = "all", search = "", since, limit = 5
   return { leads: rows.slice(0, limit).map(toLead), more: rows.length > limit };
 }
 
-/** All saved leads (newest first), for grouping into customers and for analytics. */
-export async function allLeads(since?: Date, cap = 20000): Promise<Lead[]> {
-  return (await queryLeads({ since, limit: cap })).leads;
+/** All saved leads (newest first), for grouping into customers and for analytics. Leaves out long comment text. */
+export async function allLeads(since?: Date, cap = 30000): Promise<Lead[]> {
+  const sql = await readyDb();
+  if (!sql) return [];
+  const rows = await sql`
+    select message_id, received_at, kind, provider, type, name, phone, email, location, vehicle, loan_amount, application_id
+    from leads where not ignored ${since ? sql`and received_at >= ${since}` : sql``}
+    order by received_at desc limit ${cap}`;
+  return rows.map(toLead);
 }
 
 export async function leadsFor(identity: { phone: string } | { email: string }): Promise<Lead[]> {

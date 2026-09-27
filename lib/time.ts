@@ -21,9 +21,16 @@ export function zonedToUtc(date: string, time: string, timeZone: string): Date |
   return new Date(utc);
 }
 
+const dayFormatters = new Map<string, Intl.DateTimeFormat>();
+
 /** "2026-09-28" for the given instant in the dealership's time zone. */
 export function dayKey(date: Date | number, timeZone: string): string {
-  return new Intl.DateTimeFormat("en-CA", { timeZone, year: "numeric", month: "2-digit", day: "2-digit" }).format(new Date(date));
+  let fmt = dayFormatters.get(timeZone);
+  if (!fmt) {
+    fmt = new Intl.DateTimeFormat("en-CA", { timeZone, year: "numeric", month: "2-digit", day: "2-digit" });
+    dayFormatters.set(timeZone, fmt);
+  }
+  return fmt.format(new Date(date));
 }
 
 export function addDays(day: string, n: number): string {

@@ -58,6 +58,12 @@ export default async function CustomersPage({ searchParams }: { searchParams: Pr
     return true;
   });
 
+  // 50 per page keeps the page light; search and filters above still cover every customer.
+  const PER_PAGE = 50;
+  const pages = Math.max(1, Math.ceil(customers.length / PER_PAGE));
+  const pageIndex = Math.min(pages - 1, Math.max(0, Number(params.p ?? 0) || 0));
+  const shown = customers.slice(pageIndex * PER_PAGE, pageIndex * PER_PAGE + PER_PAGE);
+
   const keep = (extra: Params): Params => {
     const next: Params = { range, q: search || undefined, rep: params.rep, status: params.status, fin: params.fin, scope: params.scope, ...extra };
     return Object.fromEntries(Object.entries(next).filter(([, v]) => v)) as Params;
@@ -94,7 +100,10 @@ export default async function CustomersPage({ searchParams }: { searchParams: Pr
       {result.status === "ok" && result.sync && <SyncBar {...result.sync} />}
       {result.status === "ok" && (
         <p className="mb-3 text-sm text-muted">
-          {customers.length} customer{customers.length === 1 ? "" : "s"}{result.mode === "db" ? "" : ` from the ${RANGES[range].label}`}.{" "}
+          {customers.length > PER_PAGE
+            ? `Showing ${(pageIndex * PER_PAGE + 1).toLocaleString()}–${Math.min(customers.length, (pageIndex + 1) * PER_PAGE).toLocaleString()} of ${customers.length.toLocaleString()} customers`
+            : `${customers.length} customer${customers.length === 1 ? "" : "s"}`}
+          {result.mode === "db" ? "" : ` from the ${RANGES[range].label}`}.{" "}
           {result.data.skipped > 0 && <span>{result.data.skipped} email{result.data.skipped === 1 ? "" : "s"} couldn't be read this time and will be retried. </span>}
           {result.mode === "gmail" && range === "recent" && result.data.more && (
             <Link href={{ pathname: "/customers", query: keep({ range: "more" }) }} className="font-semibold text-signal hover:underline">Look further back</Link>
@@ -109,8 +118,9 @@ export default async function CustomersPage({ searchParams }: { searchParams: Pr
           {search || filtered ? "No customers match these filters." : "No customers yet. They'll appear as leads come in."}
         </p>
       ) : (
+        <>
         <CustomerRows
-          customers={customers}
+          customers={shown}
           reps={reps.map((r) => ({ id: r.id, name: r.name }))}
           sources={sources.map((s) => s.name)}
           statuses={STATUSES}
@@ -119,6 +129,18 @@ export default async function CustomersPage({ searchParams }: { searchParams: Pr
           dbMessage={dbMessage}
           today={dayKey(Date.now(), dealership.timeZone)}
         />
+        {pages > 1 && (
+          <nav aria-label="Pages" className="mt-4 flex flex-wrap items-center gap-3 text-sm font-semibold">
+            {pageIndex > 0 && (
+              <Link href={{ pathname: "/customers", query: keep({ p: pageIndex - 1 ? String(pageIndex - 1) : undefined }) }} className="rounded-md px-3 py-2 ring-1 ring-line hover:bg-white">← Newer</Link>
+            )}
+            <span className="text-muted">Page {pageIndex + 1} of {pages}</span>
+            {pageIndex < pages - 1 && (
+              <Link href={{ pathname: "/customers", query: keep({ p: String(pageIndex + 1) }) }} className="rounded-md px-3 py-2 ring-1 ring-line hover:bg-white">Older →</Link>
+            )}
+          </nav>
+        )}
+        </>
       )}
     </>
   );

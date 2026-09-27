@@ -1,14 +1,18 @@
 import { dealership } from "@/lib/dealership";
 
+const dateTimeFmt = new Intl.DateTimeFormat("en-US", {
+  month: "short",
+  day: "numeric",
+  hour: "numeric",
+  minute: "2-digit",
+  timeZone: dealership.timeZone,
+});
+const moneyFmt = new Intl.NumberFormat("en-US", { style: "currency", currency: "USD", maximumFractionDigits: 0 });
+const dayFmt = new Intl.DateTimeFormat("en-CA", { timeZone: dealership.timeZone });
+
 export function formatDateTime(ms: number): string {
   if (!ms) return "Unknown time";
-  return new Intl.DateTimeFormat("en-US", {
-    month: "short",
-    day: "numeric",
-    hour: "numeric",
-    minute: "2-digit",
-    timeZone: dealership.timeZone,
-  }).format(new Date(ms));
+  return dateTimeFmt.format(new Date(ms));
 }
 
 export function formatPhone(phone: string | null): string {
@@ -18,7 +22,7 @@ export function formatPhone(phone: string | null): string {
 
 export function formatMoney(value: number | null): string {
   if (value === null) return "—";
-  return new Intl.NumberFormat("en-US", { style: "currency", currency: "USD", maximumFractionDigits: 0 }).format(value);
+  return moneyFmt.format(value);
 }
 
 /** "JOHN SAMPLE" → "John Sample"; leaves normally-cased names alone. */
@@ -29,6 +33,6 @@ export function displayName(name: string | null): string {
 }
 
 export function isSameDealershipDay(ms: number, now = Date.now()): boolean {
-  const day = (t: number) => new Intl.DateTimeFormat("en-CA", { timeZone: dealership.timeZone }).format(new Date(t));
+  const day = (t: number) => dayFmt.format(new Date(t));
   return day(ms) === day(now);
 }

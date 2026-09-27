@@ -75,23 +75,29 @@ export default async function AnalyticsPage({ searchParams }: { searchParams: Pr
 
   // Leads over time: by day for short ranges, by week for 90 days, by month for a year.
   const today = dayKey(Date.now(), tz);
+  const leadDays = new Map<string, number>(); // "YYYY-MM-DD" → leads that day, computed once
+  for (const l of leads) {
+    const d = dayKey(l.receivedAt, tz);
+    leadDays.set(d, (leadDays.get(d) ?? 0) + 1);
+  }
+  const sumDays = (test: (d: string) => boolean) => { let n = 0; for (const [d, c] of leadDays) if (test(d)) n += c; return n; };
   const buckets: { label: string; value: number }[] = [];
   if (days <= 30) {
     for (let i = days - 1; i >= 0; i--) {
       const d = addDays(today, -i);
-      buckets.push({ label: d.slice(5).replace("-", "/"), value: leads.filter((l) => dayKey(l.receivedAt, tz) === d).length });
+      buckets.push({ label: d.slice(5).replace("-", "/"), value: leadDays.get(d) ?? 0 });
     }
   } else if (days <= 90) {
     for (let w = Math.ceil(days / 7) - 1; w >= 0; w--) {
       const end = addDays(today, -w * 7), start = addDays(end, -6);
-      buckets.push({ label: start.slice(5).replace("-", "/"), value: leads.filter((l) => { const d = dayKey(l.receivedAt, tz); return d >= start && d <= end; }).length });
+      buckets.push({ label: start.slice(5).replace("-", "/"), value: sumDays((d) => d >= start && d <= end) });
     }
   } else {
     for (let m = 11; m >= 0; m--) {
       const [y, mo] = today.split("-").map(Number);
       const date = new Date(Date.UTC(y, mo - 1 - m, 1));
       const prefix = date.toISOString().slice(0, 7);
-      buckets.push({ label: date.toLocaleString("en-US", { month: "short", timeZone: "UTC" }), value: leads.filter((l) => dayKey(l.receivedAt, tz).startsWith(prefix)).length });
+      buckets.push({ label: date.toLocaleString("en-US", { month: "short", timeZone: "UTC" }), value: sumDays((d) => d.startsWith(prefix)) });
     }
   }
 
