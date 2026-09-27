@@ -22,6 +22,7 @@ export type CustomerView = {
   financing: Financing | null;
   financingIsAuto: boolean;
   notes: string;
+  followUpAt: string | null;
   returning: boolean;
   hasApplication: boolean;
   leadsCount: number;
@@ -64,6 +65,7 @@ export function buildCustomerViews(
       financing: record?.financing ?? autoFinancing,
       financingIsAuto: !record?.financing,
       notes: record?.notes ?? "",
+      followUpAt: record?.followUpAt ?? null,
       // Came back with a new lead after buying from us.
       returning: Boolean(record?.purchasedAt && c.lastSeen > record.purchasedAt.getTime() + 86400000),
       hasApplication: c.hasApplication,

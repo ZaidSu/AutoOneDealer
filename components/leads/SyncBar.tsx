@@ -32,8 +32,9 @@ export default function SyncBar({ lastRun, saved, remaining }: Props) {
       const response = await fetch("/api/leads/sync", { method: "POST" });
       const data = await response.json().catch(() => null);
       setMessage(data?.message ?? "Couldn't update right now.");
-      if (data?.ok) router.refresh();
       keepGoing = Boolean(data?.ok && data.remaining > 0);
+      // Refresh only when the import is finished; refreshing mid-import could undo a page change.
+      if (data?.ok && !keepGoing) router.refresh();
     } catch {
       setMessage("Couldn't reach the server. Check your connection.");
     } finally {

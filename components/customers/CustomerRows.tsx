@@ -68,6 +68,7 @@ function Row({ customer: c, reps, sources, statuses, financing, dbReady, dbMessa
               )}
               {view.financing && <Chip tone={view.financing}>{view.financing === "needs_review" ? "Loan app: needs review" : `Financing ${financingLabel?.toLowerCase()}`}</Chip>}
               {view.returning && <Chip tone="returning">Returning</Chip>}
+              {view.followUpAt && <Chip tone="appointment">Follow up {view.followUpAt <= today ? "today" : view.followUpAt.slice(5).replace("-", "/")}</Chip>}
               {view.scope === "out" && <Chip tone="out">Out of state{view.stateCode ? ` · ${view.stateCode}` : ""}</Chip>}
             </div>
             <p className="mt-0.5 truncate text-sm text-muted">
@@ -124,6 +125,19 @@ function Row({ customer: c, reps, sources, statuses, financing, dbReady, dbMessa
                 </label>
               </div>
 
+              <div className="mt-4 flex flex-wrap items-end gap-3">
+                <label className="text-sm text-muted">Follow up on
+                  <input type="date" min={today} value={view.followUpAt ?? ""} disabled={saving}
+                    onChange={(e) => save("follow_up", e.target.value, { followUpAt: e.target.value || null })}
+                    className="mt-1 block h-10 rounded-md border border-line bg-white px-2.5 text-[15px] text-ink" />
+                </label>
+                {view.followUpAt && (
+                  <button type="button" disabled={saving} onClick={() => save("follow_up", "", { followUpAt: null })}
+                    className="h-10 text-sm font-semibold text-muted hover:text-ink">Clear reminder</button>
+                )}
+                <p className="pb-2 text-sm text-muted">Shows on the Dashboard on that day.</p>
+              </div>
+
               <label className="mt-4 block text-sm text-muted">Notes
                 <textarea defaultValue={view.notes} rows={2} placeholder="Called, wants to trade in a 2012 Accord"
                   onBlur={(e) => e.target.value !== view.notes && save("notes", e.target.value, { notes: e.target.value })}
@@ -161,14 +175,16 @@ function BookAppointment({ customer, reps, today }: { customer: CustomerView; re
   const [date, setDate] = useState("");
   const [time, setTime] = useState("11:00");
   const [repId, setRepId] = useState<string>(customer.repId ? String(customer.repId) : "");
+  const [phone, setPhone] = useState(customer.phone ?? "");
   const [result, setResult] = useState<{ ok: boolean; text: string; conflict?: string } | null>(null);
   const [pending, start] = useTransition();
 
   function book(force = false) {
     if (!date) return setResult({ ok: false, text: "Pick a day first." });
+    if (phone.replace(/\D/g, "").length < 10) return setResult({ ok: false, text: "Add the customer's 10-digit phone number to book." });
     start(async () => {
       const r = await createAppointmentAction({
-        customerKey: customer.key, customerName: displayName(customer.name), phone: customer.phone,
+        customerKey: customer.key, customerName: displayName(customer.name), phone, email: customer.email,
         vehicle: customer.vehicles[0] ?? null, repId: repId ? Number(repId) : null, date, time, force,
       });
       setResult(r.ok ? { ok: true, text: r.message ?? "Booked." } : { ok: false, text: r.error, conflict: r.conflict });
@@ -181,6 +197,12 @@ function BookAppointment({ customer, reps, today }: { customer: CustomerView; re
         {customer.nextAppointment ? `Next appointment: ${formatDateTime(customer.nextAppointment.at)}${customer.nextAppointment.repName ? ` with ${customer.nextAppointment.repName}` : ""}. Book another:` : "Book an appointment:"}
       </p>
       <div className="mt-1 flex flex-wrap items-end gap-2">
+        {!customer.phone && (
+          <label className="text-sm text-muted"><span className="sr-only">Phone (required)</span>
+            <input value={phone} onChange={(e) => { setPhone(e.target.value); setResult(null); }} inputMode="tel" placeholder="Phone (required)"
+              className="h-10 w-40 rounded-md border border-line bg-white px-2.5 text-[15px] text-ink" />
+          </label>
+        )}
         <label className="text-sm text-muted"><span className="sr-only">Day</span>
           <input type="date" min={today} value={date} onChange={(e) => { setDate(e.target.value); setResult(null); }} className="h-10 rounded-md border border-line bg-white px-2.5 text-[15px] text-ink" />
         </label>

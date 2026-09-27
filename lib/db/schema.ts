@@ -8,6 +8,14 @@ export const DEFAULT_SOURCES = [
 ];
 export const DEFAULT_REPS = ["Zach", "Steve", "Abdul"];
 
+/** Columns added after the first setup. Safe to run repeatedly; runs automatically when the site starts. */
+export const UPGRADE_SQL = `
+alter table appointments add column if not exists email text;
+alter table appointments add column if not exists followed_up boolean not null default false;
+alter table customers add column if not exists follow_up_at date;
+alter table customers add column if not exists contacted_at timestamptz;
+`;
+
 export async function setupDatabase(): Promise<void> {
   const sql = db();
   if (!sql) throw new Error("DATABASE_URL is not set");
@@ -66,6 +74,7 @@ export async function setupDatabase(): Promise<void> {
       )`;
 
     await tx.unsafe(LEADS_TABLE_SQL);
+    await tx.unsafe(UPGRADE_SQL);
 
     // Keep tables private: Supabase's public data API can't read them; AutoDash's own connection (the owner) still can.
     for (const table of ["reps", "sources", "customers", "appointments", "app_settings"]) {

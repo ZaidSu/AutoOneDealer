@@ -6,7 +6,7 @@ const input = "mt-1 h-10 w-full rounded-md border border-line bg-white px-2.5 te
 
 export default function NewAppointment({ reps, today }: { reps: { id: number; name: string }[]; today: string }) {
   const [open, setOpen] = useState(false);
-  const [form, setForm] = useState({ name: "", phone: "", vehicle: "", repId: "", date: today, time: "11:00", duration: "60", notes: "" });
+  const [form, setForm] = useState({ name: "", phone: "", email: "", vehicle: "", repId: "", date: today, time: "11:00", duration: "60", notes: "" });
   const [result, setResult] = useState<{ ok: boolean; text: string; conflict?: string } | null>(null);
   const [pending, start] = useTransition();
   const set = (k: keyof typeof form) => (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>) => {
@@ -16,15 +16,16 @@ export default function NewAppointment({ reps, today }: { reps: { id: number; na
 
   function submit(force = false) {
     if (!form.name.trim()) return setResult({ ok: false, text: "Enter the customer's name." });
+    if (form.phone.replace(/\D/g, "").length < 10) return setResult({ ok: false, text: "Enter the customer's 10-digit phone number. It's required to book." });
     if (!form.date || !form.time) return setResult({ ok: false, text: "Pick a day and time." });
     start(async () => {
       const r = await createAppointmentAction({
-        customerName: form.name, phone: form.phone, vehicle: form.vehicle, repId: form.repId ? Number(form.repId) : null,
+        customerName: form.name, phone: form.phone, email: form.email, vehicle: form.vehicle, repId: form.repId ? Number(form.repId) : null,
         date: form.date, time: form.time, durationMin: Number(form.duration), notes: form.notes, force,
       });
       if (r.ok) {
         setResult({ ok: true, text: r.message ?? "Booked." });
-        setForm({ ...form, name: "", phone: "", vehicle: "", notes: "" });
+        setForm({ ...form, name: "", phone: "", email: "", vehicle: "", notes: "" });
       } else setResult({ ok: false, text: r.error, conflict: r.conflict });
     });
   }
@@ -45,7 +46,8 @@ export default function NewAppointment({ reps, today }: { reps: { id: number; na
       </div>
       <div className="mt-3 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
         <label className="text-sm text-muted">Customer name<input className={input} value={form.name} onChange={set("name")} placeholder="Marcus Hill" /></label>
-        <label className="text-sm text-muted">Phone<input className={input} value={form.phone} onChange={set("phone")} inputMode="tel" placeholder="(214) 555-0123" /></label>
+        <label className="text-sm text-muted">Phone <span className="text-signal">(required)</span><input className={input} value={form.phone} onChange={set("phone")} inputMode="tel" autoComplete="off" required aria-required="true" placeholder="(214) 555-0123" /></label>
+        <label className="text-sm text-muted">Email<input type="email" className={input} value={form.email} onChange={set("email")} autoComplete="off" placeholder="name@example.com" /></label>
         <label className="text-sm text-muted">Car<input className={input} value={form.vehicle} onChange={set("vehicle")} placeholder="2014 Cadillac CTS" /></label>
         <label className="text-sm text-muted">Salesperson
           <select className={input} value={form.repId} onChange={set("repId")}>

@@ -11,7 +11,7 @@
     "build": "next build",
     "start": "next start",
     "test": "node --test --experimental-strip-types tests/unit/*.test.ts",
-    "test:db": "node --import tsx --test tests/integration/*.test.ts"
+    "test:db": "node --import tsx --test --test-concurrency=1 tests/integration/*.test.ts"
   },
   "dependencies": {
     "next": "^16.3.6",

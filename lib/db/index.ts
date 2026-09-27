@@ -49,6 +49,7 @@ export async function dbState(): Promise<DbState> {
     const [row] = await withTimeout(sql`select (to_regclass('public.appointments') is not null and to_regclass('public.leads') is not null) as ready`, 9000);
     readyCache = { value: Boolean(row.ready), at: Date.now() };
     lastError = null;
+    if (row.ready) await upgradeOnce(sql);
     return row.ready ? "ready" : "not_set_up";
   } catch (error) {
     lastError = describe(error);
@@ -74,4 +75,17 @@ export function withTimeout<T>(work: PromiseLike<T>, ms: number): Promise<T> {
       (error) => { clearTimeout(timer); reject(error); },
     );
   });
+}
+
+// Adds newer columns to databases set up before they existed. Runs once per server instance.
+let upgraded: Promise<void> | null = null;
+function upgradeOnce(sql: Sql): Promise<void> {
+  upgraded ??= import("./schema")
+    .then(({ UPGRADE_SQL }) => sql.unsafe(UPGRADE_SQL))
+    .then(() => undefined)
+    .catch((error) => {
+      upgraded = null;
+      console.error("Database upgrade failed:", error instanceof Error ? error.message : error);
+    });
+  return upgraded;
 }

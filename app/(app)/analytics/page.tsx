@@ -1,5 +1,4 @@
 import type { Metadata } from "next";
-import Link from "next/link";
 import { BarList, Columns, Panel, Stat } from "@/components/analytics/Charts";
 import GmailState from "@/components/gmail/GmailState";
 import DbNotice from "@/components/ui/DbNotice";
@@ -46,9 +45,10 @@ export default async function AnalyticsPage({ searchParams }: { searchParams: Pr
     <>
       <PageHeader title="Analytics" description="Where customers come from and what happens next. Every number comes from real lead emails and what your team has recorded." />
       <nav aria-label="Date range" className="mb-6 flex w-fit flex-wrap rounded-md bg-white p-1 ring-1 ring-line">
+        {/* Plain links: a full page change can't be undone by a background refresh. */}
         {(Object.keys(RANGES) as Range[]).map((r) => (
-          <Link key={r} href={{ pathname: "/analytics", query: { range: r } }} aria-current={range === r ? "page" : undefined}
-            className={`rounded px-3 py-1.5 text-sm font-medium ${range === r ? "bg-graphite text-white" : "text-muted hover:text-ink"}`}>{RANGES[r]}</Link>
+          <a key={r} href={`/analytics?range=${r}`} aria-current={range === r ? "page" : undefined}
+            className={`rounded px-3 py-1.5 text-sm font-medium ${range === r ? "bg-graphite text-white" : "text-muted hover:text-ink"}`}>{RANGES[r]}</a>
         ))}
       </nav>
     </>

@@ -97,6 +97,9 @@ export async function updateCustomerAction(
     case "notes":
       clean = String(value ?? "").slice(0, 4000);
       break;
+    case "follow_up":
+      if (clean !== null && !/^\d{4}-\d{2}-\d{2}$/.test(String(clean))) return fail("Pick a follow-up date.");
+      break;
     default:
       return fail("Unknown field.");
   }
@@ -116,6 +119,7 @@ export type AppointmentInput = {
   customerKey?: string | null;
   customerName: string;
   phone?: string | null;
+  email?: string | null;
   vehicle?: string | null;
   repId?: number | null;
   date: string;
@@ -135,7 +139,11 @@ export async function createAppointmentAction(input: AppointmentInput): Promise<
   if (!startsAt) return fail("Pick a date and time.");
   const durationMin = [30, 45, 60, 90, 120].includes(Number(input.durationMin)) ? Number(input.durationMin) : 60;
   const repId = input.repId ? Number(input.repId) : null;
-  const phone = String(input.phone ?? "").replace(/\D/g, "").slice(-10) || null;
+  const digits = String(input.phone ?? "").replace(/\D/g, "");
+  const phone = digits.length === 11 && digits.startsWith("1") ? digits.slice(1) : digits;
+  if (phone.length !== 10) return fail("Enter the customer's 10-digit phone number. It's required to book.");
+  const email = String(input.email ?? "").trim().toLowerCase();
+  if (email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) return fail("That email address doesn't look right.");
 
   try {
     if (!input.force) {
@@ -150,9 +158,10 @@ export async function createAppointmentAction(input: AppointmentInput): Promise<
     }
     await data.createAppointment({
       // Walk-ins typed in by phone link up with that customer automatically.
-      customerKey: input.customerKey ?? (phone && phone.length === 10 ? `p-${phone}` : null),
+      customerKey: input.customerKey ?? `p-${phone}`,
       customerName: name,
       phone,
+      email: email || null,
       vehicle: cleanName(input.vehicle, 80) || null,
       repId,
       startsAt,
@@ -172,5 +181,35 @@ export async function setAppointmentStatusAction(id: number, status: data.Appoin
   if (!Number.isInteger(id) || !data.APPOINTMENT_STATUSES.some((s) => s.value === status)) return fail("Unknown appointment.");
   try { await data.setAppointmentStatus(id, status); } catch { return NO_DB; }
   revalidatePath("/appointments");
+  return { ok: true };
+}
+
+// ---- Follow-ups (Dashboard) ----
+
+export async function followUpAction(
+  kind: "contacted" | "tomorrow" | "no_show_done",
+  target: { key?: string | null; name?: string | null; appointmentId?: number | null },
+): Promise<ActionResult> {
+  const staff = await requireStaff();
+  if (!staff) return fail("Your session ended. Sign in again.");
+  const key = target.key && KEY_PATTERN.test(target.key) ? target.key : null;
+  const name = target.name ? cleanName(target.name, 80) : null;
+  try {
+    if (kind === "no_show_done") {
+      if (!Number.isInteger(target.appointmentId)) return fail("Unknown appointment.");
+      await data.markNoShowHandled(target.appointmentId!);
+      if (key) await data.markContacted(key, name);
+    } else if (!key) {
+      return fail("Unknown customer.");
+    } else if (kind === "contacted") {
+      await data.markContacted(key, name);
+    } else {
+      const { addDays, dayKey } = await import("@/lib/time");
+      await data.snoozeFollowUp(key, name, addDays(dayKey(Date.now(), dealership.timeZone), 1));
+    }
+  } catch {
+    return NO_DB;
+  }
+  revalidatePath("/dashboard");
   return { ok: true };
 }
