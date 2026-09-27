@@ -7,6 +7,8 @@ import { getStaffSession } from "@/lib/auth/session";
 import { dealership, greeting } from "@/lib/dealership";
 import { fetchLeads, LEAD_QUERIES, startOfDealershipDay, withGmail } from "@/lib/gmail";
 import { dbState } from "@/lib/db";
+import { syncInBackground } from "@/lib/leads/background";
+import { queryLeads } from "@/lib/leads/store";
 import { appointmentsBetween, type Appointment } from "@/lib/db/data";
 import { formatPhone } from "@/lib/format";
 import { addDays, dayKey, zonedToUtc } from "@/lib/time";
@@ -20,8 +22,10 @@ export default async function DashboardPage() {
   const firstName = staff.name.split(" ")[0];
 
   const today = dayKey(Date.now(), dealership.timeZone);
+  const dbReady = (await dbState()) === "ready";
+  if (dbReady) await syncInBackground();
   const appointmentsToday: Appointment[] | null =
-    (await dbState()) === "ready"
+    dbReady
       ? await appointmentsBetween(zonedToUtc(today, "00:00", dealership.timeZone)!, zonedToUtc(addDays(today, 1), "00:00", dealership.timeZone)!)
       : null;
   const timeFmt = new Intl.DateTimeFormat("en-US", { hour: "numeric", minute: "2-digit", timeZone: dealership.timeZone });
@@ -34,7 +38,7 @@ export default async function DashboardPage() {
       gmail.count(`${LEAD_QUERIES.application} ${today}`),
       gmail.count(`${LEAD_QUERIES.all} newer_than:7d`),
       gmail.inboxUnread(),
-      fetchLeads(gmail, { max: 6 }),
+      dbReady ? queryLeads({ limit: 6 }) : fetchLeads(gmail, { max: 6 }),
     ]);
     return { leadsToday, appsToday, leadsWeek, unread, latest: latest.leads };
   });

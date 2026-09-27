@@ -1,5 +1,6 @@
 // Creates the tables. Safe to run more than once (Developer page → Set up database).
 import { db, markReady, withTimeout } from "./index";
+import { LEADS_TABLE_SQL } from "./leads-sql";
 
 export const DEFAULT_SOURCES = [
   "Cars.com", "CarsForSale", "CarGurus", "CarZing", "Edmunds", "Autotrader", "Facebook", "OfferUp", "Hammer",
@@ -63,6 +64,8 @@ export async function setupDatabase(): Promise<void> {
         value text not null,
         updated_at timestamptz not null default now()
       )`;
+
+    await tx.unsafe(LEADS_TABLE_SQL);
 
     // Keep tables private: Supabase's public data API can't read them; AutoDash's own connection (the owner) still can.
     for (const table of ["reps", "sources", "customers", "appointments", "app_settings"]) {

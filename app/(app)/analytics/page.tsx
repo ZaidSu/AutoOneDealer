@@ -10,7 +10,8 @@ import { dbState } from "@/lib/db";
 import { appointmentsBetween, customerRecords, listReps } from "@/lib/db/data";
 import { dealership } from "@/lib/dealership";
 import { stateName } from "@/lib/geo";
-import { fetchManyLeads, withGmail } from "@/lib/gmail";
+import SyncBar from "@/components/leads/SyncBar";
+import { loadAllLeads } from "@/lib/leads/source";
 import { addDays, dayKey } from "@/lib/time";
 
 export const metadata: Metadata = { title: "Analytics" };
@@ -38,7 +39,8 @@ export default async function AnalyticsPage({ searchParams }: { searchParams: Pr
   const state = await dbState();
   const dbReady = state === "ready";
 
-  const result = await withGmail((gmail) => fetchManyLeads(gmail, { extra: `newer_than:${days}d`, limit: LIMIT }));
+  const since = new Date(Date.now() - days * 86400000);
+  const result = await loadAllLeads({ since, gmailLimit: LIMIT, gmailExtra: `newer_than:${days}d` });
 
   const header = (
     <>
@@ -57,7 +59,6 @@ export default async function AnalyticsPage({ searchParams }: { searchParams: Pr
   const grouped = groupCustomers(leads);
   const [reps, records] = dbReady ? await Promise.all([listReps(true), customerRecords(grouped.map((c) => c.key))]) : [[], new Map()];
   const views = buildCustomerViews(grouped, records, reps, new Map());
-  const since = new Date(Date.now() - days * 86400000);
   const appointments = dbReady ? await appointmentsBetween(since, new Date(Date.now() + 1)) : [];
 
   // Where people came from (people, not emails), with how many lead emails each source sent.
@@ -99,7 +100,7 @@ export default async function AnalyticsPage({ searchParams }: { searchParams: Pr
   const denied = applications.filter((v) => v.financing === "denied").length;
   const purchased = views.filter((v) => v.status === "purchased");
   const purchasesBySource = countBy(purchased, (v) => v.heardFrom ?? "Not known");
-  const capped = result.data.more;
+  const capped = result.mode === "gmail" && result.data.more;
 
   const repRows = reps.filter((r) => r.active || views.some((v) => v.repId === r.id)).map((r) => {
     const mine = views.filter((v) => v.repId === r.id);
@@ -117,6 +118,7 @@ export default async function AnalyticsPage({ searchParams }: { searchParams: Pr
   return (
     <>
       {header}
+      {result.sync && <SyncBar {...result.sync} />}
       {capped && (
         <p className="mb-4 max-w-3xl rounded-md border border-line bg-white px-4 py-3 text-sm text-muted">
           This range has more than {LIMIT} lead emails, so these charts use the newest {LIMIT}. Pick a shorter range for exact numbers.

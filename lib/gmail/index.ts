@@ -180,8 +180,12 @@ export function readableBody(message: FullMessage): string {
 export type GmailResult<T> = { status: "not_connected" } | { status: "error"; message: string; code: string } | { status: "ok"; data: T; gmail: GmailClient };
 
 /** Runs `work` with the connected inbox, turning connection problems into states the page can explain. */
-export async function withGmail<T>(work: (gmail: GmailClient) => Promise<T>): Promise<GmailResult<T>> {
-  const connection = await getGmailConnection();
+export async function withGmail<T>(
+  work: (gmail: GmailClient) => Promise<T>,
+  // Pass a connection loaded earlier when running outside the request (e.g. background sync).
+  preloaded?: Awaited<ReturnType<typeof getGmailConnection>>,
+): Promise<GmailResult<T>> {
+  const connection = preloaded === undefined ? await getGmailConnection() : preloaded;
   if (!connection) return { status: "not_connected" };
   try {
     const gmail = new GmailClient(await accessToken(connection.refreshToken), connection.mailbox);
@@ -243,7 +247,7 @@ export async function fetchLeads(
 const leadCache = new Map<string, Lead | null>();
 const LEAD_CACHE_LIMIT = 3000;
 
-async function readLead(gmail: GmailClient, id: string): Promise<Lead | null> {
+export async function readLead(gmail: GmailClient, id: string): Promise<Lead | null> {
   const cacheKey = `${gmail.mailbox}:${id}`;
   if (leadCache.has(cacheKey)) return leadCache.get(cacheKey)!;
   const m = await gmail.full(id);

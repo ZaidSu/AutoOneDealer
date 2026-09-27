@@ -27,6 +27,15 @@ Parsers live in `lib/parsers/carsforsale.ts` and are tested against fixtures mat
 - **Analytics** from lead emails: where customers came from, in state vs out of state, top out-of-state
   states, leads over time, credit applications. With the database: purchases by source and salesperson results.
 
+### Saved leads (fast pages)
+
+With the database ready, every lead email is read from Gmail **once**, parsed and saved in the `leads`
+table (`lib/leads/`). Leads, Credit Applications, Customers, Analytics and customer profiles read from
+that table and load in well under a second. New emails are picked up in the background after page
+views (at most every 2 minutes) and by the **Update now** button; the first run imports the last 12
+months in batches. Emails that match the search but aren't leads (e.g. "Re:" replies) are remembered
+so they're never re-read.
+
 ### Needs the database (Supabase)
 
 Built and tested, switched on by adding `DATABASE_URL` (Supabase **Transaction pooler** address, port 6543)

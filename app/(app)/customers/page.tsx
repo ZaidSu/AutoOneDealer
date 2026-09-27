@@ -8,7 +8,8 @@ import { groupCustomers } from "@/lib/customers";
 import { dbState } from "@/lib/db";
 import { appointmentsForCustomers, customerRecords, FINANCING, listReps, listSources, STATUSES } from "@/lib/db/data";
 import { dealership } from "@/lib/dealership";
-import { fetchManyLeads, withGmail } from "@/lib/gmail";
+import SyncBar from "@/components/leads/SyncBar";
+import { loadAllLeads } from "@/lib/leads/source";
 import { dayKey } from "@/lib/time";
 
 export const metadata: Metadata = { title: "Customers" };
@@ -26,7 +27,7 @@ export default async function CustomersPage({ searchParams }: { searchParams: Pr
   const dbReady = state === "ready";
 
   const [result, reps, sources] = await Promise.all([
-    withGmail((gmail) => fetchManyLeads(gmail, { limit: RANGES[range].limit })),
+    loadAllLeads({ gmailLimit: RANGES[range].limit }),
     dbReady ? listReps() : Promise.resolve([]),
     dbReady ? listSources() : Promise.resolve([]),
   ]);
@@ -90,11 +91,12 @@ export default async function CustomersPage({ searchParams }: { searchParams: Pr
         {(filtered || search) && <Link href={{ pathname: "/customers", query: { range } }} className="h-10 px-2 text-sm leading-10 font-semibold text-muted hover:text-ink">Clear</Link>}
       </form>
 
+      {result.status === "ok" && result.sync && <SyncBar {...result.sync} />}
       {result.status === "ok" && (
         <p className="mb-3 text-sm text-muted">
-          {customers.length} customer{customers.length === 1 ? "" : "s"} from the {RANGES[range].label}.{" "}
+          {customers.length} customer{customers.length === 1 ? "" : "s"}{result.mode === "db" ? "" : ` from the ${RANGES[range].label}`}.{" "}
           {result.data.skipped > 0 && <span>{result.data.skipped} email{result.data.skipped === 1 ? "" : "s"} couldn't be read this time and will be retried. </span>}
-          {range === "recent" && result.data.more && (
+          {result.mode === "gmail" && range === "recent" && result.data.more && (
             <Link href={{ pathname: "/customers", query: keep({ range: "more" }) }} className="font-semibold text-signal hover:underline">Look further back</Link>
           )}
         </p>

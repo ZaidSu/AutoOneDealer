@@ -2,9 +2,10 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import GmailState from "@/components/gmail/GmailState";
 import LeadList from "@/components/leads/LeadList";
-import LoadMore from "@/components/leads/LoadMore";
 import PageHeader from "@/components/ui/PageHeader";
-import { fetchLeads, withGmail, type LeadFilter } from "@/lib/gmail";
+import type { LeadFilter } from "@/lib/gmail";
+import SyncBar from "@/components/leads/SyncBar";
+import { loadLeadPage } from "@/lib/leads/source";
 
 export const metadata: Metadata = { title: "Leads" };
 export const dynamic = "force-dynamic";
@@ -21,8 +22,12 @@ export default async function LeadsPage({ searchParams }: { searchParams: Promis
   const filter = (FILTERS.find((f) => f.key === params.show)?.key ?? "all") as LeadFilter;
   const search = (params.q ?? "").slice(0, 80).trim();
   const page = params.page && /^[\w-]{1,200}$/.test(params.page) ? params.page : undefined;
+  const pageNumber = Math.max(0, Number(params.p ?? 0) || 0);
 
-  const result = await withGmail((gmail) => fetchLeads(gmail, { filter, extra: search, pageToken: page }));
+  const result = await loadLeadPage({ filter, search, page: pageNumber, gmailToken: page });
+  const nextLink = result.status !== "ok" ? null
+    : result.mode === "db" ? (result.data.more ? { p: String(pageNumber + 1) } : null)
+    : ("next" in result.data && result.data.next ? { page: result.data.next } : null);
   const keep: Record<string, string> = { show: filter, ...(search ? { q: search } : {}) };
 
   return (
@@ -53,6 +58,7 @@ export default async function LeadsPage({ searchParams }: { searchParams: Promis
         </form>
       </div>
 
+      {result.status === "ok" && result.sync && <SyncBar {...result.sync} />}
       {result.status !== "ok" ? (
         <GmailState {...result} />
       ) : result.data.leads.length === 0 ? (
@@ -61,14 +67,18 @@ export default async function LeadsPage({ searchParams }: { searchParams: Promis
         </p>
       ) : (
         <>
-          {page && (
+          {(page || pageNumber > 0) && (
             <Link href={{ pathname: "/leads", query: keep }} className="mb-3 inline-block text-sm font-semibold text-signal hover:underline">
               Back to newest
             </Link>
           )}
           <LeadList leads={result.data.leads} />
-          <LoadMore basePath="/leads" params={keep} next={result.data.next} />
-          <p className="mt-4 text-sm text-muted">Statuses, notes and assigning a salesperson arrive with the shared customer database.</p>
+          {nextLink && (
+            <Link href={{ pathname: "/leads", query: { ...keep, ...nextLink } }} className="mt-4 inline-flex h-10 items-center rounded-md px-4 font-semibold ring-1 ring-line hover:bg-white">
+              Show older
+            </Link>
+          )}
+          <p className="mt-4 text-sm text-muted">Salesperson, status and notes are set on the Customers page.</p>
         </>
       )}
     </>

@@ -6,6 +6,8 @@ import Badge from "@/components/leads/Badge";
 import { groupCustomers, parseCustomerKey } from "@/lib/customers";
 import { displayName, formatDateTime, formatMoney, formatPhone } from "@/lib/format";
 import { fetchManyLeads, mapLimit, withGmail } from "@/lib/gmail";
+import { dbState } from "@/lib/db";
+import { leadsFor } from "@/lib/leads/store";
 
 export const metadata: Metadata = { title: "Customer" };
 export const dynamic = "force-dynamic";
@@ -25,22 +27,28 @@ export default async function CustomerPage({ params }: { params: Promise<{ key: 
         })()
       : `"${identity.email}"`;
 
-  const result = await withGmail(async (gmail) => {
-    const { leads } = await fetchManyLeads(gmail, { extra: search, limit: 100 });
-    const customer =
-      groupCustomers(leads).find((c) =>
-        "phone" in identity ? c.phones.includes(identity.phone) : c.emails.includes(identity.email),
-      ) ?? null;
-    // Direct emails with the customer (replies, questions), when we know their address.
-    const emails = customer?.emails ?? ("email" in identity ? [identity.email] : []);
-    const conversation = emails.length
-      ? await mapLimit(await gmail.listIds(emails.map((e) => `from:${e} OR to:${e}`).join(" OR "), 20), 5, (id) => gmail.summary(id))
+  const fromDb = (await dbState()) === "ready";
+  const pick = (leads: Awaited<ReturnType<typeof leadsFor>>) =>
+    groupCustomers(leads).find((c) => ("phone" in identity ? c.phones.includes(identity.phone) : c.emails.includes(identity.email))) ?? null;
+  const conversationFor = async (gmail: Parameters<Parameters<typeof withGmail>[0]>[0], emails: string[]) =>
+    emails.length
+      ? mapLimit(await gmail.listIds(emails.map((e) => `from:${e} OR to:${e}`).join(" OR "), 20), 5, (id) => gmail.summary(id))
       : [];
-    return { customer, conversation };
-  });
 
-  if (result.status !== "ok") return <GmailState {...result} />;
-  const { customer, conversation } = result.data;
+  // Saved leads when the database is ready (instant); otherwise search Gmail for this person.
+  const saved = fromDb ? pick(await leadsFor(identity)) : null;
+  const result = await withGmail(async (gmail) => {
+    const customer = saved ?? pick((await fetchManyLeads(gmail, { extra: search, limit: 100 })).leads);
+    const emails = customer?.emails ?? ("email" in identity ? [identity.email] : []);
+    return { customer, conversation: await conversationFor(gmail, emails).catch(() => []) };
+  });
+  const loaded =
+    result.status === "ok" ? result
+    : saved ? { status: "ok" as const, data: { customer: saved, conversation: [] as Awaited<ReturnType<typeof conversationFor>> } }
+    : result;
+
+  if (loaded.status !== "ok") return <GmailState {...loaded} />;
+  const { customer, conversation } = loaded.data;
   if (!customer) notFound();
 
   return (

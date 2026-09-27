@@ -46,7 +46,7 @@ export async function dbState(): Promise<DbState> {
   if (!sql) return "not_configured";
   if (readyCache?.value && Date.now() - readyCache.at < 60_000) return "ready";
   try {
-    const [row] = await withTimeout(sql`select to_regclass('public.appointments') is not null as ready`, 9000);
+    const [row] = await withTimeout(sql`select (to_regclass('public.appointments') is not null and to_regclass('public.leads') is not null) as ready`, 9000);
     readyCache = { value: Boolean(row.ready), at: Date.now() };
     lastError = null;
     return row.ready ? "ready" : "not_set_up";
