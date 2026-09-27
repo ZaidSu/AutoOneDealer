@@ -64,6 +64,11 @@ export async function setupDatabase(): Promise<void> {
         updated_at timestamptz not null default now()
       )`;
 
+    // Keep tables private: Supabase's public data API can't read them; AutoDash's own connection (the owner) still can.
+    for (const table of ["reps", "sources", "customers", "appointments", "app_settings"]) {
+      await tx.unsafe(`alter table ${table} enable row level security`);
+    }
+
     for (const name of DEFAULT_SOURCES) await tx`insert into sources (name) values (${name}) on conflict (name) do nothing`;
     const [{ count }] = await tx`select count(*)::int as count from reps`;
     if (count === 0) for (const name of DEFAULT_REPS) await tx`insert into reps (name) values (${name})`;
