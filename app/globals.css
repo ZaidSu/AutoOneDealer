@@ -25,3 +25,14 @@ body { background: var(--color-paper); color: var(--color-ink); -webkit-font-smo
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { transition: none !important; animation: none !important; }
 }
+
+/* Loading screens: the login page's lane marking, driving forward. */
+@keyframes lane-drive { from { background-position: 0 0; } to { background-position: 76px 0; } }
+.lane-loader {
+  background-image: repeating-linear-gradient(90deg, var(--color-signal) 0 44px, transparent 44px 76px);
+  animation: lane-drive 0.9s linear infinite;
+}
+@keyframes loading-fade { from { opacity: 0; transform: translateY(3px); } to { opacity: 1; transform: none; } }
+.loading-message { animation: loading-fade 0.35s ease-out; }
+@keyframes skeleton-pulse { 50% { opacity: 0.55; } }
+.skeleton { animation: skeleton-pulse 1.6s ease-in-out infinite; }
