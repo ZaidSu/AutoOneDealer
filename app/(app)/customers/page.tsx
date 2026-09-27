@@ -49,6 +49,7 @@ export default async function CustomersPage({ searchParams }: { searchParams: Pr
         {result.status === "ok" && (
           <p className="text-sm text-muted">
             {customers.length} customer{customers.length === 1 ? "" : "s"} from the {RANGES[range].label.toLowerCase()}.{" "}
+            {result.data.skipped > 0 && <span>{result.data.skipped} email{result.data.skipped === 1 ? "" : "s"} couldn't be read this time and will be retried. </span>}
             {range === "recent" && result.data.more && (
               <Link href={{ pathname: "/customers", query: { range: "more", ...(search ? { q: search } : {}) } }} className="font-semibold text-signal hover:underline">
                 Look further back

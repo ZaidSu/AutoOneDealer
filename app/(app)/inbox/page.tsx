@@ -25,7 +25,7 @@ export default async function InboxPage({ searchParams }: { searchParams: Promis
 
   const result = await withGmail(async (gmail) => {
     const ids = await gmail.listIds(query, 30);
-    return mapLimit(ids, 10, (id) => gmail.summary(id));
+    return mapLimit(ids, 5, (id) => gmail.summary(id));
   });
 
   return (

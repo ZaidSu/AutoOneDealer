@@ -1,6 +1,6 @@
 // Read-only Gmail access for the connected dealership inbox. Server-only.
 import { createHash } from "node:crypto";
-import { explainGoogleError, refreshAccessToken } from "@/lib/auth/google";
+import { explainGoogleError, GoogleError, refreshAccessToken } from "@/lib/auth/google";
 import { getGmailConnection } from "@/lib/auth/session";
 import { parseLead, type ParsedLead } from "@/lib/parsers/leads";
 import { htmlToText } from "@/lib/parsers/html";
@@ -26,9 +26,19 @@ export class GmailClient {
       if (value === undefined) continue;
       for (const v of Array.isArray(value) ? value : [value]) url.searchParams.append(key, String(v));
     }
-    const response = await fetch(url, { headers: { Authorization: `Bearer ${this.token}` }, cache: "no-store" });
-    if (!response.ok) throw new Error(response.status === 401 || response.status === 403 ? "gmail_denied" : `gmail_${response.status}`);
-    return response.json() as Promise<T>;
+    // Gmail limits how many requests one mailbox can make at once. Back off and retry on rate limits and hiccups.
+    for (let attempt = 0; ; attempt++) {
+      const response = await fetch(url, { headers: { Authorization: `Bearer ${this.token}` }, cache: "no-store" });
+      if (response.ok) return response.json() as Promise<T>;
+      const body = await response.json().catch(() => ({}));
+      const reason: string = body?.error?.errors?.[0]?.reason ?? body?.error?.status ?? "";
+      const retryable = response.status === 429 || response.status >= 500 || /rateLimitExceeded|userRateLimitExceeded|backendError/i.test(reason);
+      if (retryable && attempt < 4) {
+        await new Promise((resolve) => setTimeout(resolve, 400 * 2 ** attempt + Math.random() * 300));
+        continue;
+      }
+      throw new GoogleError("gmail", `${response.status}${reason ? `:${reason}` : ""}`);
+    }
   }
 
   async listIds(q: string, max = 25): Promise<string[]> {
@@ -177,10 +187,18 @@ export type Lead = ParsedLead & { messageId: string; receivedAt: number; subject
 export async function fetchLeads(
   gmail: GmailClient,
   { filter = "all", extra = "", max = 40, pageToken }: { filter?: LeadFilter; extra?: string; max?: number; pageToken?: string } = {},
-): Promise<{ leads: Lead[]; next: string | null }> {
+): Promise<{ leads: Lead[]; next: string | null; skipped: number }> {
+  let skipped = 0;
   const page = await gmail.listPage(`${LEAD_QUERIES[filter]} ${extra}`.trim(), max, pageToken);
-  const results = await mapLimit(page.ids, 12, (id) => readLead(gmail, id));
-  return { leads: results.filter((l): l is Lead => l !== null), next: page.next };
+  const results = await mapLimit(page.ids, 5, (id) =>
+    readLead(gmail, id).catch((error) => {
+      // One unreadable email shouldn't break the page; it isn't cached, so it's retried next time.
+      console.error("Skipped a lead email:", error instanceof Error ? error.message : "unknown");
+      skipped++;
+      return null;
+    }),
+  );
+  return { leads: results.filter((l): l is Lead => l !== null), next: page.next, skipped };
 }
 
 // Emails never change, so parsed leads are remembered per message on a warm server instance.
@@ -204,13 +222,15 @@ export async function fetchManyLeads(gmail: GmailClient, { extra = "", limit = 1
   const leads: Lead[] = [];
   let token: string | undefined;
   let scanned = 0;
+  let skipped = 0;
   do {
     const page = await fetchLeads(gmail, { extra, max: Math.min(100, limit - scanned), pageToken: token });
     leads.push(...page.leads);
+    skipped += page.skipped;
     scanned += Math.min(100, limit - scanned);
     token = page.next ?? undefined;
   } while (token && scanned < limit);
-  return { leads, more: Boolean(token) };
+  return { leads, more: Boolean(token), skipped };
 }
 
 /** Gmail search accepts Unix seconds in after:, which lets "today" follow the dealership's time zone. */

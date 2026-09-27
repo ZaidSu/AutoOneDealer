@@ -34,7 +34,7 @@ export default async function CustomerPage({ params }: { params: Promise<{ key: 
     // Direct emails with the customer (replies, questions), when we know their address.
     const emails = customer?.emails ?? ("email" in identity ? [identity.email] : []);
     const conversation = emails.length
-      ? await mapLimit(await gmail.listIds(emails.map((e) => `from:${e} OR to:${e}`).join(" OR "), 20), 10, (id) => gmail.summary(id))
+      ? await mapLimit(await gmail.listIds(emails.map((e) => `from:${e} OR to:${e}`).join(" OR "), 20), 5, (id) => gmail.summary(id))
       : [];
     return { customer, conversation };
   });

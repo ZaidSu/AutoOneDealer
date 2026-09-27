@@ -92,7 +92,10 @@ export class GoogleError extends Error {
 
 /** Plain-English explanation for a failed Gmail check, plus a short code for troubleshooting. */
 export function explainGoogleError(error: unknown): { message: string; code: string } {
-  if (!(error instanceof GoogleError)) return { message: "Couldn't reach Google. Try again in a minute.", code: "network" };
+  if (!(error instanceof GoogleError)) {
+    const detail = error instanceof Error ? error.message.replace(/[^\w:.-]/g, "_").slice(0, 60) : "unknown";
+    return { message: "Something went wrong talking to Google. Try again in a minute.", code: `unexpected:${detail}` };
+  }
   const code = `${error.stage}:${error.code}`;
   if (error.stage === "token") {
     if (error.code === "invalid_grant")
@@ -101,6 +104,8 @@ export function explainGoogleError(error: unknown): { message: string; code: str
       return { code, message: "This site's Google client ID or secret doesn't match Google Cloud. Check GOOGLE_CLIENT_ID and GOOGLE_CLIENT_SECRET in Vercel." };
     return { code, message: "Google refused to refresh the connection. Click Reconnect Gmail." };
   }
+  if (/^429|rateLimitExceeded|userRateLimitExceeded/i.test(error.code))
+    return { code, message: "Gmail is asking AutoDash to slow down. Wait a minute and refresh." };
   if (/accessNotConfigured|SERVICE_DISABLED/i.test(error.code))
     return { code, message: "The Gmail API is turned off in Google Cloud. Turn on \"Gmail API\" for this project, then test again." };
   if (/^(401|403)/.test(error.code))
