@@ -10,6 +10,7 @@ import { getStaffSession } from "@/lib/auth/session";
 
 export const metadata: Metadata = { title: "Developer" };
 export const dynamic = "force-dynamic";
+export const maxDuration = 60;
 
 export default async function DeveloperPage() {
   const staff = (await getStaffSession())!;

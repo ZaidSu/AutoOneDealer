@@ -19,7 +19,7 @@ export function db(): Sql | null {
       prepare: false, // required by Supabase's transaction pooler
       max: 3,
       idle_timeout: 20,
-      connect_timeout: 10,
+      connect_timeout: 8,
       ssl: local ? false : "require",
     });
   }
@@ -34,7 +34,7 @@ export async function dbState(): Promise<DbState> {
   if (!sql) return "not_configured";
   if (readyCache?.value && Date.now() - readyCache.at < 60_000) return "ready";
   try {
-    const [row] = await sql`select to_regclass('public.appointments') is not null as ready`;
+    const [row] = await withTimeout(sql`select to_regclass('public.appointments') is not null as ready`, 9000);
     readyCache = { value: Boolean(row.ready), at: Date.now() };
     return row.ready ? "ready" : "not_set_up";
   } catch (error) {
@@ -49,4 +49,15 @@ export async function readyDb(): Promise<Sql | null> {
 
 export function markReady() {
   readyCache = { value: true, at: Date.now() };
+}
+
+/** Rejects if `work` hasn't finished in time, so a stuck connection can't freeze a page. */
+export function withTimeout<T>(work: PromiseLike<T>, ms: number): Promise<T> {
+  return new Promise<T>((resolve, reject) => {
+    const timer = setTimeout(() => reject(new Error(`timed out after ${ms}ms`)), ms);
+    Promise.resolve(work).then(
+      (value) => { clearTimeout(timer); resolve(value); },
+      (error) => { clearTimeout(timer); reject(error); },
+    );
+  });
 }

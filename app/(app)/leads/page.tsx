@@ -8,6 +8,7 @@ import { fetchLeads, withGmail, type LeadFilter } from "@/lib/gmail";
 
 export const metadata: Metadata = { title: "Leads" };
 export const dynamic = "force-dynamic";
+export const maxDuration = 60;
 
 const FILTERS: { key: LeadFilter; label: string }[] = [
   { key: "all", label: "Everything" },

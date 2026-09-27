@@ -8,6 +8,7 @@ import { fetchLeads, withGmail } from "@/lib/gmail";
 
 export const metadata: Metadata = { title: "Credit Applications" };
 export const dynamic = "force-dynamic";
+export const maxDuration = 60;
 
 export default async function CreditApplicationsPage({ searchParams }: { searchParams: Promise<Record<string, string | undefined>> }) {
   const params = await searchParams;

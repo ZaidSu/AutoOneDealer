@@ -9,6 +9,7 @@ import { leadKind, providerFor } from "@/lib/parsers/leads";
 
 export const metadata: Metadata = { title: "Inbox" };
 export const dynamic = "force-dynamic";
+export const maxDuration = 60;
 
 const VIEWS = {
   all: { label: "All email", query: "in:inbox" },

@@ -1,5 +1,5 @@
 // Creates the tables. Safe to run more than once (Developer page → Set up database).
-import { db, markReady } from "./index";
+import { db, markReady, withTimeout } from "./index";
 
 export const DEFAULT_SOURCES = [
   "Cars.com", "CarsForSale", "CarGurus", "CarZing", "Edmunds", "Autotrader", "Facebook", "OfferUp", "Hammer",
@@ -10,7 +10,7 @@ export const DEFAULT_REPS = ["Zach", "Steve", "Abdul"];
 export async function setupDatabase(): Promise<void> {
   const sql = db();
   if (!sql) throw new Error("DATABASE_URL is not set");
-  await sql.begin(async (tx) => {
+  await withTimeout(sql.begin(async (tx) => {
     await tx`
       create table if not exists reps (
         id serial primary key,
@@ -67,6 +67,6 @@ export async function setupDatabase(): Promise<void> {
     for (const name of DEFAULT_SOURCES) await tx`insert into sources (name) values (${name}) on conflict (name) do nothing`;
     const [{ count }] = await tx`select count(*)::int as count from reps`;
     if (count === 0) for (const name of DEFAULT_REPS) await tx`insert into reps (name) values (${name})`;
-  });
+  }), 25000);
   markReady();
 }

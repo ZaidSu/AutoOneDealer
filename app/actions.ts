@@ -41,8 +41,14 @@ export async function setupDatabaseAction(): Promise<ActionResult> {
     revalidatePath("/", "layout");
     return { ok: true, message: local ? "Database is ready, and the Gmail connection is now shared." : "Database is ready." };
   } catch (error) {
-    console.error("Database setup failed:", error instanceof Error ? error.message : error);
-    return fail("Setup failed. Check that DATABASE_URL is the Supabase Transaction pooler address with the right password.");
+    const detail = error instanceof Error ? error.message : String(error);
+    console.error("Database setup failed:", detail);
+    const hint = /password authentication|SASL|28P01/i.test(detail)
+      ? "The password in DATABASE_URL is wrong. Reset it in Supabase and update DATABASE_URL in Vercel."
+      : /timed out|ETIMEDOUT|ENOTFOUND|ECONNREFUSED|getaddrinfo/i.test(detail)
+        ? "Couldn't reach the database. Make sure DATABASE_URL is the Transaction pooler address (pooler.supabase.com) and the Supabase project isn't paused."
+        : "Setup failed. Check that DATABASE_URL is the Supabase Transaction pooler address with the right password.";
+    return fail(`${hint} (${detail.replace(/postgres(ql)?:\/\/\S+/g, "[address hidden]").slice(0, 120)})`);
   }
 }
 
