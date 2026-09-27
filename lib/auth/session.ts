@@ -63,8 +63,3 @@ export async function getStaffSession(): Promise<StaffSession | null> {
   const jar = await cookies();
   return validateStaff(jar.get(STAFF_COOKIE)?.value);
 }
-
-export async function getGmailConnection(): Promise<GmailConnection | null> {
-  const jar = await cookies();
-  return readSealed<GmailConnection>(jar.get(GMAIL_COOKIE)?.value);
-}

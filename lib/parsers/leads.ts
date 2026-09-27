@@ -45,6 +45,8 @@ const PROVIDERS: [RegExp, string][] = [
   [/truecar/i, "TrueCar"],
   [/facebook|meta/i, "Facebook"],
   [/hammer/i, "Hammer"],
+  [/myncu/i, "NCU (myncu.com)"],
+  [/offerup/i, "OfferUp"],
 ];
 
 export function providerFor(from: string, subject = ""): string {

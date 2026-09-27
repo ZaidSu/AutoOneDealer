@@ -3,7 +3,8 @@ import { NextResponse, type NextRequest } from "next/server";
 import { can } from "@/lib/auth/access";
 import { revokeToken } from "@/lib/auth/google";
 import { isSameOrigin } from "@/lib/auth/request";
-import { clearCookie, GMAIL_COOKIE, readSealed, STAFF_COOKIE, validateStaff, type GmailConnection } from "@/lib/auth/session";
+import { clearSharedGmailConnection, loadGmailConnection } from "@/lib/gmail/connection";
+import {clearCookie, GMAIL_COOKIE, STAFF_COOKIE, validateStaff } from "@/lib/auth/session";
 
 export const dynamic = "force-dynamic";
 
@@ -15,9 +16,10 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ ok: false, message: "Only owners and managers can disconnect the inbox." }, { status: 403 });
   }
 
-  const connection = readSealed<GmailConnection>(req.cookies.get(GMAIL_COOKIE)?.value);
+  const connection = await loadGmailConnection(req.cookies.get(GMAIL_COOKIE)?.value);
   if (connection) await revokeToken(connection.refreshToken);
   const res = NextResponse.json({ ok: true, message: "Gmail disconnected." });
+  await clearSharedGmailConnection();
   clearCookie(res, GMAIL_COOKIE);
   return res;
 }

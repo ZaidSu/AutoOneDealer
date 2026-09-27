@@ -1,7 +1,7 @@
 // Read-only Gmail access for the connected dealership inbox. Server-only.
 import { createHash } from "node:crypto";
 import { explainGoogleError, GoogleError, refreshAccessToken } from "@/lib/auth/google";
-import { getGmailConnection } from "@/lib/auth/session";
+import { getGmailConnection } from "@/lib/gmail/connection";
 import { parseLead, type ParsedLead } from "@/lib/parsers/leads";
 import { htmlToText } from "@/lib/parsers/html";
 

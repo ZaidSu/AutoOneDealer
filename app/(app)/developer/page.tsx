@@ -1,7 +1,9 @@
 import type { Metadata } from "next";
 import { headers } from "next/headers";
 import DeveloperNotice from "@/components/developer/DeveloperNotice";
+import SetupDatabase from "@/components/database/SetupDatabase";
 import PageHeader from "@/components/ui/PageHeader";
+import { dbState } from "@/lib/db";
 import { can } from "@/lib/auth/access";
 import { OPTIONAL_VARS, REQUIRED_VARS } from "@/lib/auth/config";
 import { getStaffSession } from "@/lib/auth/session";
@@ -31,10 +33,18 @@ export default async function DeveloperPage() {
   const configuredCallback = process.env.GOOGLE_REDIRECT_URI ?? "";
   const callbackMatches = configuredCallback === expectedCallback;
   const secret = process.env.SESSION_SECRET ?? "";
+  const database = await dbState();
+  const dbText: Record<typeof database, string> = {
+    not_configured: "Not connected. Add DATABASE_URL (the Supabase Transaction pooler address) in Vercel for Production and Preview, then redeploy.",
+    not_set_up: "Connected, but the tables haven't been created yet.",
+    ready: "Connected and ready.",
+    unreachable: "DATABASE_URL is set, but the database didn't answer. Check the address and password, or whether the Supabase project is paused.",
+  };
 
   const rows = [
     ...REQUIRED_VARS.map((name) => ({ name, required: true, set: Boolean(process.env[name]) })),
     ...OPTIONAL_VARS.map((name) => ({ name, required: false, set: Boolean(process.env[name]) })),
+    { name: "DATABASE_URL", required: false, set: Boolean(process.env.DATABASE_URL) },
   ];
 
   return (
@@ -84,6 +94,14 @@ export default async function DeveloperPage() {
               ? "They match. The same address must also be listed under Authorized redirect URIs in Google Cloud."
               : "They don't match, so Google sign-in will fail on this address. Set GOOGLE_REDIRECT_URI for this environment to the expected value and add it in Google Cloud."}
           </p>
+        </section>
+
+        <section aria-labelledby="db-heading" className="rounded-lg border border-line bg-white p-6">
+          <h2 id="db-heading" className="text-lg font-semibold">Database</h2>
+          <p className={`mt-1 ${database === "ready" ? "text-go" : "text-muted"}`}>{dbText[database]}</p>
+          {(database === "not_set_up" || database === "ready") && (
+            <SetupDatabase label={database === "ready" ? "Run setup again (safe)" : "Set up database"} />
+          )}
         </section>
 
         <section aria-labelledby="checks-heading" className="rounded-lg border border-line bg-white p-6">

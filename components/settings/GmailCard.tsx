@@ -3,10 +3,10 @@
 import { useState } from "react";
 
 type Connection = { mailbox: string; connectedAt: number; connectedBy: string } | null;
-type Props = { connection: Connection; canManage: boolean; expectedMailbox: string; notice: { tone: "ok" | "error"; text: string } | null };
+type Props = { connection: Connection; canManage: boolean; expectedMailbox: string; notice: { tone: "ok" | "error"; text: string } | null; shared: boolean };
 type Result = { tone: "ok" | "error"; text: string; code?: string } | null;
 
-export default function GmailCard({ connection, canManage, expectedMailbox, notice }: Props) {
+export default function GmailCard({ connection, canManage, expectedMailbox, notice, shared }: Props) {
   const [busy, setBusy] = useState<"test" | "disconnect" | null>(null);
   const [result, setResult] = useState<Result>(notice);
   const [connected, setConnected] = useState(connection);
@@ -92,7 +92,9 @@ export default function GmailCard({ connection, canManage, expectedMailbox, noti
       )}
 
       <p className="mt-5 text-xs text-muted">
-        For now the connection is saved in this browser only. Shared storage for the whole team comes with the customer database.
+        {shared
+          ? "The connection is saved in the shared database, so everyone on the team sees the same inbox on any device."
+          : "For now the connection is saved in this browser only. It becomes shared with the whole team once the database is connected."}
       </p>
     </section>
   );

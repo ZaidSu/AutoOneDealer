@@ -1,9 +1,14 @@
 import type { Metadata } from "next";
 import GmailCard from "@/components/settings/GmailCard";
+import TeamAndSources from "@/components/settings/TeamAndSources";
+import DbNotice from "@/components/ui/DbNotice";
 import PageHeader from "@/components/ui/PageHeader";
+import { dbState } from "@/lib/db";
+import { listReps, listSources } from "@/lib/db/data";
 import { can, roleLabel } from "@/lib/auth/access";
 import { dealershipMailbox } from "@/lib/auth/config";
-import { getGmailConnection, getStaffSession } from "@/lib/auth/session";
+import { getStaffSession } from "@/lib/auth/session";
+import { getGmailConnection } from "@/lib/gmail/connection";
 
 export const metadata: Metadata = { title: "Settings" };
 
@@ -20,6 +25,8 @@ const gmailNotices: Record<string, { tone: "ok" | "error"; text: string }> = {
 export default async function SettingsPage({ searchParams }: { searchParams: Promise<Record<string, string | undefined>> }) {
   const staff = (await getStaffSession())!;
   const gmail = await getGmailConnection();
+  const state = await dbState();
+  const [reps, sources] = state === "ready" ? await Promise.all([listReps(), listSources()]) : [[], []];
   const params = await searchParams;
   const notice = params.gmail ? gmailNotices[params.gmail] ?? gmailNotices.failed : null;
 
@@ -49,7 +56,18 @@ export default async function SettingsPage({ searchParams }: { searchParams: Pro
           canManage={can.manageIntegrations(staff.role)}
           expectedMailbox={dealershipMailbox()}
           notice={notice}
+          shared={state === "ready"}
         />
+
+        {state === "ready" ? (
+          <TeamAndSources reps={reps} sources={sources} canEdit={can.manageIntegrations(staff.role)} />
+        ) : (
+          <section className="rounded-lg border border-line bg-white p-6">
+            <h2 className="text-lg font-semibold">Sales team and lead sources</h2>
+            <p className="mt-1 mb-4 text-muted">Add or remove salespeople and the “Heard about us” choices.</p>
+            <DbNotice state={state} what="This" />
+          </section>
+        )}
 
         <section aria-labelledby="sms-heading" className="rounded-lg border border-line bg-white p-6">
           <div className="flex flex-wrap items-center justify-between gap-3">

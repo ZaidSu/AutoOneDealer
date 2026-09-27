@@ -3,7 +3,8 @@ import { NextResponse, type NextRequest } from "next/server";
 import { can } from "@/lib/auth/access";
 import { explainGoogleError, fetchGmailProfile, refreshAccessToken } from "@/lib/auth/google";
 import { isSameOrigin } from "@/lib/auth/request";
-import { GMAIL_COOKIE, readSealed, STAFF_COOKIE, validateStaff, type GmailConnection } from "@/lib/auth/session";
+import { loadGmailConnection } from "@/lib/gmail/connection";
+import {GMAIL_COOKIE, STAFF_COOKIE, validateStaff } from "@/lib/auth/session";
 
 export const dynamic = "force-dynamic";
 
@@ -15,7 +16,7 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ ok: false, message: "Only owners and managers can test the inbox connection." }, { status: 403 });
   }
 
-  const connection = readSealed<GmailConnection>(req.cookies.get(GMAIL_COOKIE)?.value);
+  const connection = await loadGmailConnection(req.cookies.get(GMAIL_COOKIE)?.value);
   if (!connection) return NextResponse.json({ ok: false, message: "Gmail isn't connected yet." }, { status: 404 });
 
   try {

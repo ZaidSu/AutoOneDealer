@@ -6,6 +6,10 @@ import PageHeader from "@/components/ui/PageHeader";
 import { getStaffSession } from "@/lib/auth/session";
 import { dealership, greeting } from "@/lib/dealership";
 import { fetchLeads, LEAD_QUERIES, startOfDealershipDay, withGmail } from "@/lib/gmail";
+import { dbState } from "@/lib/db";
+import { appointmentsBetween, type Appointment } from "@/lib/db/data";
+import { formatPhone } from "@/lib/format";
+import { addDays, dayKey, zonedToUtc } from "@/lib/time";
 
 export const metadata: Metadata = { title: "Dashboard" };
 export const dynamic = "force-dynamic";
@@ -13,6 +17,13 @@ export const dynamic = "force-dynamic";
 export default async function DashboardPage() {
   const staff = (await getStaffSession())!;
   const firstName = staff.name.split(" ")[0];
+
+  const today = dayKey(Date.now(), dealership.timeZone);
+  const appointmentsToday: Appointment[] | null =
+    (await dbState()) === "ready"
+      ? await appointmentsBetween(zonedToUtc(today, "00:00", dealership.timeZone)!, zonedToUtc(addDays(today, 1), "00:00", dealership.timeZone)!)
+      : null;
+  const timeFmt = new Intl.DateTimeFormat("en-US", { hour: "numeric", minute: "2-digit", timeZone: dealership.timeZone });
 
   const result = await withGmail(async (gmail) => {
     const today = `after:${startOfDealershipDay(dealership.timeZone)}`;
@@ -30,6 +41,29 @@ export default async function DashboardPage() {
   return (
     <>
       <PageHeader title={`${greeting()}, ${firstName}`} description="Here's what needs attention at the dealership." />
+
+      {appointmentsToday && (
+        <section aria-labelledby="today-appts" className="mb-6 max-w-5xl rounded-lg border border-line bg-white p-5">
+          <div className="flex items-baseline justify-between">
+            <h2 id="today-appts" className="text-lg font-semibold">Today&apos;s appointments</h2>
+            <Link href="/appointments" className="text-sm font-semibold text-signal hover:underline">All appointments</Link>
+          </div>
+          {appointmentsToday.filter((a) => a.status !== "canceled").length === 0 ? (
+            <p className="mt-2 text-muted">Nothing booked for today.</p>
+          ) : (
+            <ul className="mt-3 divide-y divide-line">
+              {appointmentsToday.filter((a) => a.status !== "canceled").map((a) => (
+                <li key={a.id} className="flex flex-wrap items-center gap-x-4 gap-y-1 py-2">
+                  <span className="w-20 font-semibold tabular-nums">{timeFmt.format(a.startsAt)}</span>
+                  <span className="font-semibold">{a.customerName}</span>
+                  <span className="text-muted">{[a.vehicle, a.phone && formatPhone(a.phone)].filter(Boolean).join(" · ")}</span>
+                  <span className="ml-auto text-sm text-muted">{a.repName ?? "No salesperson"}{a.status !== "scheduled" ? ` · ${a.status === "showed" ? "showed up" : "no-show"}` : ""}</span>
+                </li>
+              ))}
+            </ul>
+          )}
+        </section>
+      )}
 
       {result.status !== "ok" ? (
         <GmailState {...result} />

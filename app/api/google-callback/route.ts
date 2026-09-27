@@ -4,6 +4,7 @@ import { NextResponse, type NextRequest } from "next/server";
 import { can } from "@/lib/auth/access";
 import { dealershipMailbox, isConfigured, staffRoleFor } from "@/lib/auth/config";
 import { exchangeCode, fetchGmailProfile, fetchProfile, revokeToken } from "@/lib/auth/google";
+import { saveSharedGmailConnection } from "@/lib/gmail/connection";
 import {
   clearCookie,
   readSealed,
@@ -66,13 +67,15 @@ export async function GET(req: NextRequest) {
     }
     if (!tokens.refresh_token) return fail("no_refresh_token");
 
-    const res = go(req, "/settings?gmail=connected");
-    setGmailConnection(res, {
+    const connection = {
       mailbox: gmail.emailAddress.toLowerCase(),
       refreshToken: tokens.refresh_token,
       connectedBy: staff.email || staff.name,
       connectedAt: Date.now(),
-    });
+    };
+    await saveSharedGmailConnection(connection); // no-op until the database is connected
+    const res = go(req, "/settings?gmail=connected");
+    setGmailConnection(res, connection);
     return res;
   } catch (error) {
     console.error("Google callback failed:", flow, error instanceof Error ? error.message : "unknown");

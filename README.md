@@ -24,8 +24,23 @@ Parsers live in `lib/parsers/carsforsale.ts` and are tested against fixtures mat
 - **Customers**: leads grouped into people by phone (then email), with every inquiry and application,
   sites they came from, cars they asked about, and their email conversations with the dealership.
 
-Not built yet: lead statuses/notes/assignment, appointments, AI drafts, SMS. These need the
-shared database. They appear in the sidebar as "Soon".
+- **Analytics** from lead emails: where customers came from, in state vs out of state, top out-of-state
+  states, leads over time, credit applications. With the database: purchases by source and salesperson results.
+
+### Needs the database (Supabase)
+
+Built and tested, switched on by adding `DATABASE_URL` (Supabase **Transaction pooler** address, port 6543)
+for Production and Preview, redeploying, then **Developer → Set up database**:
+
+- **Settings → Sales team** (add/remove reps) and **Where customers heard about us** (editable source list).
+- **Customer labels** in each Customers row: salesperson, status, financing (auto "Needs review" for loan apps),
+  heard about us (auto from the lead source), in/out of state (auto from the lead's state), notes, and
+  booking an appointment. "Returning" is added automatically when a purchased customer sends a new lead.
+- **Appointments**: week view, filter by salesperson, double-booking warning, Showed up / No-show / Canceled,
+  and a no-shows-to-call-back list. Today's appointments also show on the Dashboard.
+- The **Gmail connection** moves into the database so every device shares it.
+
+Database tests: `DATABASE_URL=postgres://... npm run test:db` (drops and recreates the tables; use a throwaway database).
 
 **Temporary limitation:** the Gmail connection is stored in an encrypted cookie in the connecting browser.
 It moves to the shared database in Phase 3 so the whole team and background jobs can use it.

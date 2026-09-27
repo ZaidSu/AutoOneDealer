@@ -13,8 +13,8 @@ const mainNav: NavItem[] = [
   { href: "/leads", label: "Leads", ready: true },
   { href: "/credit-applications", label: "Credit Applications", ready: true },
   { href: "/customers", label: "Customers", ready: true },
-  { href: "/appointments", label: "Appointments", ready: false },
-  { href: "/reports", label: "Reports", ready: false },
+  { href: "/appointments", label: "Appointments", ready: true },
+  { href: "/analytics", label: "Analytics", ready: true },
   { href: "/train-ai", label: "Train your AI", ready: false },
   { href: "/automations", label: "Automations", ready: false },
 ];
