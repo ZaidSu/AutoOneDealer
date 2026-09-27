@@ -18,38 +18,45 @@ async function accessToken(refreshToken: string): Promise<string> {
 }
 
 // ---- Pacing ----
-// Shared by every request on this server instance: at most ~25 Gmail calls per second (≈125 quota units),
-// and everyone pauses together when Google says to slow down.
-const RATE_PER_SECOND = 25;
-let tokens = RATE_PER_SECOND;
-let lastRefill = Date.now();
-let pausedUntil = 0;
+// Gmail allows ~250 quota units/second per mailbox (reading one email costs 5). Requests are split into two lanes
+// on each server instance so a big background import can never make a person wait:
+//   interactive (pages someone is looking at): up to 20 calls/second
+//   background (lead import/sync):             up to 12 calls/second
+// Together that stays under Google's limit. When Google says "slow down", the background lane pauses longer.
+type Lane = "interactive" | "background";
+const LANES: Record<Lane, { rate: number; tokens: number; last: number; pausedUntil: number }> = {
+  interactive: { rate: 20, tokens: 20, last: Date.now(), pausedUntil: 0 },
+  background: { rate: 12, tokens: 12, last: Date.now(), pausedUntil: 0 },
+};
 
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
-function slowDown(ms: number) {
-  pausedUntil = Math.max(pausedUntil, Date.now() + ms);
+function slowDown(lane: Lane, ms: number) {
+  const until = Date.now() + ms;
+  LANES.background.pausedUntil = Math.max(LANES.background.pausedUntil, until + (lane === "interactive" ? ms : 0));
+  if (lane === "interactive") LANES.interactive.pausedUntil = Math.max(LANES.interactive.pausedUntil, until);
 }
 
-async function takeTurn(): Promise<void> {
+async function takeTurn(lane: Lane): Promise<void> {
+  const bucket = LANES[lane];
   for (;;) {
     const now = Date.now();
-    if (now < pausedUntil) {
-      await sleep(pausedUntil - now);
+    if (now < bucket.pausedUntil) {
+      await sleep(bucket.pausedUntil - now);
       continue;
     }
-    tokens = Math.min(RATE_PER_SECOND, tokens + ((now - lastRefill) / 1000) * RATE_PER_SECOND);
-    lastRefill = now;
-    if (tokens >= 1) {
-      tokens -= 1;
+    bucket.tokens = Math.min(bucket.rate, bucket.tokens + ((now - bucket.last) / 1000) * bucket.rate);
+    bucket.last = now;
+    if (bucket.tokens >= 1) {
+      bucket.tokens -= 1;
       return;
     }
-    await sleep(((1 - tokens) / RATE_PER_SECOND) * 1000);
+    await sleep(((1 - bucket.tokens) / bucket.rate) * 1000);
   }
 }
 
 export class GmailClient {
-  constructor(private token: string, readonly mailbox: string) {}
+  constructor(private token: string, readonly mailbox: string, private lane: Lane = "interactive") {}
 
   private async get<T>(path: string, params: Record<string, string | number | string[] | undefined> = {}): Promise<T> {
     const url = new URL(`https://gmail.googleapis.com/gmail/v1/users/me/${path}`);
@@ -60,17 +67,17 @@ export class GmailClient {
     // Gmail allows about 250 "quota units" per second per mailbox (reading one email costs 5).
     // Requests are paced below that, and rate-limit answers are retried with growing waits.
     for (let attempt = 0; ; attempt++) {
-      await takeTurn();
+      await takeTurn(this.lane);
       const response = await fetch(url, { headers: { Authorization: `Bearer ${this.token}` }, cache: "no-store" });
       if (response.ok) return response.json() as Promise<T>;
       const body = await response.json().catch(() => ({}));
       const reason: string = body?.error?.errors?.[0]?.reason ?? body?.error?.status ?? "";
       const rateLimited = response.status === 429 || /rateLimitExceeded|userRateLimitExceeded/i.test(reason);
       const retryable = rateLimited || response.status >= 500 || /backendError/i.test(reason);
-      if (retryable && attempt < 6) {
+      if (retryable && attempt < (this.lane === "interactive" ? 2 : 6)) {
         const retryAfter = Number(response.headers.get("retry-after")) * 1000;
         const wait = retryAfter > 0 ? retryAfter : Math.min(8000, 500 * 2 ** attempt) + Math.random() * 400;
-        if (rateLimited) slowDown(wait);
+        if (rateLimited) slowDown(this.lane, wait);
         await sleep(wait);
         continue;
       }
@@ -184,11 +191,12 @@ export async function withGmail<T>(
   work: (gmail: GmailClient) => Promise<T>,
   // Pass a connection loaded earlier when running outside the request (e.g. background sync).
   preloaded?: Awaited<ReturnType<typeof getGmailConnection>>,
+  lane: Lane = "interactive",
 ): Promise<GmailResult<T>> {
   const connection = preloaded === undefined ? await getGmailConnection() : preloaded;
   if (!connection) return { status: "not_connected" };
   try {
-    const gmail = new GmailClient(await accessToken(connection.refreshToken), connection.mailbox);
+    const gmail = new GmailClient(await accessToken(connection.refreshToken), connection.mailbox, lane);
     return { status: "ok", data: await work(gmail), gmail };
   } catch (error) {
     const explained = explainGoogleError(error);

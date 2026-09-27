@@ -17,7 +17,7 @@ export async function POST(req: NextRequest) {
     if (last && last.remaining === 0 && Date.now() - last.lastRun < 60_000 && req.nextUrl.searchParams.get("force") !== "1") {
       return NextResponse.json({ ok: true, saved: 0, remaining: 0, message: `Up to date. ${last.saved.toLocaleString()} leads saved.` });
     }
-    const result = await withGmail((gmail) => syncLeads(gmail, { budget: 300 }));
+    const result = await withGmail((gmail) => syncLeads(gmail, { budget: 300 }), undefined, "background");
     if (result.status === "not_connected") return NextResponse.json({ ok: false, message: "Connect Gmail in Settings first." });
     if (result.status === "error") return NextResponse.json({ ok: false, message: result.message });
     if ("busy" in result.data) return NextResponse.json({ ok: true, saved: 0, remaining: 0, message: "Already updating. Give it a few seconds." });

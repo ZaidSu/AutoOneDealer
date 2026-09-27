@@ -6,7 +6,7 @@ import LeadList from "@/components/leads/LeadList";
 import DbNotice from "@/components/ui/DbNotice";
 import PageHeader from "@/components/ui/PageHeader";
 import { getStaffSession } from "@/lib/auth/session";
-import { dbState } from "@/lib/db";
+import { dbState, withTimeout } from "@/lib/db";
 import { appointmentsBetween, followUps, leadCounts, listReps, type FollowUp } from "@/lib/db/data";
 import { dealership, greeting } from "@/lib/dealership";
 import { formatPhone } from "@/lib/format";
@@ -72,7 +72,11 @@ export default async function DashboardPage({ searchParams }: { searchParams: Pr
     ]);
     return { unread, latest, fallback };
   });
-  const [[reps, items, appointmentsToday, counts, dbLatest], gmailRaw] = await Promise.all([dbPart, gmailPart]);
+  // With the database, Gmail only supplies the unread count, so never wait more than 2.5 seconds for it.
+  const gmailBounded = dbReady
+    ? withTimeout(gmailPart, 2500).catch(() => ({ status: "ok" as const, data: { unread: null, latest: null, fallback: null } }))
+    : gmailPart;
+  const [[reps, items, appointmentsToday, counts, dbLatest], gmailRaw] = await Promise.all([dbPart, gmailBounded]);
   const gmail =
     gmailRaw.status === "ok"
       ? { ...gmailRaw, data: { unread: gmailRaw.data.unread, latest: dbLatest ?? gmailRaw.data.latest ?? [], counts: counts ?? gmailRaw.data.fallback! } }
@@ -90,7 +94,7 @@ export default async function DashboardPage({ searchParams }: { searchParams: Pr
           <Stat value={gmail.data.counts.leadsToday} label="New leads today" href="/leads?show=inquiry" highlight={gmail.data.counts.leadsToday > 0} />
           <Stat value={gmail.data.counts.appsToday} label="Credit applications today" href="/credit-applications" highlight={gmail.data.counts.appsToday > 0} />
           <Stat value={gmail.data.counts.week} label="Leads and applications, last 7 days" href="/leads" />
-          <Stat value={gmail.data.unread} label="Unread emails in the inbox" href="/inbox?view=unread" />
+          <Stat value={gmail.data.unread ?? "—"} label="Unread emails in the inbox" href="/inbox?view=unread" />
         </section>
       )}
       {gmail.status !== "ok" && !dbReady && <div className="mb-6"><GmailState {...gmail} /></div>}
@@ -173,10 +177,10 @@ export default async function DashboardPage({ searchParams }: { searchParams: Pr
   );
 }
 
-function Stat({ value, label, href, highlight }: { value: number; label: string; href: string; highlight?: boolean }) {
+function Stat({ value, label, href, highlight }: { value: number | string; label: string; href: string; highlight?: boolean }) {
   return (
     <Link href={href} className="bg-white p-5 hover:bg-paper">
-      <p className={`text-3xl font-semibold tabular-nums ${highlight ? "text-signal" : ""}`}>{value >= 500 ? "500+" : value}</p>
+      <p className={`text-3xl font-semibold tabular-nums ${highlight ? "text-signal" : ""}`}>{typeof value === "number" && value >= 500 ? "500+" : value}</p>
       <p className="mt-1 text-sm text-muted">{label}</p>
     </Link>
   );

@@ -6,7 +6,7 @@ import Badge from "@/components/leads/Badge";
 import { groupCustomers, parseCustomerKey } from "@/lib/customers";
 import { displayName, formatDateTime, formatMoney, formatPhone } from "@/lib/format";
 import { fetchManyLeads, mapLimit, withGmail } from "@/lib/gmail";
-import { dbState } from "@/lib/db";
+import { dbState, withTimeout } from "@/lib/db";
 import { leadsFor } from "@/lib/leads/store";
 
 export const metadata: Metadata = { title: "Customer" };
@@ -37,11 +37,15 @@ export default async function CustomerPage({ params }: { params: Promise<{ key: 
 
   // Saved leads when the database is ready (instant); otherwise search Gmail for this person.
   const saved = fromDb ? pick(await leadsFor(identity)) : null;
-  const result = await withGmail(async (gmail) => {
+  const gmailWork = withGmail(async (gmail) => {
     const customer = saved ?? pick((await fetchManyLeads(gmail, { extra: search, limit: 100 })).leads);
     const emails = customer?.emails ?? ("email" in identity ? [identity.email] : []);
     return { customer, conversation: await conversationFor(gmail, emails).catch(() => []) };
   });
+  // With saved leads the profile doesn't need Gmail; only the email list does, so don't wait long for it.
+  const result = saved
+    ? await withTimeout(gmailWork, 3000).catch(() => ({ status: "error" as const, message: "", code: "timeout" }))
+    : await gmailWork;
   const loaded =
     result.status === "ok" ? result
     : saved ? { status: "ok" as const, data: { customer: saved, conversation: [] as Awaited<ReturnType<typeof conversationFor>> } }
