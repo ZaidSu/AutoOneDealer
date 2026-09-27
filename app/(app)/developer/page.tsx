@@ -3,7 +3,7 @@ import { headers } from "next/headers";
 import DeveloperNotice from "@/components/developer/DeveloperNotice";
 import SetupDatabase from "@/components/database/SetupDatabase";
 import PageHeader from "@/components/ui/PageHeader";
-import { dbState } from "@/lib/db";
+import { dbState, lastDbError } from "@/lib/db";
 import { can } from "@/lib/auth/access";
 import { OPTIONAL_VARS, REQUIRED_VARS } from "@/lib/auth/config";
 import { getStaffSession } from "@/lib/auth/session";
@@ -100,6 +100,7 @@ export default async function DeveloperPage() {
         <section aria-labelledby="db-heading" className="rounded-lg border border-line bg-white p-6">
           <h2 id="db-heading" className="text-lg font-semibold">Database</h2>
           <p className={`mt-1 ${database === "ready" ? "text-go" : "text-muted"}`}>{dbText[database]}</p>
+          {database === "unreachable" && lastDbError() && <p className="mt-2 break-words text-xs text-muted">Details: {lastDbError()}</p>}
           {(database === "not_set_up" || database === "ready") && (
             <SetupDatabase label={database === "ready" ? "Run setup again (safe)" : "Set up database"} />
           )}

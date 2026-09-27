@@ -5,6 +5,18 @@ import postgres from "postgres";
 type Sql = ReturnType<typeof postgres>;
 let client: Sql | null = null;
 let readyCache: { value: boolean; at: number } | null = null;
+let lastError: string | null = null;
+
+/** The most recent database error, with addresses and passwords removed. */
+export function lastDbError(): string | null {
+  return lastError;
+}
+
+function describe(error: unknown): string {
+  const e = error as { code?: string; message?: string } | undefined;
+  const text = `${e?.code ? `${e.code}: ` : ""}${e?.message ?? String(error)}`;
+  return text.replace(/postgres(ql)?:\/\/\S+/gi, "[address hidden]").slice(0, 200);
+}
 
 export function dbConfigured(): boolean {
   return Boolean(process.env.DATABASE_URL);
@@ -36,9 +48,11 @@ export async function dbState(): Promise<DbState> {
   try {
     const [row] = await withTimeout(sql`select to_regclass('public.appointments') is not null as ready`, 9000);
     readyCache = { value: Boolean(row.ready), at: Date.now() };
+    lastError = null;
     return row.ready ? "ready" : "not_set_up";
   } catch (error) {
-    console.error("Database unreachable:", error instanceof Error ? error.message.slice(0, 120) : "unknown");
+    lastError = describe(error);
+    console.error("Database unreachable:", lastError);
     return "unreachable";
   }
 }
