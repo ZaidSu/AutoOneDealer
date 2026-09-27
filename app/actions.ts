@@ -1,15 +1,11 @@
 "use server";
 // Every change staff make in the app goes through these. Each checks the session and validates input.
 // Next.js server actions also reject requests coming from other websites.
-import { cookies } from "next/headers";
 import { revalidatePath } from "next/cache";
 import { can } from "@/lib/auth/access";
-import { GMAIL_COOKIE, getStaffSession, readSealed, type GmailConnection } from "@/lib/auth/session";
+import { getStaffSession } from "@/lib/auth/session";
 import * as data from "@/lib/db/data";
-import { dbState } from "@/lib/db";
-import { setupDatabase } from "@/lib/db/schema";
 import { dealership } from "@/lib/dealership";
-import { saveSharedGmailConnection } from "@/lib/gmail/connection";
 import { formatDateTime } from "@/lib/format";
 import { zonedToUtc } from "@/lib/time";
 
@@ -26,32 +22,6 @@ function cleanName(value: unknown, max = 60): string {
   return String(value ?? "").replace(/\s+/g, " ").trim().slice(0, max);
 }
 
-// ---- Database setup (Developer page) ----
-
-export async function setupDatabaseAction(): Promise<ActionResult> {
-  const staff = await requireStaff();
-  if (!staff || !can.useDeveloperTools(staff.role)) return fail("Only owners and developers can do this.");
-  if ((await dbState()) === "not_configured") return fail("Add DATABASE_URL in Vercel first, then redeploy.");
-  try {
-    await setupDatabase();
-    // Move this browser's Gmail connection into the database so every device shares it.
-    const jar = await cookies();
-    const local = readSealed<GmailConnection>(jar.get(GMAIL_COOKIE)?.value);
-    if (local) await saveSharedGmailConnection(local);
-    revalidatePath("/", "layout");
-    return { ok: true, message: local ? "Database is ready, and the Gmail connection is now shared." : "Database is ready." };
-  } catch (error) {
-    const detail = error instanceof Error ? error.message : String(error);
-    console.error("Database setup failed:", detail);
-    const hint = /password authentication|SASL|28P01/i.test(detail)
-      ? "The password in DATABASE_URL is wrong. Reset it in Supabase and update DATABASE_URL in Vercel."
-      : /timed out|ETIMEDOUT|ENOTFOUND|ECONNREFUSED|getaddrinfo/i.test(detail)
-        ? "Couldn't reach the database. Make sure DATABASE_URL is the Transaction pooler address (pooler.supabase.com) and the Supabase project isn't paused."
-        : "Setup failed. Check that DATABASE_URL is the Supabase Transaction pooler address with the right password.";
-    return fail(`${hint} (${detail.replace(/postgres(ql)?:\/\/\S+/g, "[address hidden]").slice(0, 120)})`);
-  }
-}
-
 // ---- Team and sources (Settings) ----
 
 export async function addRepAction(name: string): Promise<ActionResult> {
@@ -60,7 +30,7 @@ export async function addRepAction(name: string): Promise<ActionResult> {
   const clean = cleanName(name, 40);
   if (clean.length < 2) return fail("Enter a name.");
   try { await data.addRep(clean); } catch { return NO_DB; }
-  revalidatePath("/", "layout");
+  revalidatePath("/settings");
   return { ok: true };
 }
 
@@ -69,7 +39,7 @@ export async function removeRepAction(id: number): Promise<ActionResult> {
   if (!staff || !can.manageIntegrations(staff.role)) return fail("Only owners and managers can change the team.");
   if (!Number.isInteger(id)) return fail("Unknown salesperson.");
   try { await data.removeRep(id); } catch { return NO_DB; }
-  revalidatePath("/", "layout");
+  revalidatePath("/settings");
   return { ok: true };
 }
 
@@ -79,7 +49,7 @@ export async function addSourceAction(name: string): Promise<ActionResult> {
   const clean = cleanName(name, 50);
   if (clean.length < 2) return fail("Enter a source name.");
   try { await data.addSource(clean); } catch { return NO_DB; }
-  revalidatePath("/", "layout");
+  revalidatePath("/settings");
   return { ok: true };
 }
 
@@ -88,7 +58,7 @@ export async function removeSourceAction(id: number): Promise<ActionResult> {
   if (!staff || !can.manageIntegrations(staff.role)) return fail("Only owners and managers can change the list.");
   if (!Number.isInteger(id)) return fail("Unknown source.");
   try { await data.removeSource(id); } catch { return NO_DB; }
-  revalidatePath("/", "layout");
+  revalidatePath("/settings");
   return { ok: true };
 }
 
@@ -135,8 +105,8 @@ export async function updateCustomerAction(
   } catch {
     return NO_DB;
   }
-  revalidatePath("/customers");
-  revalidatePath("/analytics");
+  // No page refresh here: the row already shows the change, and re-rendering Customers
+  // inside the save would re-read Gmail and can run past Vercel's time limit.
   return { ok: true };
 }
 
@@ -193,8 +163,6 @@ export async function createAppointmentAction(input: AppointmentInput): Promise<
     return NO_DB;
   }
   revalidatePath("/appointments");
-  revalidatePath("/customers");
-  revalidatePath("/dashboard");
   return { ok: true, message: `Booked for ${formatDateTime(startsAt.getTime())}.` };
 }
 
@@ -204,6 +172,5 @@ export async function setAppointmentStatusAction(id: number, status: data.Appoin
   if (!Number.isInteger(id) || !data.APPOINTMENT_STATUSES.some((s) => s.value === status)) return fail("Unknown appointment.");
   try { await data.setAppointmentStatus(id, status); } catch { return NO_DB; }
   revalidatePath("/appointments");
-  revalidatePath("/dashboard");
   return { ok: true };
 }
