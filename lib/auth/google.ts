@@ -105,7 +105,7 @@ export function explainGoogleError(error: unknown): { message: string; code: str
     return { code, message: "Google refused to refresh the connection. Click Reconnect Gmail." };
   }
   if (/^429|rateLimitExceeded|userRateLimitExceeded/i.test(error.code))
-    return { code, message: "Gmail is asking AutoDash to slow down. Wait a minute and refresh." };
+    return { code, message: "Gmail asked AutoDash to slow down because a lot of emails were read at once. Nothing is lost. Wait a minute and refresh." };
   if (/accessNotConfigured|SERVICE_DISABLED/i.test(error.code))
     return { code, message: "The Gmail API is turned off in Google Cloud. Turn on \"Gmail API\" for this project, then test again." };
   if (/^(401|403)/.test(error.code))

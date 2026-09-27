@@ -17,6 +17,37 @@ async function accessToken(refreshToken: string): Promise<string> {
   return fresh.access_token;
 }
 
+// ---- Pacing ----
+// Shared by every request on this server instance: at most ~25 Gmail calls per second (≈125 quota units),
+// and everyone pauses together when Google says to slow down.
+const RATE_PER_SECOND = 25;
+let tokens = RATE_PER_SECOND;
+let lastRefill = Date.now();
+let pausedUntil = 0;
+
+const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
+
+function slowDown(ms: number) {
+  pausedUntil = Math.max(pausedUntil, Date.now() + ms);
+}
+
+async function takeTurn(): Promise<void> {
+  for (;;) {
+    const now = Date.now();
+    if (now < pausedUntil) {
+      await sleep(pausedUntil - now);
+      continue;
+    }
+    tokens = Math.min(RATE_PER_SECOND, tokens + ((now - lastRefill) / 1000) * RATE_PER_SECOND);
+    lastRefill = now;
+    if (tokens >= 1) {
+      tokens -= 1;
+      return;
+    }
+    await sleep(((1 - tokens) / RATE_PER_SECOND) * 1000);
+  }
+}
+
 export class GmailClient {
   constructor(private token: string, readonly mailbox: string) {}
 
@@ -26,15 +57,21 @@ export class GmailClient {
       if (value === undefined) continue;
       for (const v of Array.isArray(value) ? value : [value]) url.searchParams.append(key, String(v));
     }
-    // Gmail limits how many requests one mailbox can make at once. Back off and retry on rate limits and hiccups.
+    // Gmail allows about 250 "quota units" per second per mailbox (reading one email costs 5).
+    // Requests are paced below that, and rate-limit answers are retried with growing waits.
     for (let attempt = 0; ; attempt++) {
+      await takeTurn();
       const response = await fetch(url, { headers: { Authorization: `Bearer ${this.token}` }, cache: "no-store" });
       if (response.ok) return response.json() as Promise<T>;
       const body = await response.json().catch(() => ({}));
       const reason: string = body?.error?.errors?.[0]?.reason ?? body?.error?.status ?? "";
-      const retryable = response.status === 429 || response.status >= 500 || /rateLimitExceeded|userRateLimitExceeded|backendError/i.test(reason);
-      if (retryable && attempt < 4) {
-        await new Promise((resolve) => setTimeout(resolve, 400 * 2 ** attempt + Math.random() * 300));
+      const rateLimited = response.status === 429 || /rateLimitExceeded|userRateLimitExceeded/i.test(reason);
+      const retryable = rateLimited || response.status >= 500 || /backendError/i.test(reason);
+      if (retryable && attempt < 6) {
+        const retryAfter = Number(response.headers.get("retry-after")) * 1000;
+        const wait = retryAfter > 0 ? retryAfter : Math.min(8000, 500 * 2 ** attempt) + Math.random() * 400;
+        if (rateLimited) slowDown(wait);
+        await sleep(wait);
         continue;
       }
       throw new GoogleError("gmail", `${response.status}${reason ? `:${reason}` : ""}`);
