@@ -23,24 +23,28 @@ export default function SyncBar({ lastRun, saved, remaining }: Props) {
     return () => clearInterval(t);
   }, []);
 
+  // Keeps importing batch after batch while the page is open, until everything is saved.
   async function update(auto = false) {
     setBusy(true);
-    setMessage(auto ? "Importing your lead emails for the first time…" : null);
+    setMessage(auto ? "Importing your lead emails. You can keep using the page…" : null);
+    let keepGoing = false;
     try {
       const response = await fetch("/api/leads/sync", { method: "POST" });
       const data = await response.json().catch(() => null);
       setMessage(data?.message ?? "Couldn't update right now.");
       if (data?.ok) router.refresh();
+      keepGoing = Boolean(data?.ok && data.remaining > 0);
     } catch {
       setMessage("Couldn't reach the server. Check your connection.");
     } finally {
       setBusy(false);
     }
+    if (keepGoing) setTimeout(() => update(true), 1500);
   }
 
-  // First visit with nothing saved yet: start the import right away.
+  // Nothing saved yet, or an import still in progress: continue it automatically.
   useEffect(() => {
-    if (saved === 0 && !lastRun) update(true);
+    if ((saved === 0 && !lastRun) || remaining > 0) update(true);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
