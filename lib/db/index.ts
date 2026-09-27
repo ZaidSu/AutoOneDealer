@@ -44,18 +44,38 @@ export type DbState = "not_configured" | "not_set_up" | "ready" | "unreachable";
 export async function dbState(): Promise<DbState> {
   const sql = db();
   if (!sql) return "not_configured";
-  if (readyCache?.value && Date.now() - readyCache.at < 60_000) return "ready";
+  if (readyCache?.value && Date.now() - readyCache.at < 5 * 60_000) return "ready";
   try {
-    const [row] = await withTimeout(sql`select (to_regclass('public.appointments') is not null and to_regclass('public.leads') is not null) as ready`, 9000);
-    readyCache = { value: Boolean(row.ready), at: Date.now() };
+    const [row] = await withTimeout(sql`
+      select (to_regclass('public.appointments') is not null and to_regclass('public.leads') is not null) as ready,
+             (select value from app_settings where key = 'schema_version') as version`.catch(async () =>
+        // app_settings doesn't exist yet on a brand-new database
+        sql`select false as ready, null as version`), 9000);
     lastError = null;
-    if (row.ready) await upgradeOnce(sql);
-    return row.ready ? "ready" : "not_set_up";
+    if (!row.ready || row.version !== SCHEMA_VERSION) {
+      // Brand-new or older database: create/upgrade the tables automatically. No button needed.
+      await setupOnce();
+    }
+    readyCache = { value: true, at: Date.now() };
+    return "ready";
   } catch (error) {
     lastError = describe(error);
-    console.error("Database unreachable:", lastError);
+    readyCache = null;
+    console.error("Database unreachable or setup failed:", lastError);
     return "unreachable";
   }
+}
+
+export const SCHEMA_VERSION = "3";
+let setupPromise: Promise<void> | null = null;
+function setupOnce(): Promise<void> {
+  setupPromise ??= import("./schema")
+    .then(({ setupDatabase }) => setupDatabase())
+    .catch((error) => {
+      setupPromise = null; // try again on the next request
+      throw error;
+    });
+  return setupPromise;
 }
 
 export async function readyDb(): Promise<Sql | null> {
@@ -75,17 +95,4 @@ export function withTimeout<T>(work: PromiseLike<T>, ms: number): Promise<T> {
       (error) => { clearTimeout(timer); reject(error); },
     );
   });
-}
-
-// Adds newer columns to databases set up before they existed. Runs once per server instance.
-let upgraded: Promise<void> | null = null;
-function upgradeOnce(sql: Sql): Promise<void> {
-  upgraded ??= import("./schema")
-    .then(({ UPGRADE_SQL }) => sql.unsafe(UPGRADE_SQL))
-    .then(() => undefined)
-    .catch((error) => {
-      upgraded = null;
-      console.error("Database upgrade failed:", error instanceof Error ? error.message : error);
-    });
-  return upgraded;
 }

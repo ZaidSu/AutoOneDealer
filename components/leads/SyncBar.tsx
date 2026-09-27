@@ -29,7 +29,7 @@ export default function SyncBar({ lastRun, saved, remaining }: Props) {
     setMessage(auto ? "Importing your lead emails. You can keep using the page…" : null);
     let keepGoing = false;
     try {
-      const response = await fetch("/api/leads/sync", { method: "POST" });
+      const response = await fetch("/api/leads/sync?force=1", { method: "POST" });
       const data = await response.json().catch(() => null);
       setMessage(data?.message ?? "Couldn't update right now.");
       keepGoing = Boolean(data?.ok && data.remaining > 0);
@@ -41,13 +41,15 @@ export default function SyncBar({ lastRun, saved, remaining }: Props) {
       setBusy(false);
     }
     if (keepGoing) setTimeout(() => update(true), 1500);
+    // (Automatic checks happen in the background; this button is only for "right now".)
   }
 
-  // Nothing saved yet, or an import still in progress: continue it automatically.
+  // Show new leads as soon as the background check brings them in.
   useEffect(() => {
-    if ((saved === 0 && !lastRun) || remaining > 0) update(true);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+    const onSynced = () => router.refresh();
+    window.addEventListener("autodash:leads-synced", onSynced);
+    return () => window.removeEventListener("autodash:leads-synced", onSynced);
+  }, [router]);
 
   return (
     <div className="mb-4 flex flex-wrap items-center gap-x-3 gap-y-1 text-sm text-muted" aria-live="polite">
@@ -55,7 +57,9 @@ export default function SyncBar({ lastRun, saved, remaining }: Props) {
       <span>
         {busy
           ? message ?? "Checking Gmail for new leads…"
-          : message ?? (lastRun ? `Updated ${ago(lastRun)} · ${saved.toLocaleString()} leads saved${remaining > 0 ? ` · still importing ${remaining.toLocaleString()} older emails` : ""}` : "Not updated yet")}
+          : message ?? (lastRun
+            ? `Updated ${ago(lastRun)} · ${saved.toLocaleString()} leads saved${remaining > 0 ? ` · importing ${remaining.toLocaleString()} older emails in the background` : " · new leads arrive automatically"}`
+            : "Importing your lead emails in the background…")}
       </span>
       {!busy && (
         <button type="button" onClick={() => update()} className="font-semibold text-signal hover:underline">

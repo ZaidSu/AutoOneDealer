@@ -4,7 +4,6 @@ import { dbState } from "@/lib/db";
 import type { GmailResult, Lead, LeadFilter } from "@/lib/gmail";
 import { fetchLeads, fetchManyLeads, withGmail } from "@/lib/gmail";
 import { getGmailConnection } from "@/lib/gmail/connection";
-import { syncInBackground } from "./background";
 import { allLeads, queryLeads, savedLeadCount } from "./store";
 import { getSyncState, type SyncState } from "./sync";
 
@@ -16,7 +15,6 @@ async function fromDb<T>(load: () => Promise<T>, isEmpty: (t: T) => boolean): Pr
   const connection = await getGmailConnection().catch(() => null);
   const [data, state, saved] = await Promise.all([load(), getSyncState(), savedLeadCount()]);
   if (!connection && isEmpty(data)) return { status: "not_connected", sync: null };
-  if (connection) await syncInBackground();
   const sync = connection ? { lastRun: (state as SyncState | null)?.lastRun ?? null, saved, remaining: state?.remaining ?? 0 } : null;
   return { status: "ok", data, sync };
 }

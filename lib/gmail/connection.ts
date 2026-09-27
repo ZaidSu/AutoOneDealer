@@ -8,10 +8,21 @@ import { getSetting, setSetting } from "@/lib/db/data";
 
 const KEY = "gmail_connection";
 
+// The shared connection rarely changes, so remember it briefly instead of asking the database on every page.
+let cached: { value: GmailConnection | null; at: number } | null = null;
+
 export async function loadGmailConnection(cookieValue: string | undefined): Promise<GmailConnection | null> {
+  if (cached?.value && Date.now() - cached.at < 60_000) return cached.value;
   const shared = await getSetting(KEY).catch(() => null);
   const fromDb = shared ? readSealed<GmailConnection>(shared) : null;
-  return fromDb ?? readSealed<GmailConnection>(cookieValue);
+  if (fromDb) {
+    cached = { value: fromDb, at: Date.now() };
+    return fromDb;
+  }
+  const fromCookie = readSealed<GmailConnection>(cookieValue);
+  // A browser still holding the old per-browser connection shares it with the team automatically.
+  if (fromCookie) void saveSharedGmailConnection(fromCookie);
+  return fromCookie;
 }
 
 /** For Server Components. */
@@ -21,9 +32,11 @@ export async function getGmailConnection(): Promise<GmailConnection | null> {
 }
 
 export async function saveSharedGmailConnection(connection: GmailConnection) {
+  cached = { value: connection, at: Date.now() };
   await setSetting(KEY, seal(connection, sessionSecret())).catch((e) => console.error("Couldn't save Gmail connection to database:", e?.message));
 }
 
 export async function clearSharedGmailConnection() {
+  cached = null;
   await setSetting(KEY, null).catch(() => undefined);
 }

@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useEffect, useState } from "react";
+import AutoSync from "./AutoSync";
 
 type NavItem = { href: string; label: string; ready: boolean };
 
@@ -76,6 +77,7 @@ export default function AppShell({ dealershipName, staffName, roleLabel, childre
       </aside>
 
       <main className="min-w-0 px-5 py-8 sm:px-8 lg:px-12 lg:py-10">{children}</main>
+      <AutoSync />
     </div>
   );
 }

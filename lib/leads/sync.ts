@@ -9,7 +9,7 @@ export const HISTORY = "newer_than:365d";
 const STATE_KEY = "lead_sync_state";
 const LOCK_KEY = "lead_sync_lock";
 
-export type SyncState = { lastRun: number; saved: number; remaining: number; failed: number };
+export type SyncState = { lastRun: number; saved: number; remaining: number; failed: number; added?: number };
 
 export async function getSyncState(): Promise<SyncState | null> {
   const raw = await getSetting(STATE_KEY).catch(() => null);
@@ -53,10 +53,11 @@ export async function syncLeads(gmail: GmailClient, { budget = 150 } = {}): Prom
     const batch = missing.slice(0, budget);
 
     let failed = 0;
+    let added = 0;
     await mapLimit(batch, 5, async (id) => {
       try {
         const lead = await readLead(gmail, id);
-        if (lead) await saveLead(lead);
+        if (lead) { await saveLead(lead); added++; }
         else await markIgnored(id, 0, "");
       } catch (error) {
         failed++;
@@ -64,7 +65,7 @@ export async function syncLeads(gmail: GmailClient, { budget = 150 } = {}): Prom
       }
     });
 
-    const state: SyncState = { lastRun: Date.now(), saved: await savedLeadCount(), remaining: missing.length - batch.length + failed, failed };
+    const state: SyncState = { lastRun: Date.now(), saved: await savedLeadCount(), remaining: missing.length - batch.length + failed, failed, added };
     await setSetting(STATE_KEY, JSON.stringify(state));
     return state;
   } finally {

@@ -57,6 +57,7 @@ export async function saveLead(lead: Lead) {
       ${lead.name}, ${lead.phone}, ${lead.email}, ${lead.location}, ${lead.vehicle}, ${lead.vin}, ${lead.stock},
       ${lead.comments}, ${lead.applicationId}, ${lead.loanAmount}, ${lead.downPayment}, ${lead.viewUrl}, ${customerKey(lead)})
     on conflict (message_id) do nothing`;
+  forgetCachedLeads();
 }
 
 /** Emails that matched the search but aren't leads (e.g. "Re:" replies) are remembered so they aren't re-read. */
@@ -87,8 +88,25 @@ export async function queryLeads({ filter = "all", search = "", since, limit = 5
   return { leads: rows.slice(0, limit).map(toLead), more: rows.length > limit };
 }
 
+// Paging, filtering and switching date ranges reuse the same leads, so keep them for a minute.
+// Cleared whenever this server saves new leads.
+const allLeadsCache = new Map<string, { at: number; leads: Lead[] }>();
+export function forgetCachedLeads() {
+  allLeadsCache.clear();
+}
+
 /** All saved leads (newest first), for grouping into customers and for analytics. Leaves out long comment text. */
 export async function allLeads(since?: Date, cap = 30000): Promise<Lead[]> {
+  // Round "since" to the minute so repeat visits share the cache.
+  const cacheKey = `${since ? Math.floor(since.getTime() / 60000) : "all"}:${cap}`;
+  const hit = allLeadsCache.get(cacheKey);
+  if (hit && Date.now() - hit.at < 60_000) return hit.leads;
+  const leads = await loadAllLeadRows(since, cap);
+  allLeadsCache.set(cacheKey, { at: Date.now(), leads });
+  return leads;
+}
+
+async function loadAllLeadRows(since: Date | undefined, cap: number): Promise<Lead[]> {
   const sql = await readyDb();
   if (!sql) return [];
   const rows = await sql`

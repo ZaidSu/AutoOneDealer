@@ -1,5 +1,5 @@
 // Creates the tables. Safe to run more than once (Developer page → Set up database).
-import { db, markReady, withTimeout } from "./index";
+import { db, markReady, SCHEMA_VERSION, withTimeout } from "./index";
 import { LEADS_TABLE_SQL } from "./leads-sql";
 
 export const DEFAULT_SOURCES = [
@@ -84,6 +84,8 @@ export async function setupDatabase(): Promise<void> {
     for (const name of DEFAULT_SOURCES) await tx`insert into sources (name) values (${name}) on conflict (name) do nothing`;
     const [{ count }] = await tx`select count(*)::int as count from reps`;
     if (count === 0) for (const name of DEFAULT_REPS) await tx`insert into reps (name) values (${name})`;
+    await tx`insert into app_settings (key, value) values ('schema_version', ${SCHEMA_VERSION})
+      on conflict (key) do update set value = excluded.value, updated_at = now()`;
   }), 25000);
   markReady();
 }

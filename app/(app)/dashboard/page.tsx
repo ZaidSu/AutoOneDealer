@@ -11,7 +11,6 @@ import { appointmentsBetween, followUps, leadCounts, listReps, type FollowUp } f
 import { dealership, greeting } from "@/lib/dealership";
 import { formatPhone } from "@/lib/format";
 import { fetchLeads, LEAD_QUERIES, startOfDealershipDay, withGmail } from "@/lib/gmail";
-import { syncInBackground } from "@/lib/leads/background";
 import { queryLeads } from "@/lib/leads/store";
 import { addDays, dayKey, zonedToUtc } from "@/lib/time";
 
@@ -47,24 +46,23 @@ export default async function DashboardPage({ searchParams }: { searchParams: Pr
   const today = dayKey(Date.now(), tz);
   const repId = params.rep ? Number(params.rep) || null : null;
 
-  if (dbReady) await syncInBackground();
-
-  const [reps, items, appointmentsToday, counts] = dbReady
-    ? await Promise.all([
+  // Database and Gmail parts load at the same time.
+  const dbPart = dbReady
+    ? Promise.all([
         listReps(),
         followUps(today, repId),
         appointmentsBetween(zonedToUtc(today, "00:00", tz)!, zonedToUtc(addDays(today, 1), "00:00", tz)!, repId),
         leadCounts(new Date(startOfDealershipDay(tz) * 1000), new Date(Date.now() - 7 * 86400000)),
+        queryLeads({ limit: 6 }).then((r) => r.leads),
       ])
-    : [[], [], null, null];
-
+    : Promise.resolve([[], [], null, null, null] as const);
   // Without the database, counts and newest leads come straight from Gmail.
-  const gmail = await withGmail(async (g) => {
+  const gmailPart = withGmail(async (g) => {
     const todayQuery = `after:${startOfDealershipDay(tz)}`;
     const [unread, latest, fallback] = await Promise.all([
       g.inboxUnread(),
-      dbReady ? queryLeads({ limit: 6 }).then((r) => r.leads) : fetchLeads(g, { max: 6 }).then((r) => r.leads),
-      counts
+      dbReady ? Promise.resolve(null) : fetchLeads(g, { max: 6 }).then((r) => r.leads),
+      dbReady
         ? Promise.resolve(null)
         : Promise.all([
             g.count(`${LEAD_QUERIES.inquiry} ${todayQuery}`),
@@ -72,8 +70,13 @@ export default async function DashboardPage({ searchParams }: { searchParams: Pr
             g.count(`${LEAD_QUERIES.all} newer_than:7d`),
           ]).then(([leadsToday, appsToday, week]) => ({ leadsToday, appsToday, week })),
     ]);
-    return { unread, latest, counts: counts ?? fallback! };
+    return { unread, latest, fallback };
   });
+  const [[reps, items, appointmentsToday, counts, dbLatest], gmailRaw] = await Promise.all([dbPart, gmailPart]);
+  const gmail =
+    gmailRaw.status === "ok"
+      ? { ...gmailRaw, data: { unread: gmailRaw.data.unread, latest: dbLatest ?? gmailRaw.data.latest ?? [], counts: counts ?? gmailRaw.data.fallback! } }
+      : gmailRaw;
 
   const total = items.length;
   const visibleAppointments = (appointmentsToday ?? []).filter((a) => a.status !== "canceled");
