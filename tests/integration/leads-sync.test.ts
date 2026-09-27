@@ -68,3 +68,21 @@ test("two syncs at once don't both run", async () => {
   const [a, b] = await Promise.all([syncLeads(fakeGmail), syncLeads(fakeGmail)]);
   assert.equal([a, b].filter((r) => "busy" in r).length, 1);
 });
+
+test("a run that runs out of time saves its progress and the next run continues", async () => {
+  const sql = db()!;
+  await sql`delete from leads`;
+  await sql`delete from app_settings where key in ('lead_sync_state', 'lead_sync_lock')`;
+  const slow = Object.assign(Object.create(fakeGmail), {
+    mailbox: "slow-test@example.com", // separate mailbox so the read cache doesn't apply
+    async full(id: string) { await new Promise((r) => setTimeout(r, 300)); return (fakeGmail as any).full(id); },
+  }) as GmailClient;
+  const first = await syncLeads(slow, { budget: 10, timeLimitMs: 0 }); // out of time before reading anything
+  assert.ok(!("busy" in first));
+  const state = (await getSyncState())!;
+  assert.equal(state.remaining, 4, "the unfinished work is recorded");
+  assert.equal(await savedLeadCount(), 0);
+  await syncLeads(fakeGmail, { budget: 10 });
+  assert.equal((await getSyncState())!.remaining, 0);
+  assert.equal(await savedLeadCount(), 3);
+});

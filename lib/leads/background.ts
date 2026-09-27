@@ -14,7 +14,7 @@ export async function syncInBackground() {
     try {
       const state = await getSyncState();
       if (state && Date.now() - state.lastRun < MIN_GAP_MS && state.remaining === 0) return;
-      await withGmail((gmail) => syncLeads(gmail, { budget: 150 }), connection, "background");
+      await withGmail((gmail) => syncLeads(gmail, { budget: 150, timeLimitMs: 25_000 }), connection, "background");
     } catch (error) {
       console.error("Background lead sync failed:", error instanceof Error ? error.message : "unknown");
     }

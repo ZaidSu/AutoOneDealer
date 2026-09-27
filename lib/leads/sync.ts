@@ -34,41 +34,57 @@ async function unlock() {
 }
 
 /**
- * Reads up to `budget` new lead emails (newest first) and saves them.
+ * Reads up to `budget` new lead emails (newest first) and saves them, stopping after `timeLimitMs`
+ * so a run always finishes well inside Vercel's time limit and records its progress.
  * Listing message IDs is cheap, so it always checks the full 12 months for anything missing.
  */
-export async function syncLeads(gmail: GmailClient, { budget = 150 } = {}): Promise<SyncState | { busy: true }> {
+export async function syncLeads(
+  gmail: GmailClient,
+  { budget = 150, timeLimitMs = 35_000 } = {},
+): Promise<SyncState | { busy: true }> {
   if (!(await tryLock())) return { busy: true };
+  const deadline = Date.now() + timeLimitMs;
+  let missingCount = 0;
+  let done = 0;
+  let failed = 0;
+  let added = 0;
   try {
     const ids: string[] = [];
     let token: string | undefined;
     for (let page = 0; page < 40; page++) {
       const result = await gmail.listPage(`${LEAD_QUERIES.all} ${HISTORY}`, 500, token);
       ids.push(...result.ids);
-      if (!result.next) break;
+      if (!result.next || Date.now() >= deadline) break;
       token = result.next;
     }
     const known = await knownMessageIds(ids);
     const missing = ids.filter((id) => !known.has(id));
+    missingCount = missing.length;
     const batch = missing.slice(0, budget);
 
-    let failed = 0;
-    let added = 0;
     await mapLimit(batch, 5, async (id) => {
+      if (Date.now() >= deadline) return; // out of time: leave the rest for the next run
       try {
         const lead = await readLead(gmail, id);
         if (lead) { await saveLead(lead); added++; }
         else await markIgnored(id, 0, "");
+        done++;
       } catch (error) {
         failed++;
         console.error("Lead sync skipped a message:", error instanceof Error ? error.message : "unknown");
       }
     });
-
-    const state: SyncState = { lastRun: Date.now(), saved: await savedLeadCount(), remaining: missing.length - batch.length + failed, failed, added };
-    await setSetting(STATE_KEY, JSON.stringify(state));
-    return state;
   } finally {
+    // Always record progress, even if the run was cut short or failed part-way.
+    const state: SyncState = {
+      lastRun: Date.now(),
+      saved: await savedLeadCount().catch(() => 0),
+      remaining: Math.max(0, missingCount - done),
+      failed,
+      added,
+    };
+    await setSetting(STATE_KEY, JSON.stringify(state)).catch(() => undefined);
     await unlock();
   }
+  return (await getSyncState()) ?? { lastRun: Date.now(), saved: 0, remaining: 0, failed, added };
 }
