@@ -32,7 +32,9 @@ export default function AutoSync() {
       }
       timer = setTimeout(tick, next);
     }
-    timer = setTimeout(tick, 4000); // let the page finish loading first
+    // Do not compete with the first page render/cold database connection. After this, the normal
+    // once-a-minute cadence is unchanged.
+    timer = setTimeout(tick, 15000);
     const onVisible = () => { if (document.visibilityState === "visible") { clearTimeout(timer); timer = setTimeout(tick, 1000); } };
     document.addEventListener("visibilitychange", onVisible);
     return () => { stopped = true; clearTimeout(timer); document.removeEventListener("visibilitychange", onVisible); };

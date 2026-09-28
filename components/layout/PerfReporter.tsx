@@ -1,6 +1,6 @@
 "use client";
-// Stopwatch: records how long each page takes on this computer, split into where the time went,
-// so slowness can be fixed where it actually happens. Sends a tiny note after the page is done.
+// Stopwatch: records how long each page takes on this computer, split into browser/network phases.
+// With Next.js streaming, "stream" can include server rendering/database work after the first byte.
 import { usePathname } from "next/navigation";
 import { useEffect, useRef } from "react";
 
@@ -21,10 +21,10 @@ export default function PerfReporter({ serverHits, serverAgeS }: { serverHits: n
       if (!n) return;
       send({
         route: location.pathname, kind: "refresh",
-        connect: ms(n.requestStart - n.startTime),       // reaching Vercel (network, secure connection)
-        server: ms(n.responseStart - n.requestStart),    // server starting up + first bytes
-        data: ms(n.responseEnd - n.responseStart),       // page content arriving (database work)
-        browser: ms(n.loadEventEnd - n.responseEnd),     // browser loading code and drawing the page
+        connect: ms(n.requestStart - n.startTime),          // browser -> Vercel request setup
+        server: ms(n.responseStart - n.requestStart),       // request -> first byte (TTFB)
+        data: ms(n.responseEnd - n.responseStart),          // streamed response after first byte
+        browser: ms(n.loadEventEnd - n.responseEnd),        // finishing scripts/resources and load event
         total: ms(n.loadEventEnd - n.startTime),
         cold: serverHits <= 1, serverAgeS,
       });
@@ -33,14 +33,20 @@ export default function PerfReporter({ serverHits, serverAgeS }: { serverHits: n
     else window.addEventListener("load", () => setTimeout(report, 0), { once: true });
 
     const onClick = (e: MouseEvent) => {
-      const a = (e.target as Element | null)?.closest?.("a[href^='/']");
-      if (a && !e.metaKey && !e.ctrlKey) clickAt.current = performance.now();
+      if (e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) return;
+      const a = (e.target as Element | null)?.closest?.("a[href^='/']") as HTMLAnchorElement | null;
+      if (!a) return;
+      // Do not start a timer for the already-open page. Previously that stale timer could survive for
+      // minutes and make the next navigation look hundreds of seconds slow.
+      const target = new URL(a.href, location.href);
+      if (target.pathname === location.pathname && target.search === location.search) return;
+      clickAt.current = performance.now();
     };
     document.addEventListener("click", onClick, true);
     return () => document.removeEventListener("click", onClick, true);
   }, [serverHits, serverAgeS]);
 
-  // Clicking a link inside AutoDash: time from the click until the page's content (not the loading screen) is showing.
+  // Clicking a link inside AutoDash: time from the click until the destination's real content is showing.
   useEffect(() => {
     if (clickAt.current === null) return;
     const start = clickAt.current;

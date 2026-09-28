@@ -3,9 +3,9 @@ import type { NextConfig } from "next";
 const nextConfig: NextConfig = {
   poweredByHeader: false,
   experimental: {
-    // Keep pages the browser just loaded or preloaded for a short time, so going back is instant.
-    // Any change staff make clears this (see revalidatePath in app/actions.ts).
-    staleTimes: { dynamic: 30, static: 60 },
+    // Keep recently visited pages in the client router longer so normal back-and-forth navigation stays instant.
+    // Staff changes still clear this through revalidatePath in app/actions.ts.
+    staleTimes: { dynamic: 120, static: 300 },
   },
   async headers() {
     return [

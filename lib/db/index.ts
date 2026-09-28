@@ -31,7 +31,9 @@ export function db(): Sql | null {
       prepare: false, // required by Supabase's transaction pooler
       debug: process.env.DB_DEBUG ? (_c: number, q: string) => console.log("[q]", q.replace(/\s+/g, " ").slice(0, 70)) : undefined,
       onnotice: () => undefined, // "already exists, skipping" notes from setup aren't worth logging
-      max: 4,
+      // Keep a little concurrency for Dashboard/Customers without opening four fresh TLS/database
+      // connections in every new Vercel instance. Most queries here are only a few milliseconds.
+      max: 2,
       idle_timeout: 20,
       connect_timeout: 8,
       ssl: local ? false : "require",

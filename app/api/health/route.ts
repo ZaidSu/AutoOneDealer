@@ -62,7 +62,8 @@ export async function GET(req: NextRequest) {
     }
   }
   if (check === "perf") {
-    // Stopwatch results from real page loads: medians and slowest, per page, split by where time went.
+    // Stopwatch results from real page loads: medians and slowest, per page, split by browser/network phase.
+    // `stream_ms` is responseStart -> responseEnd; with Next streaming it can include server/database work.
     const { db } = await import("@/lib/db");
     const sql = db();
     if (sql) {
@@ -71,8 +72,8 @@ export async function GET(req: NextRequest) {
           percentile_disc(0.5) within group (order by total) as median_ms,
           max(total) as slowest_ms,
           percentile_disc(0.5) within group (order by connect) as connect_ms,
-          percentile_disc(0.5) within group (order by server) as server_ms,
-          percentile_disc(0.5) within group (order by data) as data_ms,
+          percentile_disc(0.5) within group (order by server) as ttfb_ms,
+          percentile_disc(0.5) within group (order by data) as stream_ms,
           percentile_disc(0.5) within group (order by browser) as browser_ms,
           count(*) filter (where cold)::int as cold_starts,
           percentile_disc(0.5) within group (order by total) filter (where cold) as cold_median_ms
