@@ -17,12 +17,13 @@ export async function POST(req: NextRequest) {
     if (!tableReady) {
       await sql`create table if not exists perf_log (id bigserial primary key, at timestamptz not null default now(), route text, kind text,
         connect int, server int, data int, browser int, total int, cold boolean, server_age_s int)`;
+      await sql`alter table perf_log add column if not exists detail text`;
       tableReady = true;
     }
-    await sql`insert into perf_log (route, kind, connect, server, data, browser, total, cold, server_age_s)
+    await sql`insert into perf_log (route, kind, connect, server, data, browser, total, cold, server_age_s, detail)
       values (${String(n.route ?? "").replace(/\/customers\/.+/, "/customers/[key]").replace(/\/inbox\/.+/, "/inbox/[id]").slice(0, 60)},
         ${n.kind === "click" ? "click" : "refresh"}, ${num(n.connect)}, ${num(n.server)}, ${num(n.data)}, ${num(n.browser)},
-        ${num(n.total)}, ${n.cold === true}, ${num(n.serverAgeS)})`;
+        ${num(n.total)}, ${n.cold === true}, ${num(n.serverAgeS)}, ${typeof n.detail === "string" && n.detail ? n.detail.slice(0, 400) : null})`;
     if (Math.random() < 0.05) await sql`delete from perf_log where id < (select max(id) - 1000 from perf_log)`;
   } catch {
     // A stopwatch note is never worth an error.

@@ -80,6 +80,9 @@ export async function GET(req: NextRequest) {
         from perf_log where at > now() - interval '2 days'
         group by route, kind order by kind, median_ms desc`.catch(() => "no stopwatch data yet");
       body.perf = summary;
+      // The last few newly started servers: where their start-up time went.
+      body.coldStarts = await sql`select to_char(at, 'HH24:MI') as at, route, total, detail from perf_log
+        where detail is not null order by id desc limit 8`.catch(() => []);
     }
   }
   if (check === "pages") {

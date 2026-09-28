@@ -10,7 +10,7 @@ const send = (note: Note) => {
 };
 const ms = (n: number) => Math.max(0, Math.round(n));
 
-export default function PerfReporter({ serverHits, serverAgeS }: { serverHits: number; serverAgeS: number }) {
+export default function PerfReporter({ serverHits, serverAgeS, startup = "" }: { serverHits: number; serverAgeS: number; startup?: string }) {
   const pathname = usePathname();
   const clickAt = useRef<number | null>(null);
 
@@ -27,6 +27,7 @@ export default function PerfReporter({ serverHits, serverAgeS }: { serverHits: n
         browser: ms(n.loadEventEnd - n.responseEnd),        // finishing scripts/resources and load event
         total: ms(n.loadEventEnd - n.startTime),
         cold: serverHits <= 1, serverAgeS,
+        detail: startup, // on a newly started server: how long each step of reaching the database took
       });
     };
     if (document.readyState === "complete") setTimeout(report, 0);
@@ -44,7 +45,7 @@ export default function PerfReporter({ serverHits, serverAgeS }: { serverHits: n
     };
     document.addEventListener("click", onClick, true);
     return () => document.removeEventListener("click", onClick, true);
-  }, [serverHits, serverAgeS]);
+  }, [serverHits, serverAgeS, startup]);
 
   // Clicking a link inside AutoDash: time from the click until the destination's real content is showing.
   useEffect(() => {

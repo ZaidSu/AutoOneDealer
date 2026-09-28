@@ -35,7 +35,7 @@ export function db(): Sql | null {
       // connections in every new Vercel instance. Most queries here are only a few milliseconds.
       max: 2,
       idle_timeout: 20,
-      connect_timeout: 8,
+      connect_timeout: 4, // a healthy connection takes ~0.1s; don't let a stalled one hold a page for long
       ssl: local ? false : "require",
     });
   }
@@ -54,27 +54,75 @@ export function bgDb(): Sql | null {
 export type DbState = "not_configured" | "not_set_up" | "ready" | "unreachable";
 
 /** Whether the tables exist. Cached briefly so every page load doesn't ask. */
+// What a newly started server spent before it could answer (sent along with the stopwatch notes).
+export type StartupTrace = { startedAt: number; dnsMs?: number; tcpMs?: number; firstQueryMs?: number; fallback?: boolean; retried?: boolean; setupMs?: number; error?: string };
+export let startupTrace: StartupTrace | null = null;
+let probePromise: Promise<unknown> | null = null;
+/** The startup trace once the network probe has finished (waits at most 3 seconds). */
+export async function startupReport(): Promise<StartupTrace | null> {
+  await dbState();
+  if (probePromise) await Promise.race([probePromise, new Promise((r) => setTimeout(r, 3000))]);
+  return startupTrace;
+}
+
+/** Times finding the database's address and opening a plain network connection to it (once per server). */
+async function probeNetwork(url: string): Promise<Partial<StartupTrace>> {
+  const { lookup } = await import("node:dns/promises");
+  const net = await import("node:net");
+  const u = new URL(url);
+  const t0 = Date.now();
+  const addr = await lookup(u.hostname);
+  const t1 = Date.now();
+  await new Promise<void>((resolve, reject) => {
+    const socket = net.connect(Number(u.port || 5432), addr.address);
+    socket.setTimeout(10000, () => { socket.destroy(); reject(new Error("tcp timeout")); });
+    socket.once("connect", () => { socket.destroy(); resolve(); });
+    socket.once("error", reject);
+  });
+  return { dnsMs: t1 - t0, tcpMs: Date.now() - t1 };
+}
+
 export async function dbState(): Promise<DbState> {
   const sql = db();
   if (!sql) return "not_configured";
   if (readyCache?.value && Date.now() - readyCache.at < 5 * 60_000) return "ready";
+  if (!startupTrace) {
+    startupTrace = { startedAt: Date.now() };
+    probePromise = probeNetwork(process.env.DATABASE_URL!).then((p) => Object.assign(startupTrace!, p))
+      .catch((e) => { startupTrace!.error ??= `probe: ${e instanceof Error ? e.message : e}`; });
+  }
   try {
     const [row] = await withTimeout(sql`
       select (to_regclass('public.appointments') is not null and to_regclass('public.leads') is not null) as ready,
              (select value from app_settings where key = 'schema_version') as version,
-             (select value from app_settings where key = 'customers_built') as built`.catch(async () =>
-        // app_settings doesn't exist yet on a brand-new database
-        sql`select false as ready, null as version, null as built`), 9000);
+             (select value from app_settings where key = 'customers_built') as built`.catch(async (error) => {
+        // Only a brand-new database (app_settings doesn't exist yet: 42P01) means "set up from scratch".
+        // Anything else (a slow or failed connection) is a real error; it must not re-run the upgrade.
+        if ((error as { code?: string })?.code !== "42P01") {
+          // A stalled or failed first connection: try once more on a fresh connection (no setup).
+          if (startupTrace) startupTrace.retried = true;
+          return sql`
+            select (to_regclass('public.appointments') is not null and to_regclass('public.leads') is not null) as ready,
+                   (select value from app_settings where key = 'schema_version') as version,
+                   (select value from app_settings where key = 'customers_built') as built`;
+        }
+        if (startupTrace) startupTrace.fallback = true;
+        return sql`select false as ready, null as version, null as built`;
+      }), 9000);
+    if (startupTrace && startupTrace.firstQueryMs === undefined) startupTrace.firstQueryMs = Date.now() - startupTrace.startedAt;
     lastError = null;
     if (!row.ready || row.version !== SCHEMA_VERSION) {
       // Brand-new or older database: create/upgrade the tables automatically. No button needed.
+      const setupStarted = Date.now();
       await setupOnce();
+      if (startupTrace) startupTrace.setupMs = Date.now() - setupStarted;
     }
     readyCache = { value: true, at: Date.now() };
     return "ready";
   } catch (error) {
     lastError = describe(error);
     readyCache = null;
+    if (startupTrace && !startupTrace.error) startupTrace.error = lastError.slice(0, 120);
     console.error("Database unreachable or setup failed:", lastError);
     return "unreachable";
   }

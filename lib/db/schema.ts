@@ -56,7 +56,7 @@ export async function setupDatabase(): Promise<void> {
   // A server that was frozen mid-transaction can leave a session holding table locks forever
   // ("idle in transaction"). End any that have been stuck for over a minute so the upgrade can run.
   await sql`
-    select pg_terminate_backend(pid, 5000) from pg_stat_activity
+    select pg_terminate_backend(pid, 1000) from pg_stat_activity
     where datname = current_database() and pid <> pg_backend_pid()
       and state in ('idle in transaction', 'idle in transaction (aborted)')
       and now() - state_change > interval '60 seconds'`.catch(() => undefined);
