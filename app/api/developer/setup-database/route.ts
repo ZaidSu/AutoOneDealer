@@ -8,7 +8,7 @@ import { setupDatabase } from "@/lib/db/schema";
 import { saveSharedGmailConnection } from "@/lib/gmail/connection";
 
 export const dynamic = "force-dynamic";
-export const maxDuration = 60;
+export const maxDuration = 45;
 
 export async function POST(req: NextRequest) {
   const reply = (ok: boolean, message: string, status = ok ? 200 : 400) => NextResponse.json({ ok, message }, { status });

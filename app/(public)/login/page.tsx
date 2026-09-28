@@ -80,3 +80,5 @@ export default async function LoginPage({ searchParams }: { searchParams: Promis
     </main>
   );
 }
+
+export const maxDuration = 45;

@@ -9,7 +9,7 @@ import { listReps, STATUSES } from "@/lib/db/data";
 
 export const metadata: Metadata = { title: "Pipeline" };
 export const dynamic = "force-dynamic";
-export const maxDuration = 20;
+export const maxDuration = 45;
 
 const WINDOWS = { "30": "Last 30 days", "60": "Last 60 days", "90": "Last 90 days", "365": "Last 12 months" } as const;
 

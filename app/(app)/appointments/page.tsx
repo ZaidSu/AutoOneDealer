@@ -11,6 +11,7 @@ import { formatPhone } from "@/lib/format";
 import { addDays, dayKey, zonedToUtc } from "@/lib/time";
 
 export const metadata: Metadata = { title: "Appointments" };
+export const maxDuration = 45;
 export const dynamic = "force-dynamic";
 
 const tz = dealership.timeZone;

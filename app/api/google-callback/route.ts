@@ -16,6 +16,7 @@ import {
   type OAuthState,
 } from "@/lib/auth/session";
 
+export const maxDuration = 45;
 export const dynamic = "force-dynamic";
 
 function go(req: NextRequest, path: string) {

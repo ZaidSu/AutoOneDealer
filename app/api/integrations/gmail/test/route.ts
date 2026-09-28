@@ -6,6 +6,7 @@ import { isSameOrigin } from "@/lib/auth/request";
 import { loadGmailConnection } from "@/lib/gmail/connection";
 import {GMAIL_COOKIE, STAFF_COOKIE, validateStaff } from "@/lib/auth/session";
 
+export const maxDuration = 45;
 export const dynamic = "force-dynamic";
 
 export async function POST(req: NextRequest) {

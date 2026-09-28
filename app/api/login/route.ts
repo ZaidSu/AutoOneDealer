@@ -5,6 +5,7 @@ import { isConfigured, openLoginEnabled } from "@/lib/auth/config";
 import { isSameOrigin } from "@/lib/auth/request";
 import { setStaffSession } from "@/lib/auth/session";
 
+export const maxDuration = 45;
 export const dynamic = "force-dynamic";
 
 export async function POST(req: NextRequest) {

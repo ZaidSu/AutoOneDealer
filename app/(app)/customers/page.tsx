@@ -13,7 +13,7 @@ import { dayKey } from "@/lib/time";
 
 export const metadata: Metadata = { title: "Customers" };
 export const dynamic = "force-dynamic";
-export const maxDuration = 20;
+export const maxDuration = 45;
 
 type Params = Record<string, string | undefined>;
 

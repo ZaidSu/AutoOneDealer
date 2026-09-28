@@ -22,6 +22,9 @@ const mainNav: NavItem[] = [
   { href: "/train-ai", label: "Train your AI", ready: false, icon: "ai" },
   { href: "/automations", label: "Automations", ready: false, icon: "automations" },
 ];
+// The pages people open most are loaded in the background, so clicking them is instant.
+const PRELOAD = new Set(["/dashboard", "/pipeline", "/customers", "/appointments", "/leads"]);
+
 const footerNav: NavItem[] = [
   { href: "/settings", label: "Settings", ready: true, icon: "settings" },
   { href: "/developer", label: "Developer", ready: true, icon: "developer" },
@@ -119,6 +122,7 @@ function NavList({ items, pathname }: { items: NavItem[]; pathname: string }) {
         return (
           <li key={item.href}>
             <Link
+              prefetch={PRELOAD.has(item.href) ? true : undefined}
               href={item.href}
               aria-current={active ? "page" : undefined}
               className={`relative flex items-center gap-3 rounded-md px-3 py-2 text-[15px] transition-colors ${

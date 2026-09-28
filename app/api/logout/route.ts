@@ -2,6 +2,7 @@ import { NextResponse, type NextRequest } from "next/server";
 import { isSameOrigin } from "@/lib/auth/request";
 import { clearCookie, STAFF_COOKIE } from "@/lib/auth/session";
 
+export const maxDuration = 45;
 export const dynamic = "force-dynamic";
 
 export function POST(req: NextRequest) {

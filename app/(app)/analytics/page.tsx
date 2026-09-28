@@ -12,7 +12,7 @@ import { addDays, dayKey } from "@/lib/time";
 
 export const metadata: Metadata = { title: "Analytics" };
 export const dynamic = "force-dynamic";
-export const maxDuration = 20;
+export const maxDuration = 45;
 
 const RANGES = { "7": "Last 7 days", "30": "Last 30 days", "90": "Last 90 days", "365": "Last 12 months" } as const;
 type Range = keyof typeof RANGES;

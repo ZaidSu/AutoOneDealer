@@ -111,7 +111,8 @@ export async function updateCustomerAction(
   } catch {
     return NO_DB;
   }
-  // No page refresh: the row already shows the change, and a refresh could move the row out from under the cursor.
+  // Clears the browser's memory of other pages so they show this change; the row itself already shows it.
+  revalidatePath("/", "layout");
   return { ok: true };
 }
 
@@ -148,7 +149,7 @@ export async function logActivityAction(key: string, kind: ActivityKind, body: s
   } catch {
     return NO_DB;
   }
-  revalidatePath(`/customers/${key}`);
+  revalidatePath("/", "layout");
   return { ok: true, message: "Added to the history." };
 }
 

@@ -12,7 +12,7 @@ import { attempt } from "@/lib/safe";
 
 export const metadata: Metadata = { title: "Inbox" };
 export const dynamic = "force-dynamic";
-export const maxDuration = 20;
+export const maxDuration = 45;
 
 const VIEWS = { all: "All lead emails", inquiry: "Leads", application: "Credit applications" } as const;
 type View = keyof typeof VIEWS;

@@ -17,7 +17,7 @@ import { dayKey } from "@/lib/time";
 
 export const metadata: Metadata = { title: "Customer" };
 export const dynamic = "force-dynamic";
-export const maxDuration = 20;
+export const maxDuration = 45;
 
 type Entry = { at: number; key: string; node: React.ReactNode };
 

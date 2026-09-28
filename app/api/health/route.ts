@@ -9,7 +9,7 @@ import { getGmailConnection } from "@/lib/gmail/connection";
 import { getSyncState } from "@/lib/leads/sync";
 
 export const dynamic = "force-dynamic";
-export const maxDuration = 30;
+export const maxDuration = 45;
 
 export async function GET(req: NextRequest) {
   const check = req.nextUrl.searchParams.get("check");

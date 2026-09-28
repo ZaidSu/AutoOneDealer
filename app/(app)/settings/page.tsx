@@ -80,3 +80,5 @@ export default async function SettingsPage({ searchParams }: { searchParams: Pro
     </>
   );
 }
+
+export const maxDuration = 45;

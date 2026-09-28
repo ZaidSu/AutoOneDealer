@@ -16,7 +16,7 @@ import { addDays, dayKey, zonedToUtc } from "@/lib/time";
 
 export const metadata: Metadata = { title: "Dashboard" };
 export const dynamic = "force-dynamic";
-export const maxDuration = 20;
+export const maxDuration = 45;
 
 const tz = dealership.timeZone;
 const timeFmt = new Intl.DateTimeFormat("en-US", { hour: "numeric", minute: "2-digit", timeZone: tz });

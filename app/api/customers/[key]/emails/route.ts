@@ -5,7 +5,7 @@ import { getCustomer } from "@/lib/crm/queries";
 import { mapLimit, withGmail } from "@/lib/gmail";
 
 export const dynamic = "force-dynamic";
-export const maxDuration = 15;
+export const maxDuration = 45;
 
 export async function GET(req: NextRequest, { params }: { params: Promise<{ key: string }> }) {
   if (!validateStaff(req.cookies.get(STAFF_COOKIE)?.value)) return NextResponse.json({ messages: null }, { status: 401 });

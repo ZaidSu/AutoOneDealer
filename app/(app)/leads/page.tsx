@@ -9,7 +9,7 @@ import { loadLeadPage } from "@/lib/leads/source";
 
 export const metadata: Metadata = { title: "Leads" };
 export const dynamic = "force-dynamic";
-export const maxDuration = 60;
+export const maxDuration = 45;
 
 const FILTERS: { key: LeadFilter; label: string }[] = [
   { key: "all", label: "Everything" },

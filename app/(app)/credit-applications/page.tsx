@@ -8,7 +8,7 @@ import { loadLeadPage } from "@/lib/leads/source";
 
 export const metadata: Metadata = { title: "Credit Applications" };
 export const dynamic = "force-dynamic";
-export const maxDuration = 60;
+export const maxDuration = 45;
 
 export default async function CreditApplicationsPage({ searchParams }: { searchParams: Promise<Record<string, string | undefined>> }) {
   const params = await searchParams;

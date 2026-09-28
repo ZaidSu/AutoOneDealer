@@ -6,6 +6,7 @@ import { randomToken } from "@/lib/auth/crypto";
 import { GMAIL_SCOPES, googleAuthUrl } from "@/lib/auth/google";
 import { setOAuthState, STAFF_COOKIE, validateStaff } from "@/lib/auth/session";
 
+export const maxDuration = 45;
 export const dynamic = "force-dynamic";
 
 export function GET(req: NextRequest) {
