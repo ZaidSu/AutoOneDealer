@@ -1,35 +1,22 @@
 import type { Metadata } from "next";
+import Link from "next/link";
 import { BarList, Columns, Panel, Stat } from "@/components/analytics/Charts";
-import GmailState from "@/components/gmail/GmailState";
 import DbNotice from "@/components/ui/DbNotice";
 import PageHeader from "@/components/ui/PageHeader";
-import { buildCustomerViews } from "@/lib/customer-view";
-import { groupCustomers } from "@/lib/customers";
+import { analytics, type AnalyticsData } from "@/lib/crm/analytics";
 import { dbState } from "@/lib/db";
-import { appointmentsBetween, customerRecords, listReps } from "@/lib/db/data";
+import { listReps } from "@/lib/db/data";
 import { dealership } from "@/lib/dealership";
 import { stateName } from "@/lib/geo";
-import SyncBar from "@/components/leads/SyncBar";
-import { loadAllLeads } from "@/lib/leads/source";
 import { addDays, dayKey } from "@/lib/time";
 
 export const metadata: Metadata = { title: "Analytics" };
 export const dynamic = "force-dynamic";
-export const maxDuration = 60;
+export const maxDuration = 20;
 
 const RANGES = { "7": "Last 7 days", "30": "Last 30 days", "90": "Last 90 days", "365": "Last 12 months" } as const;
 type Range = keyof typeof RANGES;
-const LIMIT = 400;
 const tz = dealership.timeZone;
-
-function countBy<T>(items: T[], key: (item: T) => string | null) {
-  const counts = new Map<string, number>();
-  for (const item of items) {
-    const k = key(item);
-    if (k) counts.set(k, (counts.get(k) ?? 0) + 1);
-  }
-  return [...counts.entries()].map(([label, value]) => ({ label, value })).sort((a, b) => b.value - a.value);
-}
 
 export default async function AnalyticsPage({ searchParams }: { searchParams: Promise<Record<string, string | undefined>> }) {
   const params = await searchParams;
@@ -37,55 +24,49 @@ export default async function AnalyticsPage({ searchParams }: { searchParams: Pr
   const days = Number(range);
   const state = await dbState();
   const dbReady = state === "ready";
-
   const since = new Date(Date.now() - days * 86400000);
-  const result = await loadAllLeads({ since, gmailLimit: LIMIT, gmailExtra: `newer_than:${days}d` });
 
   const header = (
     <>
       <PageHeader title="Analytics" description="Where customers come from and what happens next. Every number comes from real lead emails and what your team has recorded." />
-      <nav aria-label="Date range" className="mb-6 flex w-fit flex-wrap rounded-md bg-white p-1 ring-1 ring-line">
-        {/* Plain links: a full page change can't be undone by a background refresh. */}
+      <nav aria-label="Date range" className="segmented mb-6">
         {(Object.keys(RANGES) as Range[]).map((r) => (
-          <a key={r} href={`/analytics?range=${r}`} aria-current={range === r ? "page" : undefined}
-            className={`rounded px-3 py-1.5 text-sm font-medium ${range === r ? "bg-graphite text-white" : "text-muted hover:text-ink"}`}>{RANGES[r]}</a>
+          <Link key={r} href={`/analytics?range=${r}`} aria-current={range === r ? "page" : undefined}>{RANGES[r]}</Link>
         ))}
       </nav>
     </>
   );
-  if (result.status !== "ok") return <>{header}<GmailState {...result} /></>;
+  if (!dbReady) return <>{header}<DbNotice state={state} what="Analytics" /></>;
+  const [data, reps] = await Promise.all([analytics(since, tz), listReps(true)]);
+  if (!data) return <>{header}<DbNotice state={state} what="Analytics" /></>;
 
-  const leads = result.data.leads;
-  const grouped = groupCustomers(leads);
-  const [reps, records] = dbReady ? await Promise.all([listReps(true), customerRecords(grouped.map((c) => c.key))]) : [[], new Map()];
-  const views = buildCustomerViews(grouped, records, reps, new Map());
-  const appointments = dbReady ? await appointmentsBetween(since, new Date(Date.now() + 1)) : [];
+  type P = AnalyticsData["people"][number];
+  const rows = data.people;
+  const sum = (test: (p: P) => boolean) => rows.reduce((n, p) => n + (test(p) ? p.n : 0), 0);
+  const tally = (test: (p: P) => boolean, label: (p: P) => string) => {
+    const m = new Map<string, number>();
+    for (const p of rows) if (test(p)) m.set(label(p), (m.get(label(p)) ?? 0) + p.n);
+    return [...m.entries()].map(([label, value]) => ({ label, value })).sort((x, y) => y.value - x.value);
+  };
 
-  // Where people came from (people, not emails), with how many lead emails each source sent.
-  const leadsBySource = new Map(countBy(leads, (l) => l.provider).map((i) => [i.label, i.value]));
-  const bySource = countBy(views, (v) => v.heardFrom ?? "Not known").map((i) => ({
+  const people = sum(() => true);
+  const emails = [...data.emailsByProvider.values()].reduce((n, v) => n + v, 0);
+  const bySource = tally(() => true, (p) => p.source).map((i) => ({
     ...i,
-    note: leadsBySource.has(i.label) && leadsBySource.get(i.label) !== i.value ? `(${leadsBySource.get(i.label)} emails)` : undefined,
+    note: data.emailsByProvider.has(i.label) && data.emailsByProvider.get(i.label) !== i.value ? `(${data.emailsByProvider.get(i.label)} emails)` : undefined,
   }));
-
-  const inState = views.filter((v) => v.scope === "in").length;
-  const outState = views.filter((v) => v.scope === "out").length;
-  const unknownState = views.length - inState - outState;
-  const topStates = countBy(views.filter((v) => v.scope === "out"), (v) => (v.stateCode ? stateName(v.stateCode) : "State not given")).slice(0, 8);
+  const inState = sum((p) => p.scope === "in");
+  const outState = sum((p) => p.scope === "out");
+  const topStates = tally((p) => p.scope === "out", (p) => (p.state ? stateName(p.state) : "State not given")).slice(0, 8);
 
   // Leads over time: by day for short ranges, by week for 90 days, by month for a year.
   const today = dayKey(Date.now(), tz);
-  const leadDays = new Map<string, number>(); // "YYYY-MM-DD" → leads that day, computed once
-  for (const l of leads) {
-    const d = dayKey(l.receivedAt, tz);
-    leadDays.set(d, (leadDays.get(d) ?? 0) + 1);
-  }
-  const sumDays = (test: (d: string) => boolean) => { let n = 0; for (const [d, c] of leadDays) if (test(d)) n += c; return n; };
+  const sumDays = (test: (d: string) => boolean) => { let n = 0; for (const [d, c] of data.leadsByDay) if (test(d)) n += c; return n; };
   const buckets: { label: string; value: number }[] = [];
   if (days <= 30) {
     for (let i = days - 1; i >= 0; i--) {
       const d = addDays(today, -i);
-      buckets.push({ label: d.slice(5).replace("-", "/"), value: leadDays.get(d) ?? 0 });
+      buckets.push({ label: d.slice(5).replace("-", "/"), value: data.leadsByDay.get(d) ?? 0 });
     }
   } else if (days <= 90) {
     for (let w = Math.ceil(days / 7) - 1; w >= 0; w--) {
@@ -101,41 +82,30 @@ export default async function AnalyticsPage({ searchParams }: { searchParams: Pr
     }
   }
 
-  const applications = views.filter((v) => v.hasApplication);
-  const approved = applications.filter((v) => v.financing === "approved").length;
-  const denied = applications.filter((v) => v.financing === "denied").length;
-  const purchased = views.filter((v) => v.status === "purchased");
-  const purchasesBySource = countBy(purchased, (v) => v.heardFrom ?? "Not known");
-  const capped = result.mode === "gmail" && result.data.more;
-
-  const repRows = reps.filter((r) => r.active || views.some((v) => v.repId === r.id)).map((r) => {
-    const mine = views.filter((v) => v.repId === r.id);
-    const appts = appointments.filter((a) => a.repId === r.id);
-    return {
-      name: r.name,
-      customers: mine.length,
-      booked: appts.length,
-      showed: appts.filter((a) => a.status === "showed").length,
-      noShow: appts.filter((a) => a.status === "no_show").length,
-      purchased: mine.filter((v) => v.status === "purchased").length,
-    };
-  });
+  const applications = sum((p) => p.hasApp);
+  const approved = sum((p) => p.hasApp && p.financing === "approved");
+  const denied = sum((p) => p.hasApp && p.financing === "denied");
+  const purchased = sum((p) => p.status === "purchased");
+  const purchasesBySource = tally((p) => p.status === "purchased", (p) => p.source);
+  const appts = (repId: number, status?: string) => data.appointments.reduce((n, a) => n + (a.repId === repId && (!status || a.status === status) ? a.n : 0), 0);
+  const repRows = reps.filter((r) => r.active || sum((p) => p.repId === r.id) > 0).map((r) => ({
+    name: r.name,
+    customers: sum((p) => p.repId === r.id),
+    booked: appts(r.id),
+    showed: appts(r.id, "showed"),
+    noShow: appts(r.id, "no_show"),
+    purchased: sum((p) => p.repId === r.id && p.status === "purchased"),
+  }));
 
   return (
     <>
       {header}
-      {result.sync && <SyncBar {...result.sync} />}
-      {capped && (
-        <p className="mb-4 max-w-3xl rounded-md border border-line bg-white px-4 py-3 text-sm text-muted">
-          This range has more than {LIMIT} lead emails, so these charts use the newest {LIMIT}. Pick a shorter range for exact numbers.
-        </p>
-      )}
 
       <section aria-label="Totals" className="mb-6 grid max-w-5xl grid-cols-2 gap-px overflow-hidden rounded-lg border border-line bg-line lg:grid-cols-4">
-        <Stat value={views.length} label="Customers who reached out" />
-        <Stat value={leads.length} label="Lead emails received" />
-        <Stat value={applications.length} label="Credit applications" />
-        <Stat value={dbReady ? purchased.length : "—"} label="Marked purchased" />
+        <Stat value={people} label="Customers who reached out" />
+        <Stat value={emails} label="Lead emails received" />
+        <Stat value={applications} label="Credit applications" />
+        <Stat value={purchased} label="Marked purchased" />
       </section>
 
       <div className="grid max-w-5xl gap-5 lg:grid-cols-2">
@@ -147,7 +117,7 @@ export default async function AnalyticsPage({ searchParams }: { searchParams: Pr
           <BarList highlightFirst={false} items={[
             { label: "In state (Texas)", value: inState },
             { label: "Out of state", value: outState },
-            { label: "Not known", value: unknownState },
+            { label: "Not known", value: people - inState - outState },
           ]} emptyText="No leads in this range." />
         </Panel>
 
@@ -161,10 +131,10 @@ export default async function AnalyticsPage({ searchParams }: { searchParams: Pr
 
         <Panel title="Credit applications" note="Received means the application arrived; it isn't an approval. Approved and denied come from the Financing label.">
           <BarList highlightFirst={false} items={[
-            { label: "Received", value: applications.length },
+            { label: "Received", value: applications },
             { label: "Approved", value: approved },
             { label: "Denied", value: denied },
-            { label: "Still needs review", value: applications.length - approved - denied },
+            { label: "Still needs review", value: applications - approved - denied },
           ]} emptyText="No credit applications in this range." />
         </Panel>
 

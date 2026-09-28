@@ -4,24 +4,27 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useEffect, useState } from "react";
 import AutoSync from "./AutoSync";
+import CommandSearch from "./CommandSearch";
+import Icon from "./Icon";
 
-type NavItem = { href: string; label: string; ready: boolean };
+type NavItem = { href: string; label: string; ready: boolean; icon: string };
 
 // Items marked ready: false keep the familiar navigation visible without pretending the page works yet.
 const mainNav: NavItem[] = [
-  { href: "/dashboard", label: "Dashboard", ready: true },
-  { href: "/inbox", label: "Inbox", ready: true },
-  { href: "/leads", label: "Leads", ready: true },
-  { href: "/credit-applications", label: "Credit Applications", ready: true },
-  { href: "/customers", label: "Customers", ready: true },
-  { href: "/appointments", label: "Appointments", ready: true },
-  { href: "/analytics", label: "Analytics", ready: true },
-  { href: "/train-ai", label: "Train your AI", ready: false },
-  { href: "/automations", label: "Automations", ready: false },
+  { href: "/dashboard", label: "Dashboard", ready: true, icon: "dashboard" },
+  { href: "/pipeline", label: "Pipeline", ready: true, icon: "pipeline" },
+  { href: "/customers", label: "Customers", ready: true, icon: "customers" },
+  { href: "/appointments", label: "Appointments", ready: true, icon: "appointments" },
+  { href: "/inbox", label: "Inbox", ready: true, icon: "inbox" },
+  { href: "/leads", label: "Leads", ready: true, icon: "leads" },
+  { href: "/credit-applications", label: "Credit Applications", ready: true, icon: "credit" },
+  { href: "/analytics", label: "Analytics", ready: true, icon: "analytics" },
+  { href: "/train-ai", label: "Train your AI", ready: false, icon: "ai" },
+  { href: "/automations", label: "Automations", ready: false, icon: "automations" },
 ];
 const footerNav: NavItem[] = [
-  { href: "/settings", label: "Settings", ready: true },
-  { href: "/developer", label: "Developer", ready: true },
+  { href: "/settings", label: "Settings", ready: true, icon: "settings" },
+  { href: "/developer", label: "Developer", ready: true, icon: "developer" },
 ];
 
 type Props = { dealershipName: string; staffName: string; roleLabel: string; children: React.ReactNode };
@@ -76,7 +79,12 @@ export default function AppShell({ dealershipName, staffName, roleLabel, childre
         </div>
       </aside>
 
-      <main className="min-w-0 px-5 py-8 sm:px-8 lg:px-12 lg:py-10">{children}</main>
+      <div className="min-w-0">
+        <div className="flex items-center gap-3 px-5 pt-5 sm:px-8 lg:px-12 lg:pt-7">
+          <CommandSearch />
+        </div>
+        <main className="min-w-0 px-5 pt-6 pb-10 sm:px-8 lg:px-12">{children}</main>
+      </div>
       <AutoSync />
     </div>
   );
@@ -86,7 +94,7 @@ function Brand({ dealershipName }: { dealershipName: string }) {
   return (
     <Link href="/dashboard" className="flex min-w-0 items-center gap-2.5">
       <span aria-hidden className="size-2.5 shrink-0 rounded-[2px] bg-signal" />
-      <span className="font-semibold tracking-tight">AutoDash</span>
+      <span className="font-condensed text-xl font-semibold tracking-wide">AutoDash</span>
       <span className="truncate text-sm text-white/55">{dealershipName}</span>
     </Link>
   );
@@ -100,8 +108,9 @@ function NavList({ items, pathname }: { items: NavItem[]; pathname: string }) {
         if (!item.ready) {
           return (
             <li key={item.href}>
-              <span className="flex items-center justify-between rounded-md px-3 py-2 text-[15px] text-white/40" aria-disabled>
-                {item.label}
+              <span className="flex items-center gap-3 rounded-md px-3 py-2 text-[15px] text-white/40" aria-disabled>
+                <Icon name={item.icon} />
+                <span className="flex-1">{item.label}</span>
                 <span className="text-xs">Soon</span>
               </span>
             </li>
@@ -112,11 +121,12 @@ function NavList({ items, pathname }: { items: NavItem[]; pathname: string }) {
             <Link
               href={item.href}
               aria-current={active ? "page" : undefined}
-              className={`relative block rounded-md px-3 py-2 text-[15px] transition-colors ${
+              className={`relative flex items-center gap-3 rounded-md px-3 py-2 text-[15px] transition-colors ${
                 active ? "bg-graphite-2 font-semibold text-white" : "text-white/75 hover:bg-graphite-2 hover:text-white"
               }`}
             >
               {active && <span aria-hidden className="absolute inset-y-1.5 left-0 w-[3px] rounded-full bg-signal" />}
+              <Icon name={item.icon} className={`size-[18px] ${active ? "text-signal" : ""}`} />
               {item.label}
             </Link>
           </li>

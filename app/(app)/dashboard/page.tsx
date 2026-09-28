@@ -1,22 +1,22 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import FollowUpItem from "@/components/dashboard/FollowUpItem";
-import GmailState from "@/components/gmail/GmailState";
+import UnreadCount from "@/components/dashboard/UnreadCount";
 import LeadList from "@/components/leads/LeadList";
 import DbNotice from "@/components/ui/DbNotice";
 import PageHeader from "@/components/ui/PageHeader";
 import { getStaffSession } from "@/lib/auth/session";
-import { dbState, withTimeout } from "@/lib/db";
+import { dbState } from "@/lib/db";
 import { appointmentsBetween, followUps, leadCounts, listReps, type FollowUp } from "@/lib/db/data";
 import { dealership, greeting } from "@/lib/dealership";
 import { formatPhone } from "@/lib/format";
-import { fetchLeads, LEAD_QUERIES, startOfDealershipDay, withGmail } from "@/lib/gmail";
+import { startOfDealershipDay } from "@/lib/gmail";
 import { queryLeads } from "@/lib/leads/store";
 import { addDays, dayKey, zonedToUtc } from "@/lib/time";
 
 export const metadata: Metadata = { title: "Dashboard" };
 export const dynamic = "force-dynamic";
-export const maxDuration = 60;
+export const maxDuration = 20;
 
 const tz = dealership.timeZone;
 const timeFmt = new Intl.DateTimeFormat("en-US", { hour: "numeric", minute: "2-digit", timeZone: tz });
@@ -46,41 +46,16 @@ export default async function DashboardPage({ searchParams }: { searchParams: Pr
   const today = dayKey(Date.now(), tz);
   const repId = params.rep ? Number(params.rep) || null : null;
 
-  // Database and Gmail parts load at the same time.
-  const dbPart = dbReady
-    ? Promise.all([
+  // Everything here comes from the database in parallel. Gmail's unread count loads separately in the browser.
+  const [reps, items, appointmentsToday, counts, latest] = dbReady
+    ? await Promise.all([
         listReps(),
         followUps(today, repId),
         appointmentsBetween(zonedToUtc(today, "00:00", tz)!, zonedToUtc(addDays(today, 1), "00:00", tz)!, repId),
         leadCounts(new Date(startOfDealershipDay(tz) * 1000), new Date(Date.now() - 7 * 86400000)),
         queryLeads({ limit: 6 }).then((r) => r.leads),
       ])
-    : Promise.resolve([[], [], null, null, null] as const);
-  // Without the database, counts and newest leads come straight from Gmail.
-  const gmailPart = withGmail(async (g) => {
-    const todayQuery = `after:${startOfDealershipDay(tz)}`;
-    const [unread, latest, fallback] = await Promise.all([
-      g.inboxUnread(),
-      dbReady ? Promise.resolve(null) : fetchLeads(g, { max: 6 }).then((r) => r.leads),
-      dbReady
-        ? Promise.resolve(null)
-        : Promise.all([
-            g.count(`${LEAD_QUERIES.inquiry} ${todayQuery}`),
-            g.count(`${LEAD_QUERIES.application} ${todayQuery}`),
-            g.count(`${LEAD_QUERIES.all} newer_than:7d`),
-          ]).then(([leadsToday, appsToday, week]) => ({ leadsToday, appsToday, week })),
-    ]);
-    return { unread, latest, fallback };
-  });
-  // With the database, Gmail only supplies the unread count, so never wait more than 2.5 seconds for it.
-  const gmailBounded = dbReady
-    ? withTimeout(gmailPart, 2500).catch(() => ({ status: "ok" as const, data: { unread: null, latest: null, fallback: null } }))
-    : gmailPart;
-  const [[reps, items, appointmentsToday, counts, dbLatest], gmailRaw] = await Promise.all([dbPart, gmailBounded]);
-  const gmail =
-    gmailRaw.status === "ok"
-      ? { ...gmailRaw, data: { unread: gmailRaw.data.unread, latest: dbLatest ?? gmailRaw.data.latest ?? [], counts: counts ?? gmailRaw.data.fallback! } }
-      : gmailRaw;
+    : [[], [], null, null, []];
 
   const total = items.length;
   const visibleAppointments = (appointmentsToday ?? []).filter((a) => a.status !== "canceled");
@@ -89,21 +64,20 @@ export default async function DashboardPage({ searchParams }: { searchParams: Pr
     <>
       <PageHeader title={`${greeting()}, ${firstName}`} description={dbReady ? (total ? `${total} ${total === 1 ? "person needs" : "people need"} a follow-up.` : "You're all caught up on follow-ups.") : "Here's what needs attention at the dealership."} />
 
-      {gmail.status === "ok" && (
-        <section aria-label="Counts" className="mb-6 grid max-w-5xl grid-cols-2 gap-px overflow-hidden rounded-lg border border-line bg-line lg:grid-cols-4">
-          <Stat value={gmail.data.counts.leadsToday} label="New leads today" href="/leads?show=inquiry" highlight={gmail.data.counts.leadsToday > 0} />
-          <Stat value={gmail.data.counts.appsToday} label="Credit applications today" href="/credit-applications" highlight={gmail.data.counts.appsToday > 0} />
-          <Stat value={gmail.data.counts.week} label="Leads and applications, last 7 days" href="/leads" />
-          <Stat value={gmail.data.unread ?? "—"} label="Unread emails in the inbox" href="/inbox?view=unread" />
+      {counts && (
+        <section aria-label="Counts" className="stat-strip mb-6 max-w-5xl lg:grid-cols-4">
+          <Stat value={counts.leadsToday} label="New leads today" href="/leads?show=inquiry" highlight={counts.leadsToday > 0} />
+          <Stat value={counts.appsToday} label="Credit applications today" href="/credit-applications" highlight={counts.appsToday > 0} />
+          <Stat value={counts.week} label="Leads and applications, last 7 days" href="/leads" />
+          <Link href="/inbox?view=unread" className="stat"><p className="stat-value"><UnreadCount /></p><p className="stat-label">Unread emails in the inbox</p></Link>
         </section>
       )}
-      {gmail.status !== "ok" && !dbReady && <div className="mb-6"><GmailState {...gmail} /></div>}
 
       {dbReady && reps.length > 0 && (
-        <nav aria-label="Salesperson" className="mb-4 flex w-fit flex-wrap rounded-md bg-white p-1 ring-1 ring-line">
-          <Link href="/dashboard" className={`rounded px-3 py-1.5 text-sm font-medium ${!repId ? "bg-graphite text-white" : "text-muted hover:text-ink"}`}>Everyone</Link>
+        <nav aria-label="Salesperson" className="segmented mb-4">
+          <Link href="/dashboard" aria-current={!repId ? "page" : undefined}>Everyone</Link>
           {reps.map((r) => (
-            <Link key={r.id} href={`/dashboard?rep=${r.id}`} className={`rounded px-3 py-1.5 text-sm font-medium ${repId === r.id ? "bg-graphite text-white" : "text-muted hover:text-ink"}`}>{r.name}</Link>
+            <Link key={r.id} href={`/dashboard?rep=${r.id}`} aria-current={repId === r.id ? "page" : undefined}>{r.name}</Link>
           ))}
         </nav>
       )}
@@ -163,13 +137,13 @@ export default async function DashboardPage({ searchParams }: { searchParams: Pr
           </section>
         )}
 
-        {gmail.status === "ok" && (
+        {dbReady && (
           <section aria-labelledby="latest">
             <div className="mb-3 flex items-baseline justify-between">
               <h2 id="latest" className="text-lg font-semibold">Newest leads</h2>
               <Link href="/leads" className="text-sm font-semibold text-signal hover:underline">See all leads</Link>
             </div>
-            {gmail.data.latest.length === 0 ? <p className="rounded-lg border border-dashed border-line p-6 text-muted">No leads yet.</p> : <LeadList leads={gmail.data.latest} />}
+            {latest.length === 0 ? <p className="rounded-lg border border-dashed border-line p-6 text-muted">No leads yet.</p> : <LeadList leads={latest} />}
           </section>
         )}
       </div>
@@ -177,11 +151,11 @@ export default async function DashboardPage({ searchParams }: { searchParams: Pr
   );
 }
 
-function Stat({ value, label, href, highlight }: { value: number | string; label: string; href: string; highlight?: boolean }) {
+function Stat({ value, label, href, highlight }: { value: number; label: string; href: string; highlight?: boolean }) {
   return (
-    <Link href={href} className="bg-white p-5 hover:bg-paper">
-      <p className={`text-3xl font-semibold tabular-nums ${highlight ? "text-signal" : ""}`}>{typeof value === "number" && value >= 500 ? "500+" : value}</p>
-      <p className="mt-1 text-sm text-muted">{label}</p>
+    <Link href={href} className="stat">
+      <p className={`stat-value ${highlight ? "text-signal" : ""}`}>{value.toLocaleString()}</p>
+      <p className="stat-label">{label}</p>
     </Link>
   );
 }

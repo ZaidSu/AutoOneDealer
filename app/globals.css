@@ -1,17 +1,22 @@
 @import "tailwindcss";
 
-/* AutoDash tokens: graphite sidebar, restrained dealership red, light readable workspace. */
+/*
+  AutoDash look: asphalt sidebar, cool road-gray workspace, dealer red for what needs action.
+  Barlow Condensed (road-sign lettering) for titles and big numbers; Barlow for everything else.
+*/
 @theme {
-  --font-sans: "Barlow", "Segoe UI", system-ui, -apple-system, sans-serif;
-  --color-graphite: #1e2228;
-  --color-graphite-2: #2a2f37;
-  --color-graphite-3: #3a404a;
+  --font-sans: var(--font-barlow), "Segoe UI", system-ui, -apple-system, sans-serif;
+  --font-condensed: var(--font-condensed), "Arial Narrow", var(--font-barlow), sans-serif;
+  --color-graphite: #17191d;
+  --color-graphite-2: #23262c;
+  --color-graphite-3: #34383f;
   --color-signal: #c8102e;
   --color-signal-dark: #a00c24;
-  --color-paper: #f4f5f7;
-  --color-ink: #1d2129;
-  --color-muted: #5e6573;
-  --color-line: #e1e4e9;
+  --color-lane: #f2b705;
+  --color-paper: #f1f2f0;
+  --color-ink: #16191e;
+  --color-muted: #5b6370;
+  --color-line: #dcdfe3;
   --color-go: #1f7a4d;
   --color-go-soft: #e6f3ec;
   --color-warn-soft: #fdf1f2;
@@ -19,14 +24,69 @@
 
 html { color-scheme: light; }
 body { background: var(--color-paper); color: var(--color-ink); -webkit-font-smoothing: antialiased; }
-
 :focus-visible { outline: 2px solid var(--color-signal); outline-offset: 2px; }
-
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { transition: none !important; animation: none !important; }
 }
 
-/* Loading screens: the login page's lane marking, driving forward. */
+@layer components {
+  .page-title { font-family: var(--font-condensed); font-weight: 600; font-size: 2.25rem; line-height: 1.05; letter-spacing: 0.005em; }
+  .section-title { font-family: var(--font-condensed); font-weight: 600; font-size: 1.375rem; line-height: 1.2; }
+
+  .card { background: #fff; border: 1px solid var(--color-line); border-radius: 10px; }
+
+  .btn {
+    display: inline-flex; align-items: center; justify-content: center; gap: 0.4rem; height: 2.5rem; padding: 0 1rem;
+    border-radius: 8px; font-weight: 600; background: #fff; color: var(--color-ink); box-shadow: inset 0 0 0 1px var(--color-line);
+  }
+  .btn:hover { background: var(--color-paper); }
+  .btn:disabled { opacity: 0.55; }
+  .btn-primary { background: var(--color-graphite); color: #fff; box-shadow: none; }
+  .btn-primary:hover { background: var(--color-graphite-3); }
+  .btn-sm { height: 2rem; padding: 0 0.75rem; font-size: 0.875rem; }
+
+  /* Tabs such as Everyone / Zach / Steve */
+  .segmented { display: flex; flex-wrap: wrap; width: fit-content; gap: 2px; padding: 3px; border-radius: 9px; background: #fff; box-shadow: inset 0 0 0 1px var(--color-line); }
+  .segmented > a { padding: 0.35rem 0.8rem; border-radius: 6px; font-size: 0.875rem; font-weight: 500; color: var(--color-muted); }
+  .segmented > a:hover { color: var(--color-ink); }
+  .segmented > a[aria-current="page"] { background: var(--color-graphite); color: #fff; }
+
+  .stat-strip { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 1px; overflow: hidden; border-radius: 10px; border: 1px solid var(--color-line); background: var(--color-line); }
+  .stat { display: block; background: #fff; padding: 1.1rem 1.25rem 1rem; }
+  .stat:hover { background: #fafaf9; }
+  .stat-value { font-family: var(--font-condensed); font-weight: 600; font-size: 2.6rem; line-height: 1; font-variant-numeric: tabular-nums; }
+  .stat-label { margin-top: 0.35rem; font-size: 0.875rem; color: var(--color-muted); }
+
+  .facts { display: grid; gap: 0.75rem 2rem; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); }
+  .facts dt { font-size: 0.8125rem; color: var(--color-muted); }
+  .facts dd { font-weight: 500; }
+
+  /* Customer history: a thin road line down the left with a mark per event */
+  .timeline { position: relative; display: grid; gap: 1.1rem; padding-left: 1.4rem; }
+  .timeline::before { content: ""; position: absolute; left: 4px; top: 0.4rem; bottom: 0.4rem; width: 2px; background: var(--color-line); }
+  .timeline > li { position: relative; }
+  .timeline > li::before { content: ""; position: absolute; left: calc(-1.4rem + 1px); top: 0.45rem; width: 8px; height: 8px; border-radius: 2px; background: var(--color-graphite); }
+
+  /* Pipeline board */
+  .board { display: grid; grid-auto-flow: column; grid-auto-columns: minmax(250px, 1fr); gap: 0.75rem; overflow-x: auto; padding-bottom: 0.5rem; }
+  .board-col { display: flex; flex-direction: column; min-height: 320px; border-radius: 10px; background: #e6e8e5; border-top: 4px solid var(--stage, var(--color-graphite)); }
+  .board-col.is-over { outline: 2px dashed var(--color-graphite); outline-offset: -4px; }
+  .board-col[data-status="new"] { --stage: var(--color-signal); }
+  .board-col[data-status="contacted"] { --stage: #2f5fa7; }
+  .board-col[data-status="appointment"] { --stage: var(--color-lane); }
+  .board-col[data-status="purchased"] { --stage: var(--color-go); }
+  .board-col[data-status="lost"] { --stage: #8a9099; }
+  .board-head { display: flex; align-items: baseline; justify-content: space-between; padding: 0.7rem 0.85rem 0.4rem; }
+  .board-head h2 { font-family: var(--font-condensed); font-weight: 600; font-size: 1.25rem; }
+  .board-head span { font-weight: 600; color: var(--color-muted); }
+  .board-list { display: grid; gap: 0.5rem; padding: 0 0.5rem 0.5rem; align-content: start; }
+  .board-card { background: #fff; border-radius: 8px; padding: 0.65rem 0.75rem; box-shadow: 0 1px 0 rgba(22, 25, 30, 0.08); cursor: grab; }
+  .board-card:active { cursor: grabbing; }
+  .board-empty { padding: 0.75rem; font-size: 0.875rem; color: var(--color-muted); }
+  .board-more { margin: auto 0.5rem 0.6rem; padding-top: 0.5rem; font-size: 0.875rem; font-weight: 600; color: var(--color-signal); }
+}
+
+/* Loading screens: the lane marking, driving forward. */
 @keyframes lane-drive { from { background-position: 0 0; } to { background-position: 76px 0; } }
 .lane-loader {
   background-image: repeating-linear-gradient(90deg, var(--color-signal) 0 44px, transparent 44px 76px);
@@ -36,3 +96,5 @@ body { background: var(--color-paper); color: var(--color-ink); -webkit-font-smo
 .loading-message { animation: loading-fade 0.35s ease-out; }
 @keyframes skeleton-pulse { 50% { opacity: 0.55; } }
 .skeleton { animation: skeleton-pulse 1.6s ease-in-out infinite; }
+@keyframes toast-in { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: none; } }
+.toast { animation: toast-in 0.2s ease-out; }

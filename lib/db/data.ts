@@ -253,8 +253,12 @@ export async function createAppointment(a: NewAppointment) {
     await tx`insert into appointments (customer_key, customer_name, phone, email, vehicle, rep_id, starts_at, duration_min, notes)
       values (${a.customerKey}, ${a.customerName}, ${a.phone}, ${a.email ?? null}, ${a.vehicle ?? null}, ${a.repId ?? null}, ${a.startsAt}, ${a.durationMin}, ${a.notes ?? ""})`;
     if (a.customerKey) {
-      await tx`insert into customers (key, name, status, rep_id) values (${a.customerKey}, ${a.customerName}, 'appointment', ${a.repId})
+      await tx`insert into customers (key, name, status, rep_id, phone, email, last_seen, first_seen, search)
+        values (${a.customerKey}, ${a.customerName}, 'appointment', ${a.repId}, ${a.phone}, ${a.email ?? null}, now(), now(),
+          ${[a.customerName, a.phone, a.email, a.vehicle].filter(Boolean).join(" ").toLowerCase()})
         on conflict (key) do update set
+          phone = coalesce(customers.phone, excluded.phone), last_seen = coalesce(customers.last_seen, now()),
+          first_seen = coalesce(customers.first_seen, now()),
           status = case when customers.status in ('purchased', 'lost') then customers.status else 'appointment' end,
           rep_id = coalesce(customers.rep_id, excluded.rep_id),
           updated_at = now()`;
@@ -332,46 +336,25 @@ export async function followUps(today: string, repId?: number | null): Promise<F
         and a.starts_at > now() - interval '14 days' ${byRep("a.rep_id")}
       order by a.starts_at limit 25`,
     sql`
-      select c.key, c.name, c.follow_up_at, c.notes, r.name as rep_name,
-        (select phone from leads l where l.customer_key = c.key and l.phone is not null order by received_at desc limit 1) as phone,
-        (select vehicle from leads l where l.customer_key = c.key and l.vehicle is not null order by received_at desc limit 1) as vehicle
+      select c.key, c.name, c.follow_up_at, c.notes, r.name as rep_name, c.last_vehicle as vehicle,
+        coalesce(c.phone, case when c.key like 'p-%' then substr(c.key, 3) end) as phone
       from customers c left join reps r on r.id = c.rep_id
       where c.follow_up_at is not null and c.follow_up_at <= ${today}::date ${byRep("c.rep_id")}
       order by c.follow_up_at limit 40`,
     // Leads from the last 2 weeks nobody has touched: no status set, no appointment, no reminder.
     sql`
-      select l.customer_key as key, max(l.received_at) as last_at,
-        (array_agg(l.name order by l.received_at desc) filter (where l.name is not null))[1] as name,
-        (array_agg(l.phone order by l.received_at desc) filter (where l.phone is not null))[1] as phone,
-        (array_agg(l.vehicle order by l.received_at desc) filter (where l.vehicle is not null))[1] as vehicle,
-        (array_agg(l.provider order by l.received_at desc))[1] as provider,
-        min(r.name) as rep_name
-      from leads l
-      left join customers c on c.key = l.customer_key
-      left join reps r on r.id = c.rep_id
-      where not l.ignored and l.customer_key is not null and l.kind = 'inquiry'
-        and l.received_at > now() - interval '14 days'
-        and coalesce(c.status, 'new') = 'new' and c.follow_up_at is null
-        and not exists (select 1 from appointments a where a.customer_key = l.customer_key)
-        ${repId ? sql`and c.rep_id = ${repId}` : sql``}
-      group by l.customer_key
-      order by max(l.received_at) desc limit 40`,
+      select c.key, c.name, c.phone, c.last_vehicle as vehicle, c.last_provider as provider, c.last_inquiry_at as last_at, r.name as rep_name
+      from customers c left join reps r on r.id = c.rep_id
+      where c.last_inquiry_at > now() - interval '14 days' and c.status = 'new' and c.follow_up_at is null
+        and not exists (select 1 from appointments a where a.customer_key = c.key) ${byRep("c.rep_id")}
+      order by c.last_inquiry_at desc limit 40`,
     // Credit applications from the last 30 days still waiting on a financing decision.
     sql`
-      select l.customer_key as key, max(l.received_at) as last_at,
-        (array_agg(l.name order by l.received_at desc) filter (where l.name is not null))[1] as name,
-        (array_agg(l.phone order by l.received_at desc) filter (where l.phone is not null))[1] as phone,
-        max(l.loan_amount) as loan_amount, min(r.name) as rep_name
-      from leads l
-      left join customers c on c.key = l.customer_key
-      left join reps r on r.id = c.rep_id
-      where not l.ignored and l.customer_key is not null and l.kind = 'application'
-        and l.received_at > now() - interval '30 days'
-        and coalesce(c.financing, 'needs_review') = 'needs_review'
-        and coalesce(c.status, 'new') not in ('purchased', 'lost')
-        ${repId ? sql`and c.rep_id = ${repId}` : sql``}
-      group by l.customer_key
-      order by max(l.received_at) desc limit 25`,
+      select c.key, c.name, c.phone, c.loan_amount, c.last_app_at as last_at, r.name as rep_name
+      from customers c left join reps r on r.id = c.rep_id
+      where c.last_app_at > now() - interval '30 days' and coalesce(c.financing, 'needs_review') = 'needs_review'
+        and c.status not in ('purchased', 'lost') ${byRep("c.rep_id")}
+      order by c.last_app_at desc limit 25`,
   ]);
 
   const items: FollowUp[] = [
@@ -418,4 +401,13 @@ export async function leadCounts(since: Date, weekAgo: Date) {
       count(*) filter (where received_at >= ${weekAgo})::int as week
     from leads where not ignored and received_at >= ${weekAgo}`;
   return { leadsToday: row.leads_today as number, appsToday: row.apps_today as number, week: row.week as number };
+}
+
+/** Every appointment for one customer, newest first (customer profile timeline). */
+export async function appointmentsForCustomer(key: string): Promise<Appointment[]> {
+  const sql = await readyDb();
+  if (!sql) return [];
+  const rows = await sql`select a.*, r.name as rep_name from appointments a left join reps r on r.id = a.rep_id
+    where a.customer_key = ${key} order by a.starts_at desc limit 50`;
+  return rows.map(toAppointment);
 }

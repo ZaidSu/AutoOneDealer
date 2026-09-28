@@ -44,13 +44,6 @@ export default function SyncBar({ lastRun, saved, remaining }: Props) {
     // (Automatic checks happen in the background; this button is only for "right now".)
   }
 
-  // Show new leads as soon as the background check brings them in.
-  useEffect(() => {
-    const onSynced = () => router.refresh();
-    window.addEventListener("autodash:leads-synced", onSynced);
-    return () => window.removeEventListener("autodash:leads-synced", onSynced);
-  }, [router]);
-
   return (
     <div className="mb-4 flex flex-wrap items-center gap-x-3 gap-y-1 text-sm text-muted" aria-live="polite">
       {busy && <span aria-hidden className="lane-loader inline-block h-1 w-16 rounded-full" />}

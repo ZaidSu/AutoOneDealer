@@ -14,12 +14,48 @@ alter table appointments add column if not exists email text;
 alter table appointments add column if not exists followed_up boolean not null default false;
 alter table customers add column if not exists follow_up_at date;
 alter table customers add column if not exists contacted_at timestamptz;
+-- v4: ready-made customer rows, kept up to date as leads are saved
+alter table customers add column if not exists phone text;
+alter table customers add column if not exists email text;
+alter table customers add column if not exists location text;
+alter table customers add column if not exists state_code text;
+alter table customers add column if not exists auto_scope text;
+alter table customers add column if not exists vehicles text[] not null default '{}';
+alter table customers add column if not exists providers text[] not null default '{}';
+alter table customers add column if not exists first_seen timestamptz;
+alter table customers add column if not exists last_seen timestamptz;
+alter table customers add column if not exists lead_count integer not null default 0;
+alter table customers add column if not exists app_count integer not null default 0;
+alter table customers add column if not exists last_inquiry_at timestamptz;
+alter table customers add column if not exists last_app_at timestamptz;
+alter table customers add column if not exists first_provider text;
+alter table customers add column if not exists last_provider text;
+alter table customers add column if not exists last_vehicle text;
+alter table customers add column if not exists loan_amount numeric;
+alter table customers add column if not exists search text not null default '';
+create index if not exists customers_last_seen on customers (last_seen desc nulls last);
+create index if not exists customers_phone on customers (phone);
+create index if not exists customers_email on customers (email);
+create index if not exists customers_follow_up on customers (follow_up_at) where follow_up_at is not null;
+create index if not exists leads_kind_received on leads (kind, received_at desc) where not ignored;
+create table if not exists activities (
+  id bigserial primary key,
+  customer_key text not null,
+  kind text not null,
+  body text not null default '',
+  staff text,
+  created_at timestamptz not null default now()
+);
+create index if not exists activities_customer on activities (customer_key, created_at desc);
+alter table activities enable row level security;
 `;
 
 export async function setupDatabase(): Promise<void> {
   const sql = db();
   if (!sql) throw new Error("DATABASE_URL is not set");
   await withTimeout(sql.begin(async (tx) => {
+    // Two servers starting at once take turns instead of colliding.
+    await tx`select pg_advisory_xact_lock(724001)`;
     await tx`
       create table if not exists reps (
         id serial primary key,
@@ -87,5 +123,12 @@ export async function setupDatabase(): Promise<void> {
     await tx`insert into app_settings (key, value) values ('schema_version', ${SCHEMA_VERSION})
       on conflict (key) do update set value = excluded.value, updated_at = now()`;
   }), 25000);
+  // One-time: build a customer row for everyone who already sent a lead.
+  const [built] = await sql`select value from app_settings where key = 'customers_built'`;
+  if (built?.value !== "1") {
+    const { rebuildCustomers } = await import("../leads/store");
+    await withTimeout(rebuildCustomers(sql), 40000);
+    await sql`insert into app_settings (key, value) values ('customers_built', '1') on conflict (key) do update set value = '1'`;
+  }
   markReady();
 }

@@ -4,6 +4,7 @@
 import { revalidatePath } from "next/cache";
 import { can } from "@/lib/auth/access";
 import { getStaffSession } from "@/lib/auth/session";
+import { ACTIVITY_KINDS, logActivity, type ActivityKind } from "@/lib/crm/queries";
 import * as data from "@/lib/db/data";
 import { dealership } from "@/lib/dealership";
 import { formatDateTime } from "@/lib/format";
@@ -105,12 +106,50 @@ export async function updateCustomerAction(
   }
   try {
     await data.updateCustomer(key, name ? cleanName(name, 80) : null, field, clean);
+    const note = await describeChange(field, clean);
+    if (note) await logActivity(key, note.kind, note.body, staff.name).catch(() => undefined);
   } catch {
     return NO_DB;
   }
-  // No page refresh here: the row already shows the change, and re-rendering Customers
-  // inside the save would re-read Gmail and can run past Vercel's time limit.
+  // No page refresh: the row already shows the change, and a refresh could move the row out from under the cursor.
   return { ok: true };
+}
+
+/** A line for the customer's history when staff change something that matters later. */
+async function describeChange(field: data.CustomerField, value: string | number | null): Promise<{ kind: ActivityKind; body: string } | null> {
+  switch (field) {
+    case "status":
+      return { kind: "status", body: data.STATUSES.find((s) => s.value === value)?.label ?? String(value) };
+    case "financing":
+      return { kind: "financing", body: value ? data.FINANCING.find((f) => f.value === value)?.label ?? String(value) : "Cleared" };
+    case "rep": {
+      const rep = value ? (await data.listReps(true)).find((r) => r.id === value) : null;
+      return { kind: "rep", body: rep ? `Assigned to ${rep.name}` : "Unassigned" };
+    }
+    case "follow_up":
+      return { kind: "follow_up", body: value ? `Follow up on ${String(value).slice(5).replace("-", "/")}` : "Reminder cleared" };
+    default:
+      return null;
+  }
+}
+
+/** "Log a call", "Texted", "Visited the lot", or a note, from the customer profile. */
+export async function logActivityAction(key: string, kind: ActivityKind, body: string): Promise<ActionResult> {
+  const staff = await requireStaff();
+  if (!staff) return fail("Your session ended. Sign in again.");
+  if (!KEY_PATTERN.test(key)) return fail("Unknown customer.");
+  if (!(kind in ACTIVITY_KINDS) || !["call", "text", "email", "visit", "voicemail", "note"].includes(kind)) return fail("Pick what happened.");
+  const text = String(body ?? "").trim().slice(0, 2000);
+  if (kind === "note" && !text) return fail("Write the note first.");
+  try {
+    await logActivity(key, kind, text, staff.name);
+    // Reaching someone new moves them out of the "nobody has contacted" list.
+    if (kind !== "note") await data.markContacted(key, null);
+  } catch {
+    return NO_DB;
+  }
+  revalidatePath(`/customers/${key}`);
+  return { ok: true, message: "Added to the history." };
 }
 
 // ---- Appointments ----
@@ -168,6 +207,7 @@ export async function createAppointmentAction(input: AppointmentInput): Promise<
       durationMin,
       notes: String(input.notes ?? "").slice(0, 1000),
     });
+    await logActivity(input.customerKey ?? `p-${phone}`, "appointment", `Booked for ${formatDateTime(startsAt.getTime())}`, staff.name).catch(() => undefined);
   } catch {
     return NO_DB;
   }
@@ -203,6 +243,7 @@ export async function followUpAction(
       return fail("Unknown customer.");
     } else if (kind === "contacted") {
       await data.markContacted(key, name);
+      await logActivity(key, "call", "Contacted from the Dashboard", staff.name).catch(() => undefined);
     } else {
       const { addDays, dayKey } = await import("@/lib/time");
       await data.snoozeFollowUp(key, name, addDays(dayKey(Date.now(), dealership.timeZone), 1));

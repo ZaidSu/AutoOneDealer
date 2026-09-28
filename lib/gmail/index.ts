@@ -89,9 +89,9 @@ export class GmailClient {
     return (await this.listPage(q, max)).ids;
   }
 
-  async listPage(q: string, max = 25, pageToken?: string): Promise<{ ids: string[]; next: string | null }> {
-    const data = await this.get<{ messages?: { id: string }[]; nextPageToken?: string }>("messages", { q, maxResults: max, pageToken });
-    return { ids: (data.messages ?? []).map((m) => m.id), next: data.nextPageToken ?? null };
+  async listPage(q: string, max = 25, pageToken?: string): Promise<{ ids: string[]; next: string | null; estimate: number }> {
+    const data = await this.get<{ messages?: { id: string }[]; nextPageToken?: string; resultSizeEstimate?: number }>("messages", { q, maxResults: max, pageToken });
+    return { ids: (data.messages ?? []).map((m) => m.id), next: data.nextPageToken ?? null, estimate: data.resultSizeEstimate ?? 0 };
   }
 
   /** Counts matching messages (up to `cap`) without downloading them. */

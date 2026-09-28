@@ -11,8 +11,8 @@ export default function PageLoading({ title, messages, rows = 6 }: { title: stri
 
   return (
     <div aria-busy="true">
-      <header className="mb-8 max-w-3xl">
-        <h1 className="text-[28px] font-semibold leading-tight tracking-tight">{title}</h1>
+      <header className="mb-7 max-w-3xl">
+        <h1 className="page-title">{title}</h1>
         <p key={index} className="loading-message mt-1.5 text-muted" role="status" aria-live="polite">{messages[index]}</p>
       </header>
       <div aria-hidden className="lane-loader mb-6 h-1.5 w-full max-w-3xl rounded-full opacity-90" />

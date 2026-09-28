@@ -29,13 +29,23 @@ export function db(): Sql | null {
     const local = /@(localhost|127\.0\.0\.1)[:/]/.test(url);
     client = postgres(url, {
       prepare: false, // required by Supabase's transaction pooler
-      max: 3,
+      onnotice: () => undefined, // "already exists, skipping" notes from setup aren't worth logging
+      max: 4,
       idle_timeout: 20,
       connect_timeout: 8,
       ssl: local ? false : "require",
     });
   }
   return client;
+}
+
+let bgClient: Sql | null = null;
+/** A separate small connection pool for the background lead import, so page loads never wait behind it. */
+export function bgDb(): Sql | null {
+  const url = process.env.DATABASE_URL;
+  if (!url) return null;
+  bgClient ??= postgres(url, { prepare: false, onnotice: () => undefined, max: 1, idle_timeout: 20, connect_timeout: 8, ssl: /@(localhost|127\.0\.0\.1)[:/]/.test(url) ? false : "require" });
+  return bgClient;
 }
 
 export type DbState = "not_configured" | "not_set_up" | "ready" | "unreachable";
@@ -66,7 +76,7 @@ export async function dbState(): Promise<DbState> {
   }
 }
 
-export const SCHEMA_VERSION = "3";
+export const SCHEMA_VERSION = "4";
 let setupPromise: Promise<void> | null = null;
 function setupOnce(): Promise<void> {
   setupPromise ??= import("./schema")

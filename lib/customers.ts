@@ -34,7 +34,7 @@ export function parseCustomerKey(key: string): { phone: string } | { email: stri
   return null;
 }
 
-function betterName(current: string | null, candidate: string | null): string | null {
+export function betterName(current: string | null, candidate: string | null): string | null {
   if (!candidate) return current;
   if (!current) return candidate;
   const shouting = (n: string) => n === n.toUpperCase();
@@ -47,12 +47,15 @@ function betterName(current: string | null, candidate: string | null): string | 
 export function groupCustomers(leads: LeadRecord[]): Customer[] {
   const byKey = new Map<string, Customer>();
   const emailToKey = new Map<string, string>();
+  const phoneToKey = new Map<string, string>();
 
   // Oldest first, so a later lead with both phone and email can join an earlier email-only record.
   for (const lead of [...leads].sort((a, b) => a.receivedAt - b.receivedAt)) {
     let key = customerKey(lead);
     if (!key) continue;
-    if (lead.email && emailToKey.has(lead.email) && !byKey.has(key)) key = emailToKey.get(lead.email)!;
+    const email = lead.email ? lead.email.toLowerCase() : null; // the same address in any capitalization
+    if (lead.phone && phoneToKey.has(lead.phone)) key = phoneToKey.get(lead.phone)!;
+    else if (email && emailToKey.has(email) && !byKey.has(key)) key = emailToKey.get(email)!;
 
     const customer = byKey.get(key) ?? {
       key, name: null, phones: [], emails: [], location: null, vehicles: [], sources: [], leads: [],
@@ -60,7 +63,7 @@ export function groupCustomers(leads: LeadRecord[]): Customer[] {
     };
     customer.name = betterName(customer.name, lead.name);
     if (lead.phone && !customer.phones.includes(lead.phone)) customer.phones.push(lead.phone);
-    if (lead.email && !customer.emails.includes(lead.email)) customer.emails.push(lead.email);
+    if (email && !customer.emails.includes(email)) customer.emails.push(email);
     if (lead.location) customer.location = lead.location;
     if (lead.vehicle && !customer.vehicles.some((v) => v.toLowerCase() === lead.vehicle!.toLowerCase())) customer.vehicles.push(lead.vehicle);
     if (!customer.sources.includes(lead.provider)) customer.sources.push(lead.provider);
@@ -69,7 +72,8 @@ export function groupCustomers(leads: LeadRecord[]): Customer[] {
     customer.firstSeen = Math.min(customer.firstSeen, lead.receivedAt);
     customer.lastSeen = Math.max(customer.lastSeen, lead.receivedAt);
     byKey.set(key, customer);
-    if (lead.email) emailToKey.set(lead.email, key);
+    if (email && !emailToKey.has(email)) emailToKey.set(email, key);
+    if (lead.phone && !phoneToKey.has(lead.phone)) phoneToKey.set(lead.phone, key);
   }
 
   for (const customer of byKey.values()) customer.leads.sort((a, b) => b.receivedAt - a.receivedAt);
