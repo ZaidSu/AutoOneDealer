@@ -53,77 +53,95 @@ alter table activities enable row level security;
 export async function setupDatabase(): Promise<void> {
   const sql = db();
   if (!sql) throw new Error("DATABASE_URL is not set");
-  await withTimeout(sql.begin(async (tx) => {
-    // Two servers starting at once take turns instead of colliding.
-    // Never hang a page waiting on another server's setup: give up after 8 seconds and try again next request.
-    await tx`set local lock_timeout = '2s'`;
-    await tx`select pg_advisory_xact_lock(724001)`;
-    await tx`
-      create table if not exists reps (
-        id serial primary key,
-        name text not null,
-        active boolean not null default true,
-        created_at timestamptz not null default now()
-      )`;
-    await tx`
-      create table if not exists sources (
-        id serial primary key,
-        name text not null unique,
-        active boolean not null default true,
-        created_at timestamptz not null default now()
-      )`;
-    // One row per customer, keyed like the Customers page (phone, else email). Only what staff set by hand.
-    await tx`
-      create table if not exists customers (
-        key text primary key,
-        name text,
-        rep_id integer references reps(id) on delete set null,
-        status text not null default 'new',
-        financing text,
-        heard_from text,
-        state_scope text,
-        notes text not null default '',
-        purchased_at timestamptz,
-        updated_at timestamptz not null default now()
-      )`;
-    await tx`
-      create table if not exists appointments (
-        id serial primary key,
-        customer_key text,
-        customer_name text not null,
-        phone text,
-        vehicle text,
-        rep_id integer references reps(id) on delete set null,
-        starts_at timestamptz not null,
-        duration_min integer not null default 60,
-        status text not null default 'scheduled',
-        notes text not null default '',
-        created_at timestamptz not null default now(),
-        updated_at timestamptz not null default now()
-      )`;
-    await tx`create index if not exists appointments_starts_at on appointments (starts_at)`;
-    await tx`create index if not exists appointments_customer on appointments (customer_key)`;
-    // Small key/value settings, e.g. the encrypted Gmail connection shared by every device.
-    await tx`
-      create table if not exists app_settings (
-        key text primary key,
-        value text not null,
-        updated_at timestamptz not null default now()
-      )`;
-
-    await tx.unsafe(LEADS_TABLE_SQL);
-    await tx.unsafe(UPGRADE_SQL);
-
-    // Keep tables private: Supabase's public data API can't read them; AutoDash's own connection (the owner) still can.
-    for (const table of ["reps", "sources", "customers", "appointments", "app_settings"]) {
-      await tx.unsafe(`alter table ${table} enable row level security`);
+  // A server that was frozen mid-transaction can leave a session holding table locks forever
+  // ("idle in transaction"). End any that have been stuck for over a minute so the upgrade can run.
+  await sql`
+    select pg_terminate_backend(pid, 5000) from pg_stat_activity
+    where datname = current_database() and pid <> pg_backend_pid()
+      and state in ('idle in transaction', 'idle in transaction (aborted)')
+      and now() - state_change > interval '60 seconds'`.catch(() => undefined);
+  // And ask Postgres to end such sessions by itself from now on (may not be permitted; harmless if not).
+  await sql`alter database postgres set idle_in_transaction_session_timeout = '60s'`.catch(() => undefined);
+  for (let attempt = 1; ; attempt++) {
+    try {
+await withTimeout(sql.begin(async (tx) => {
+        // Two servers starting at once take turns instead of colliding.
+        // Never hang a page waiting on another server's setup: give up after 8 seconds and try again next request.
+        await tx`set local lock_timeout = '2s'`;
+        await tx`select pg_advisory_xact_lock(724001)`;
+        await tx`
+          create table if not exists reps (
+            id serial primary key,
+            name text not null,
+            active boolean not null default true,
+            created_at timestamptz not null default now()
+          )`;
+        await tx`
+          create table if not exists sources (
+            id serial primary key,
+            name text not null unique,
+            active boolean not null default true,
+            created_at timestamptz not null default now()
+          )`;
+        // One row per customer, keyed like the Customers page (phone, else email). Only what staff set by hand.
+        await tx`
+          create table if not exists customers (
+            key text primary key,
+            name text,
+            rep_id integer references reps(id) on delete set null,
+            status text not null default 'new',
+            financing text,
+            heard_from text,
+            state_scope text,
+            notes text not null default '',
+            purchased_at timestamptz,
+            updated_at timestamptz not null default now()
+          )`;
+        await tx`
+          create table if not exists appointments (
+            id serial primary key,
+            customer_key text,
+            customer_name text not null,
+            phone text,
+            vehicle text,
+            rep_id integer references reps(id) on delete set null,
+            starts_at timestamptz not null,
+            duration_min integer not null default 60,
+            status text not null default 'scheduled',
+            notes text not null default '',
+            created_at timestamptz not null default now(),
+            updated_at timestamptz not null default now()
+          )`;
+        await tx`create index if not exists appointments_starts_at on appointments (starts_at)`;
+        await tx`create index if not exists appointments_customer on appointments (customer_key)`;
+        // Small key/value settings, e.g. the encrypted Gmail connection shared by every device.
+        await tx`
+          create table if not exists app_settings (
+            key text primary key,
+            value text not null,
+            updated_at timestamptz not null default now()
+          )`;
+    
+        await tx.unsafe(LEADS_TABLE_SQL);
+        await tx.unsafe(UPGRADE_SQL);
+    
+        // Keep tables private: Supabase's public data API can't read them; AutoDash's own connection (the owner) still can.
+        for (const table of ["reps", "sources", "customers", "appointments", "app_settings"]) {
+          await tx.unsafe(`alter table ${table} enable row level security`);
+        }
+    
+        for (const name of DEFAULT_SOURCES) await tx`insert into sources (name) values (${name}) on conflict (name) do nothing`;
+        const [{ count }] = await tx`select count(*)::int as count from reps`;
+        if (count === 0) for (const name of DEFAULT_REPS) await tx`insert into reps (name) values (${name})`;
+        await tx`insert into app_settings (key, value) values ('schema_version', ${SCHEMA_VERSION})
+          on conflict (key) do update set value = excluded.value, updated_at = now()`;
+      }), 25000);
+      break;
+    } catch (error) {
+      // 55P03 = a table was briefly locked by other work; wait a moment and try again (3 tries).
+      if ((error as { code?: string })?.code !== "55P03" || attempt >= 3) throw error;
+      await new Promise((resolve) => setTimeout(resolve, 1000 * attempt));
     }
-
-    for (const name of DEFAULT_SOURCES) await tx`insert into sources (name) values (${name}) on conflict (name) do nothing`;
-    const [{ count }] = await tx`select count(*)::int as count from reps`;
-    if (count === 0) for (const name of DEFAULT_REPS) await tx`insert into reps (name) values (${name})`;
-    await tx`insert into app_settings (key, value) values ('schema_version', ${SCHEMA_VERSION})
-      on conflict (key) do update set value = excluded.value, updated_at = now()`;
-  }), 25000);
+  }
   markReady();
 }

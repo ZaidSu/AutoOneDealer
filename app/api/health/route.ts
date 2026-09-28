@@ -45,13 +45,20 @@ export async function GET(req: NextRequest) {
     });
   }
   if (check === "pages" || check === "all") {
-    const sql = await readyDb();
+    const { db } = await import("@/lib/db");
+    const sql = db(); // works even when setup failed, so the cause can be seen
     if (sql) {
       const rows = await sql`select key, value from app_settings where key in ('customers_built', 'customers_build_error', 'schema_version')`.catch(() => []);
       const get = (k: string) => rows.find((r) => r.key === k)?.value ?? null;
       body.schemaVersion = get("schema_version");
       body.customersBuilt = get("customers_built") === "1";
       body.customersBuildError = get("customers_build_error");
+      // Sessions that are busy or stuck mid-transaction (a stuck one blocks the upgrade and page loads).
+      body.busySessions = await sql`
+        select state, extract(epoch from now() - coalesce(xact_start, state_change))::int as seconds, left(query, 60) as query
+        from pg_stat_activity
+        where datname = current_database() and pid <> pg_backend_pid() and state <> 'idle'
+        order by seconds desc limit 5`.catch((e) => `unavailable: ${e instanceof Error ? e.message.slice(0, 80) : ""}`);
     }
   }
   if (check === "pages") {
