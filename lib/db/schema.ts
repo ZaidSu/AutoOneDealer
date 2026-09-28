@@ -56,7 +56,7 @@ export async function setupDatabase(): Promise<void> {
   await withTimeout(sql.begin(async (tx) => {
     // Two servers starting at once take turns instead of colliding.
     // Never hang a page waiting on another server's setup: give up after 8 seconds and try again next request.
-    await tx`set local lock_timeout = '8s'`;
+    await tx`set local lock_timeout = '2s'`;
     await tx`select pg_advisory_xact_lock(724001)`;
     await tx`
       create table if not exists reps (
@@ -125,12 +125,5 @@ export async function setupDatabase(): Promise<void> {
     await tx`insert into app_settings (key, value) values ('schema_version', ${SCHEMA_VERSION})
       on conflict (key) do update set value = excluded.value, updated_at = now()`;
   }), 25000);
-  // One-time: build a customer row for everyone who already sent a lead.
-  const [built] = await sql`select value from app_settings where key = 'customers_built'`;
-  if (built?.value !== "1") {
-    const { rebuildCustomers } = await import("../leads/store");
-    await withTimeout(rebuildCustomers(sql), 40000);
-    await sql`insert into app_settings (key, value) values ('customers_built', '1') on conflict (key) do update set value = '1'`;
-  }
   markReady();
 }

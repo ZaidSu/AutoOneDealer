@@ -184,3 +184,35 @@ export async function savedLeadCount(): Promise<number> {
   const [row] = await sql`select count(*)::int as n from leads where not ignored`;
   return row.n;
 }
+
+/**
+ * Builds customer rows for leads saved before customer rows existed. Runs from the background import,
+ * never during a page load, and only on one server at a time (the others skip instead of waiting).
+ */
+export async function ensureCustomersBuilt(client?: Sql): Promise<"done" | "already" | "busy" | "failed"> {
+  const sql = client ?? (await readyDb());
+  if (!sql) return "failed";
+  const [flag] = await sql`select value from app_settings where key = 'customers_built'`;
+  if (flag?.value === "1") return "already";
+  return sql.begin(async (tx) => {
+    const [{ got }] = await tx`select pg_try_advisory_xact_lock(724002) as got`;
+    if (!got) return "busy" as const;
+    try {
+      const count = await rebuildCustomers(tx as unknown as Sql);
+      await tx`insert into app_settings (key, value) values ('customers_built', '1') on conflict (key) do update set value = '1'`;
+      await tx`delete from app_settings where key = 'customers_build_error'`;
+      console.log(`Built ${count} customer rows.`);
+      return "done" as const;
+    } catch (error) {
+      const message = error instanceof Error ? error.message.slice(0, 300) : "unknown";
+      console.error("Customer build failed:", message);
+      throw Object.assign(new Error(message), { buildFailed: true });
+    }
+  }).catch(async (error) => {
+    if ((error as { buildFailed?: boolean }).buildFailed) {
+      await sql`insert into app_settings (key, value) values ('customers_build_error', ${String(error.message)})
+        on conflict (key) do update set value = excluded.value`.catch(() => undefined);
+    }
+    return "failed" as const;
+  });
+}

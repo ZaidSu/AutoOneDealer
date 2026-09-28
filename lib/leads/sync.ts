@@ -5,7 +5,7 @@
 // Every run stops on time and records its progress, so it can't run past Vercel's limit.
 import { bgDb, readyDb } from "@/lib/db";
 import { LEAD_QUERIES, mapLimit, readLead, type GmailClient } from "@/lib/gmail";
-import { knownMessageIds, markIgnored, saveLead } from "./store";
+import { ensureCustomersBuilt, knownMessageIds, markIgnored, saveLead } from "./store";
 
 export const HISTORY = "newer_than:365d";
 const STATE_KEY = "lead_sync_v2";
@@ -49,6 +49,8 @@ export async function syncLeads(gmail: GmailClient, { timeLimitMs = 20_000 } = {
   const sql = await sqlFor();
   if (!sql) return { busy: true };
   if (!(await tryLock())) return { busy: true };
+  // One-time: customer rows for leads saved before they existed (skips instantly once done).
+  await ensureCustomersBuilt(sql).catch(() => undefined);
   const deadline = Date.now() + timeLimitMs;
   const previous = await getSyncState();
   const backfill = previous?.backfill ?? { token: null, done: false, estimate: 0 };

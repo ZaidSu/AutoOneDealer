@@ -44,6 +44,16 @@ export async function GET(req: NextRequest) {
       return s ? { saved: s.saved, stillToImport: s.remaining, lastRunSecondsAgo: Math.round((Date.now() - s.lastRun) / 1000) } : "never ran";
     });
   }
+  if (check === "pages" || check === "all") {
+    const sql = await readyDb();
+    if (sql) {
+      const rows = await sql`select key, value from app_settings where key in ('customers_built', 'customers_build_error', 'schema_version')`.catch(() => []);
+      const get = (k: string) => rows.find((r) => r.key === k)?.value ?? null;
+      body.schemaVersion = get("schema_version");
+      body.customersBuilt = get("customers_built") === "1";
+      body.customersBuildError = get("customers_build_error");
+    }
+  }
   if (check === "pages") {
     // Runs what each page loads and reports what fails, with the real reason (page errors are hidden in production).
     const { followUps, leadCounts, listReps, appointmentsBetween } = await import("@/lib/db/data");

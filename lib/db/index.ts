@@ -63,7 +63,7 @@ export async function dbState(): Promise<DbState> {
         // app_settings doesn't exist yet on a brand-new database
         sql`select false as ready, null as version, null as built`), 9000);
     lastError = null;
-    if (!row.ready || row.version !== SCHEMA_VERSION || row.built !== "1") {
+    if (!row.ready || row.version !== SCHEMA_VERSION) {
       // Brand-new or older database: create/upgrade the tables automatically. No button needed.
       await setupOnce();
     }
