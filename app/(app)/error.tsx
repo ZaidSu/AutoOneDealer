@@ -1,14 +1,16 @@
 "use client";
 // Shown instead of a crash when a page fails or takes too long to load.
-import { useEffect, useRef } from "react";
+import { useEffect } from "react";
+
+let lastAutoRetry = 0;
 
 export default function PageError({ error, reset }: { error: Error & { digest?: string }; reset: () => void }) {
-  const retried = useRef(false);
   useEffect(() => {
     console.error("Page failed:", error.digest ?? error.message);
-    // A connection dropped mid-load (React error 412) is usually a blip: try once more by itself.
-    if (!retried.current && /412|connection closed|failed to fetch|network/i.test(error.message)) {
-      retried.current = true;
+    // A connection dropped mid-load (React error 412) is often a blip: try once more by itself,
+    // but only once per minute so a page that keeps failing can't retry in a loop.
+    if (/412|connection closed|failed to fetch|network/i.test(error.message) && Date.now() - lastAutoRetry > 60_000) {
+      lastAutoRetry = Date.now();
       const t = setTimeout(reset, 600);
       return () => clearTimeout(t);
     }

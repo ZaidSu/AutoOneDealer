@@ -65,8 +65,8 @@ export async function GET(req: NextRequest) {
     for (const [name, work] of Object.entries(parts)) {
       const started = Date.now();
       try {
-        body[name] = { ms: Date.now() - started, result: await work() };
-        (body[name] as { ms: number }).ms = Date.now() - started;
+        const result = await Promise.race([work(), new Promise((_, reject) => setTimeout(() => reject(new Error("took longer than 8 seconds")), 8000))]);
+        body[name] = { ms: Date.now() - started, result };
       } catch (error) {
         body[name] = { ms: Date.now() - started, FAILED: error instanceof Error ? error.message.slice(0, 300) : String(error) };
       }
