@@ -7,14 +7,14 @@ import type { PipelineCard, PipelineColumn } from "@/lib/crm/queries";
 import type { Status } from "@/lib/db/data";
 import { displayName } from "@/lib/format";
 
-type Props = { columns: PipelineColumn[]; labels: Record<string, string>; moreHref: (status: string) => string };
+type Props = { columns: PipelineColumn[]; labels: Record<string, string>; repId: number | null };
 
 function ago(ms: number) {
   const days = Math.floor((Date.now() - ms) / 86400000);
   return days < 1 ? "today" : days === 1 ? "yesterday" : `${days} days ago`;
 }
 
-export default function Board({ columns: initial, labels, moreHref: _more }: Props) {
+export default function Board({ columns: initial, labels, repId }: Props) {
   const [columns, setColumns] = useState(initial);
   const [dragging, setDragging] = useState<string | null>(null);
   const [over, setOver] = useState<Status | null>(null);
@@ -75,7 +75,7 @@ export default function Board({ columns: initial, labels, moreHref: _more }: Pro
               {col.cards.length === 0 && <li className="board-empty">Nobody here.</li>}
             </ul>
             {col.count > col.cards.length && (
-              <Link href={_more(col.status)} className="board-more">See all {col.count.toLocaleString()}</Link>
+              <Link href={`/customers?status=${col.status}${repId ? `&rep=${repId}` : ""}`} className="board-more">See all {col.count.toLocaleString()}</Link>
             )}
           </section>
         ))}

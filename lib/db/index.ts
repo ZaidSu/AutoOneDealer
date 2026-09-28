@@ -58,11 +58,12 @@ export async function dbState(): Promise<DbState> {
   try {
     const [row] = await withTimeout(sql`
       select (to_regclass('public.appointments') is not null and to_regclass('public.leads') is not null) as ready,
-             (select value from app_settings where key = 'schema_version') as version`.catch(async () =>
+             (select value from app_settings where key = 'schema_version') as version,
+             (select value from app_settings where key = 'customers_built') as built`.catch(async () =>
         // app_settings doesn't exist yet on a brand-new database
-        sql`select false as ready, null as version`), 9000);
+        sql`select false as ready, null as version, null as built`), 9000);
     lastError = null;
-    if (!row.ready || row.version !== SCHEMA_VERSION) {
+    if (!row.ready || row.version !== SCHEMA_VERSION || row.built !== "1") {
       // Brand-new or older database: create/upgrade the tables automatically. No button needed.
       await setupOnce();
     }

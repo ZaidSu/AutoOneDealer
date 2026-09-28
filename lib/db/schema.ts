@@ -55,6 +55,8 @@ export async function setupDatabase(): Promise<void> {
   if (!sql) throw new Error("DATABASE_URL is not set");
   await withTimeout(sql.begin(async (tx) => {
     // Two servers starting at once take turns instead of colliding.
+    // Never hang a page waiting on another server's setup: give up after 8 seconds and try again next request.
+    await tx`set local lock_timeout = '8s'`;
     await tx`select pg_advisory_xact_lock(724001)`;
     await tx`
       create table if not exists reps (

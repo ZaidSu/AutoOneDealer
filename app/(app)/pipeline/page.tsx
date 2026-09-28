@@ -35,7 +35,7 @@ export default async function PipelinePage({ searchParams }: { searchParams: Pro
           {Object.entries(WINDOWS).map(([d, label]) => <Link key={d} href={link({ days: d })} aria-current={days === d ? "page" : undefined}>{label}</Link>)}
         </nav>
       </div>
-      <Board columns={columns} labels={Object.fromEntries(STATUSES.map((s) => [s.value, s.label]))} moreHref={(status) => `/customers?status=${status}${repId ? `&rep=${repId}` : ""}`} />
+      <Board columns={columns} labels={Object.fromEntries(STATUSES.map((s) => [s.value, s.label]))} repId={repId} />
     </>
   );
 }
