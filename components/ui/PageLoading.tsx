@@ -10,7 +10,7 @@ export default function PageLoading({ title, messages, rows = 6 }: { title: stri
   }, [messages.length]);
 
   return (
-    <div aria-busy="true">
+    <div data-page-loading aria-busy="true">
       <header className="mb-7 max-w-3xl">
         <h1 className="page-title">{title}</h1>
         <p key={index} className="loading-message mt-1.5 text-muted" role="status" aria-live="polite">{messages[index]}</p>

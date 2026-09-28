@@ -29,6 +29,7 @@ export function db(): Sql | null {
     const local = /@(localhost|127\.0\.0\.1)[:/]/.test(url);
     client = postgres(url, {
       prepare: false, // required by Supabase's transaction pooler
+      debug: process.env.DB_DEBUG ? (_c: number, q: string) => console.log("[q]", q.replace(/\s+/g, " ").slice(0, 70)) : undefined,
       onnotice: () => undefined, // "already exists, skipping" notes from setup aren't worth logging
       max: 4,
       idle_timeout: 20,

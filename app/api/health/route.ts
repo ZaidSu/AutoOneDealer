@@ -61,6 +61,26 @@ export async function GET(req: NextRequest) {
         order by seconds desc limit 5`.catch((e) => `unavailable: ${e instanceof Error ? e.message.slice(0, 80) : ""}`);
     }
   }
+  if (check === "perf") {
+    // Stopwatch results from real page loads: medians and slowest, per page, split by where time went.
+    const { db } = await import("@/lib/db");
+    const sql = db();
+    if (sql) {
+      const summary = await sql`
+        select route, kind, count(*)::int as loads,
+          percentile_disc(0.5) within group (order by total) as median_ms,
+          max(total) as slowest_ms,
+          percentile_disc(0.5) within group (order by connect) as connect_ms,
+          percentile_disc(0.5) within group (order by server) as server_ms,
+          percentile_disc(0.5) within group (order by data) as data_ms,
+          percentile_disc(0.5) within group (order by browser) as browser_ms,
+          count(*) filter (where cold)::int as cold_starts,
+          percentile_disc(0.5) within group (order by total) filter (where cold) as cold_median_ms
+        from perf_log where at > now() - interval '2 days'
+        group by route, kind order by kind, median_ms desc`.catch(() => "no stopwatch data yet");
+      body.perf = summary;
+    }
+  }
   if (check === "pages") {
     // Runs what each page loads and reports what fails, with the real reason (page errors are hidden in production).
     const { followUps, leadCounts, listReps, appointmentsBetween } = await import("@/lib/db/data");
