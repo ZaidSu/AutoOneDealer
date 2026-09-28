@@ -1,7 +1,6 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import FollowUpItem from "@/components/dashboard/FollowUpItem";
-import UnreadCount from "@/components/dashboard/UnreadCount";
 import LeadList from "@/components/leads/LeadList";
 import DbNotice from "@/components/ui/DbNotice";
 import PageHeader from "@/components/ui/PageHeader";
@@ -12,6 +11,7 @@ import { dealership, greeting } from "@/lib/dealership";
 import { formatPhone } from "@/lib/format";
 import { startOfDealershipDay } from "@/lib/gmail";
 import { queryLeads } from "@/lib/leads/store";
+import { attempt } from "@/lib/safe";
 import { addDays, dayKey, zonedToUtc } from "@/lib/time";
 
 export const metadata: Metadata = { title: "Dashboard" };
@@ -46,16 +46,24 @@ export default async function DashboardPage({ searchParams }: { searchParams: Pr
   const today = dayKey(Date.now(), tz);
   const repId = params.rep ? Number(params.rep) || null : null;
 
-  // Everything here comes from the database in parallel. Gmail's unread count loads separately in the browser.
-  const [reps, items, appointmentsToday, counts, latest] = dbReady
+  // Everything here comes from the database, in parallel. Each part loads on its own, so one problem
+  // can't take the whole page down; if a part fails, the reason is shown at the top.
+  const dayStart = new Date(startOfDealershipDay(tz) * 1000);
+  const [repsR, itemsR, apptsR, countsR, latestR] = dbReady
     ? await Promise.all([
-        listReps(),
-        followUps(today, repId),
-        appointmentsBetween(zonedToUtc(today, "00:00", tz)!, zonedToUtc(addDays(today, 1), "00:00", tz)!, repId),
-        leadCounts(new Date(startOfDealershipDay(tz) * 1000), new Date(Date.now() - 7 * 86400000)),
-        queryLeads({ limit: 6 }).then((r) => r.leads),
+        attempt("Salespeople", () => listReps(), []),
+        attempt("Follow-ups", () => followUps(today, repId), [] as FollowUp[]),
+        attempt("Today's appointments", async () => appointmentsBetween(zonedToUtc(today, "00:00", tz)!, zonedToUtc(addDays(today, 1), "00:00", tz)!, repId), null),
+        attempt("Counts", () => leadCounts(dayStart, new Date(Date.now() - 7 * 86400000)), null),
+        attempt("Newest leads", async () => (await queryLeads({ limit: 6 })).leads, []),
       ])
-    : [[], [], null, null, []];
+    : [];
+  const reps = repsR?.data ?? [];
+  const items = itemsR?.data ?? [];
+  const appointmentsToday = apptsR?.data ?? null;
+  const counts = countsR?.data ?? null;
+  const latest = latestR?.data ?? [];
+  const problems = [repsR, itemsR, apptsR, countsR, latestR].map((r) => r?.error).filter(Boolean) as string[];
 
   const total = items.length;
   const visibleAppointments = (appointmentsToday ?? []).filter((a) => a.status !== "canceled");
@@ -64,12 +72,18 @@ export default async function DashboardPage({ searchParams }: { searchParams: Pr
     <>
       <PageHeader title={`${greeting()}, ${firstName}`} description={dbReady ? (total ? `${total} ${total === 1 ? "person needs" : "people need"} a follow-up.` : "You're all caught up on follow-ups.") : "Here's what needs attention at the dealership."} />
 
+      {problems.length > 0 && (
+        <div role="alert" className="mb-5 max-w-5xl rounded-lg border border-signal/30 bg-warn-soft px-4 py-3 text-sm">
+          <p className="font-semibold">Part of this page couldn&apos;t load. Refresh to try again; if it keeps happening, send this to your developer:</p>
+          <ul className="mt-1 list-disc pl-5 text-muted">{problems.map((p) => <li key={p}>{p}</li>)}</ul>
+        </div>
+      )}
       {counts && (
         <section aria-label="Counts" className="stat-strip mb-6 max-w-5xl lg:grid-cols-4">
           <Stat value={counts.leadsToday} label="New leads today" href="/leads?show=inquiry" highlight={counts.leadsToday > 0} />
           <Stat value={counts.appsToday} label="Credit applications today" href="/credit-applications" highlight={counts.appsToday > 0} />
           <Stat value={counts.week} label="Leads and applications, last 7 days" href="/leads" />
-          <Link href="/inbox?view=unread" className="stat"><p className="stat-value"><UnreadCount /></p><p className="stat-label">Unread emails in the inbox</p></Link>
+          <Stat value={items.filter((i) => i.kind === "new_lead").length} label="Waiting on first contact" href="/pipeline" highlight={items.some((i) => i.kind === "new_lead")} />
         </section>
       )}
 

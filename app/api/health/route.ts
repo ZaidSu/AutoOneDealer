@@ -16,7 +16,7 @@ export async function GET(req: NextRequest) {
   const body: Record<string, unknown> = {
     status: "ok", app: "autodash", configured: isConfigured(), region: process.env.VERCEL_REGION ?? "local", time: new Date().toISOString(),
   };
-  if (check === "db" || check === "all") {
+  if (check === "db" || check === "all" || check === "pages") {
     const started = Date.now();
     body.database = await dbState();
     body.databaseError = lastDbError();
@@ -43,6 +43,34 @@ export async function GET(req: NextRequest) {
       const s = await getSyncState();
       return s ? { saved: s.saved, stillToImport: s.remaining, lastRunSecondsAgo: Math.round((Date.now() - s.lastRun) / 1000) } : "never ran";
     });
+  }
+  if (check === "pages") {
+    // Runs what each page loads and reports what fails, with the real reason (page errors are hidden in production).
+    const { followUps, leadCounts, listReps, appointmentsBetween } = await import("@/lib/db/data");
+    const { queryLeads } = await import("@/lib/leads/store");
+    const { listCustomers, pipeline, searchCustomers } = await import("@/lib/crm/queries");
+    const { analytics } = await import("@/lib/crm/analytics");
+    const today = new Date().toISOString().slice(0, 10);
+    const parts: Record<string, () => Promise<unknown>> = {
+      followUps: async () => (await followUps(today, null)).length,
+      counts: () => leadCounts(new Date(Date.now() - 86400000), new Date(Date.now() - 7 * 86400000)),
+      reps: async () => (await listReps()).length,
+      appointmentsToday: async () => (await appointmentsBetween(new Date(Date.now() - 86400000), new Date(), null)).length,
+      newestLeads: async () => (await queryLeads({ limit: 6 })).leads.length,
+      customers: async () => (await listCustomers({}, 0, 50)).total,
+      pipeline: async () => (await pipeline({ days: 60 })).map((c) => `${c.status} ${c.count}`).join(", "),
+      search: async () => (await searchCustomers("a")).length,
+      analytics: async () => ((await analytics(new Date(Date.now() - 30 * 86400000), "America/Chicago"))?.people.length ?? "no db"),
+    };
+    for (const [name, work] of Object.entries(parts)) {
+      const started = Date.now();
+      try {
+        body[name] = { ms: Date.now() - started, result: await work() };
+        (body[name] as { ms: number }).ms = Date.now() - started;
+      } catch (error) {
+        body[name] = { ms: Date.now() - started, FAILED: error instanceof Error ? error.message.slice(0, 300) : String(error) };
+      }
+    }
   }
   return NextResponse.json(body, { headers: { "Cache-Control": "no-store" } });
 }
