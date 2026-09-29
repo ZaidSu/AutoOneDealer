@@ -1,4 +1,5 @@
 "use client";
+import { notifyChanged } from "@/lib/client/live";
 // Keeps saved leads up to date while AutoDash is open anywhere, with no buttons.
 // About once a minute it asks the server to check Gmail for new leads (one small request);
 // during the first-time import it keeps going batch after batch.
@@ -44,7 +45,7 @@ export default function AutoSync() {
   return (
     <div role="status" className="toast fixed right-4 bottom-4 z-40 flex items-center gap-3 rounded-lg bg-graphite py-2.5 pr-2.5 pl-4 text-white shadow-xl">
       <span>{fresh === 1 ? "1 new lead came in" : `${fresh} new leads came in`}</span>
-      <button type="button" onClick={() => { setFresh(0); router.refresh(); }} className="rounded-md bg-signal px-3 py-1.5 text-sm font-semibold hover:bg-signal-dark">Show</button>
+      <button type="button" onClick={() => { setFresh(0); router.refresh(); notifyChanged(); }} className="rounded-md bg-signal px-3 py-1.5 text-sm font-semibold hover:bg-signal-dark">Show</button>
       <button type="button" onClick={() => setFresh(0)} aria-label="Dismiss" className="rounded-md px-2 py-1.5 text-white/60 hover:text-white">✕</button>
     </div>
   );

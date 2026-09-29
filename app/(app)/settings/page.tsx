@@ -1,3 +1,4 @@
+import { requirePageStaff } from "@/lib/auth/guard";
 import type { Metadata } from "next";
 import GmailCard from "@/components/settings/GmailCard";
 import TeamAndSources from "@/components/settings/TeamAndSources";
@@ -23,6 +24,7 @@ const gmailNotices: Record<string, { tone: "ok" | "error"; text: string }> = {
 };
 
 export default async function SettingsPage({ searchParams }: { searchParams: Promise<Record<string, string | undefined>> }) {
+  await requirePageStaff();
   const staff = (await getStaffSession())!;
   const gmail = await getGmailConnection();
   const state = await dbState();

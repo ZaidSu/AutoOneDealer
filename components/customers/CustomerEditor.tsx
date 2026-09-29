@@ -1,4 +1,5 @@
 "use client";
+import { notifyChanged } from "@/lib/client/live";
 // Salesperson, status, financing, source, state, reminder, notes and booking for one customer.
 // Used in the Customers list (expanded row) and on the customer's profile.
 import { useState, useTransition } from "react";
@@ -31,7 +32,7 @@ export default function CustomerEditor({ view, setView, reps, sources, statuses,
     start(async () => {
       const result = await updateCustomerAction(c.key, c.name, field, value);
       if (!result.ok) { setView(previous); setMessage({ ok: false, text: result.error }); }
-      else setMessage({ ok: true, text: "Saved" });
+      else { setMessage({ ok: true, text: "Saved" }); notifyChanged(); }
     });
   }
   const sourceOptions = Array.from(new Set([...(view.heardFrom ? [view.heardFrom] : []), ...sources]));
@@ -118,6 +119,7 @@ function BookAppointment({ customer, reps, today }: { customer: CustomerView; re
         vehicle: customer.vehicles[0] ?? null, repId: repId ? Number(repId) : null, date, time, force,
       });
       setResult(r.ok ? { ok: true, text: r.message ?? "Booked." } : { ok: false, text: r.error, conflict: r.conflict });
+      if (r.ok) notifyChanged();
     });
   }
 

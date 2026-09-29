@@ -6,6 +6,7 @@ import { useEffect, useState } from "react";
 import AutoSync from "./AutoSync";
 import CommandSearch from "./CommandSearch";
 import Icon from "./Icon";
+import { preloadData, useLive } from "@/lib/client/live";
 
 type NavItem = { href: string; label: string; ready: boolean; icon: string };
 
@@ -31,9 +32,20 @@ const footerNav: NavItem[] = [
   { href: "/developer", label: "Developer", ready: true, icon: "developer" },
 ];
 
-type Props = { dealershipName: string; staffName: string; roleLabel: string; children: React.ReactNode };
+type Props = { children: React.ReactNode };
+type Me = { name: string; roleLabel: string; dealershipName: string };
 
-export default function AppShell({ dealershipName, staffName, roleLabel, children }: Props) {
+export default function AppShell({ children }: Props) {
+  const me = useLive<Me>("/api/me", { every: 10 * 60_000 }).data;
+  const dealershipName = me?.dealershipName ?? "Auto One Motors";
+  const staffName = me?.name ?? "";
+  const roleLabel = me?.roleLabel ?? "";
+  // Shortly after any page opens, fetch the Dashboard and Customers data into the browser's saved copy,
+  // so those pages show current data the moment they're opened.
+  useEffect(() => {
+    const t = setTimeout(() => { preloadData("/api/dashboard"); preloadData("/api/customers"); }, 1500);
+    return () => clearTimeout(t);
+  }, []);
   const pathname = usePathname();
   const [open, setOpen] = useState(false);
 
@@ -123,7 +135,7 @@ function NavList({ items, pathname }: { items: NavItem[]; pathname: string }) {
         return (
           <li key={item.href}>
             <Link
-              prefetch={PRELOAD.has(item.href) ? true : undefined}
+              prefetch={PRELOAD.has(item.href) ? true : false}
               href={item.href}
               aria-current={active ? "page" : undefined}
               className={`relative flex items-center gap-3 rounded-md px-3 py-2 text-[15px] transition-colors ${

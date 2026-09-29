@@ -1,3 +1,4 @@
+import { requirePageStaff } from "@/lib/auth/guard";
 import type { Metadata } from "next";
 import Link from "next/link";
 import Board from "@/components/pipeline/Board";
@@ -14,6 +15,7 @@ export const maxDuration = 45;
 const WINDOWS = { "30": "Last 30 days", "60": "Last 60 days", "90": "Last 90 days", "365": "Last 12 months" } as const;
 
 export default async function PipelinePage({ searchParams }: { searchParams: Promise<Record<string, string | undefined>> }) {
+  await requirePageStaff();
   const params = await searchParams;
   const days = params.days && params.days in WINDOWS ? params.days : "60";
   const repId = params.rep && /^\d+$/.test(params.rep) ? Number(params.rep) : null;

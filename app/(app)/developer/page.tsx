@@ -1,3 +1,4 @@
+import { requirePageStaff } from "@/lib/auth/guard";
 import type { Metadata } from "next";
 import { headers } from "next/headers";
 import DeveloperNotice from "@/components/developer/DeveloperNotice";
@@ -13,6 +14,7 @@ export const dynamic = "force-dynamic";
 export const maxDuration = 45;
 
 export default async function DeveloperPage() {
+  await requirePageStaff();
   const staff = (await getStaffSession())!;
 
   if (!can.useDeveloperTools(staff.role)) {

@@ -1,3 +1,4 @@
+import { requirePageStaff } from "@/lib/auth/guard";
 import type { Metadata } from "next";
 import Link from "next/link";
 import Badge from "@/components/leads/Badge";
@@ -20,6 +21,7 @@ const PER_PAGE = 50;
 
 // Only lead emails, read from the saved copies (no Gmail request). Opening one fetches the full email.
 export default async function InboxPage({ searchParams }: { searchParams: Promise<Record<string, string | undefined>> }) {
+  await requirePageStaff();
   const params = await searchParams;
   const view: View = params.view && params.view in VIEWS ? (params.view as View) : "all";
   const search = (params.q ?? "").slice(0, 80).trim();

@@ -1,4 +1,5 @@
 "use client";
+import { notifyChanged } from "@/lib/client/live";
 // Quick buttons to record what happened with a customer. Shows in their history right away.
 import { useRouter } from "next/navigation";
 import { useState, useTransition } from "react";
@@ -23,7 +24,7 @@ export default function ActivityLog({ customerKey }: { customerKey: string }) {
     start(async () => {
       const r = await logActivityAction(customerKey, kind, note);
       setMessage(r.ok ? { ok: true, text: r.message ?? "Added." } : { ok: false, text: r.error });
-      if (r.ok) { setNote(""); router.refresh(); }
+      if (r.ok) { setNote(""); router.refresh(); notifyChanged(); }
     });
   }
 

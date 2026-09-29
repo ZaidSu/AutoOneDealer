@@ -1,4 +1,5 @@
 "use client";
+import { notifyChanged } from "@/lib/client/live";
 // Customers by stage. Drag a card to another column (or use its menu on a phone) to change the stage.
 import Link from "next/link";
 import { useState, useTransition } from "react";
@@ -29,7 +30,7 @@ export default function Board({ columns: initial, labels, repId }: Props) {
       : c.status === to ? { ...c, count: c.count + 1, cards: [card, ...c.cards] } : c));
     start(async () => {
       const r = await updateCustomerAction(card.key, card.name, "status", to);
-      if (!r.ok) { setColumns(before); setError(r.error); }
+      if (!r.ok) { setColumns(before); setError(r.error); } else notifyChanged();
     });
   }
 

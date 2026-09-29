@@ -1,3 +1,4 @@
+import { requirePageStaff } from "@/lib/auth/guard";
 import type { Metadata } from "next";
 import Link from "next/link";
 import GmailState from "@/components/gmail/GmailState";
@@ -18,6 +19,7 @@ const FILTERS: { key: LeadFilter; label: string }[] = [
 ];
 
 export default async function LeadsPage({ searchParams }: { searchParams: Promise<Record<string, string | undefined>> }) {
+  await requirePageStaff();
   const params = await searchParams;
   const filter = (FILTERS.find((f) => f.key === params.show)?.key ?? "all") as LeadFilter;
   const search = (params.q ?? "").slice(0, 80).trim();

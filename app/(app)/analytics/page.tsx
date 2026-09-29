@@ -1,3 +1,4 @@
+import { requirePageStaff } from "@/lib/auth/guard";
 import type { Metadata } from "next";
 import Link from "next/link";
 import { BarList, Columns, Panel, Stat } from "@/components/analytics/Charts";
@@ -19,6 +20,7 @@ type Range = keyof typeof RANGES;
 const tz = dealership.timeZone;
 
 export default async function AnalyticsPage({ searchParams }: { searchParams: Promise<Record<string, string | undefined>> }) {
+  await requirePageStaff();
   const params = await searchParams;
   const range: Range = params.range && params.range in RANGES ? (params.range as Range) : "30";
   const days = Number(range);

@@ -10,7 +10,7 @@ const send = (note: Note) => {
 };
 const ms = (n: number) => Math.max(0, Math.round(n));
 
-export default function PerfReporter({ serverHits, serverAgeS, startup = "" }: { serverHits: number; serverAgeS: number; startup?: string }) {
+export default function PerfReporter({ serverHits = 2, serverAgeS = 0, startup = "" }: { serverHits?: number; serverAgeS?: number; startup?: string }) {
   const pathname = usePathname();
   const clickAt = useRef<number | null>(null);
 

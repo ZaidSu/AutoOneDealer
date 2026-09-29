@@ -1,4 +1,5 @@
 "use client";
+import { notifyChanged } from "@/lib/client/live";
 // One follow-up on the Dashboard: who, why, a tap-to-call number, and quick "done" buttons.
 import Link from "next/link";
 import { useState, useTransition } from "react";
@@ -17,7 +18,7 @@ export default function FollowUpItem({ item, when }: { item: FollowUp; when: str
     setHidden(true);
     start(async () => {
       const r = await followUpAction(kind, { key: item.key, name: item.name, appointmentId: item.appointmentId });
-      if (!r.ok) { setHidden(false); setError(r.error); }
+      if (!r.ok) { setHidden(false); setError(r.error); } else notifyChanged();
     });
   }
 

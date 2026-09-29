@@ -1,3 +1,4 @@
+import { requirePageStaff } from "@/lib/auth/guard";
 import type { Metadata } from "next";
 import Link from "next/link";
 import { notFound } from "next/navigation";
@@ -12,6 +13,7 @@ export const maxDuration = 45;
 export const dynamic = "force-dynamic";
 
 export default async function EmailPage({ params }: { params: Promise<{ id: string }> }) {
+  await requirePageStaff();
   const { id } = await params;
   if (!/^[a-f0-9]{8,24}$/i.test(id)) notFound();
 

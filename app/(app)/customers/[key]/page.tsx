@@ -1,3 +1,4 @@
+import { requirePageStaff } from "@/lib/auth/guard";
 import type { Metadata } from "next";
 import Link from "next/link";
 import { notFound } from "next/navigation";
@@ -22,6 +23,7 @@ export const maxDuration = 45;
 type Entry = { at: number; key: string; node: React.ReactNode };
 
 export default async function CustomerPage({ params }: { params: Promise<{ key: string }> }) {
+  await requirePageStaff();
   const { key } = await params;
   if (!parseCustomerKey(key)) notFound();
   const state = await dbState();

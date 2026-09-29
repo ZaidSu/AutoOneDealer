@@ -1,3 +1,4 @@
+import { requirePageStaff } from "@/lib/auth/guard";
 import type { Metadata } from "next";
 import Link from "next/link";
 import GmailState from "@/components/gmail/GmailState";
@@ -11,6 +12,7 @@ export const dynamic = "force-dynamic";
 export const maxDuration = 45;
 
 export default async function CreditApplicationsPage({ searchParams }: { searchParams: Promise<Record<string, string | undefined>> }) {
+  await requirePageStaff();
   const params = await searchParams;
   const page = params.page && /^[\w-]{1,200}$/.test(params.page) ? params.page : undefined;
   const pageNumber = Math.max(0, Number(params.p ?? 0) || 0);

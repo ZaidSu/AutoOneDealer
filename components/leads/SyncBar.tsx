@@ -1,4 +1,5 @@
 "use client";
+import { notifyChanged } from "@/lib/client/live";
 // Shows how fresh the saved leads are, with an "Update now" button.
 import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
@@ -34,7 +35,7 @@ export default function SyncBar({ lastRun, saved, remaining }: Props) {
       setMessage(data?.message ?? "Couldn't update right now.");
       keepGoing = Boolean(data?.ok && data.remaining > 0);
       // Refresh only when the import is finished; refreshing mid-import could undo a page change.
-      if (data?.ok && !keepGoing) router.refresh();
+      if (data?.ok && !keepGoing) { router.refresh(); notifyChanged(); }
     } catch {
       setMessage("Couldn't reach the server. Check your connection.");
     } finally {
