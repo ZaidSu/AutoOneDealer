@@ -1,162 +1,153 @@
 "use client";
-// The Dashboard, drawn in the browser from its saved copy, then refreshed quietly in the background.
+// The Dashboard: today's date, today's appointments, and everything that came in since last night.
+// Drawn from the browser's saved copy first, then refreshed quietly in the background.
 import Link from "next/link";
-import { useSearchParams } from "next/navigation";
-import FollowUpItem from "@/components/dashboard/FollowUpItem";
-import LeadList from "@/components/leads/LeadList";
+import Badge from "@/components/leads/Badge";
 import DbNotice from "@/components/ui/DbNotice";
-import PageHeader from "@/components/ui/PageHeader";
 import PageLoading from "@/components/ui/PageLoading";
-import type { FollowUp } from "@/lib/db/data";
-import { formatPhone } from "@/lib/utils/format";
-import type { Lead } from "@/lib/gmail";
 import { useLive } from "@/lib/client/live";
-import { dayKey } from "@/lib/utils/time";
+import type { Lead } from "@/lib/gmail";
+import { displayName, formatMoney, formatPhone } from "@/lib/utils/format";
 
 type Appt = { id: number; customerName: string; vehicle: string | null; phone: string | null; repName: string | null; status: string; startsAt: number };
 type Data = {
   state: "ready" | "unreachable" | "not_configured"; dbReady: boolean; tz: string; greeting: string; firstName: string;
-  repId: number | null; reps: { id: number; name: string }[]; items: FollowUp[]; latest: Lead[]; problems: string[];
-  counts: { leadsToday: number; appsToday: number; week: number } | null; appointmentsToday: Appt[] | null;
+  problems: string[]; since: number; counts: { leads: number; applications: number } | null; latest: Lead[];
+  appointmentsToday: Appt[] | null; ai: { enabled: boolean; emails: number; texts: number };
 };
 
-let tz = "America/Chicago";
-let timeFmt = new Intl.DateTimeFormat("en-US", { hour: "numeric", minute: "2-digit", timeZone: tz });
-let dateFmt = new Intl.DateTimeFormat("en-US", { weekday: "short", month: "short", day: "numeric", timeZone: tz });
-function setZone(zone: string) {
-  if (zone !== tz) {
-    tz = zone;
-    timeFmt = new Intl.DateTimeFormat("en-US", { hour: "numeric", minute: "2-digit", timeZone: tz });
-    dateFmt = new Intl.DateTimeFormat("en-US", { weekday: "short", month: "short", day: "numeric", timeZone: tz });
-  }
-}
-function ago(ms: number) {
-  const minutes = Math.max(1, Math.round((Date.now() - ms) / 60000));
-  if (minutes < 60) return `${minutes} min ago`;
-  const hours = Math.round(minutes / 60);
-  return hours < 48 ? `${hours} hr ago` : `${Math.round(hours / 24)} days ago`;
-}
-
-const GROUPS: { kind: FollowUp["kind"]; title: string; hint: string; limit: number; when: (f: FollowUp) => string; more?: string }[] = [
-  { kind: "no_show", title: "Missed appointments", hint: "Call to reschedule.", limit: 10, when: (f) => `Missed ${dateFmt.format(f.at)} at ${timeFmt.format(f.at)}` },
-  { kind: "unmarked", title: "Did they show up?", hint: "These appointments are over. Mark how they went.", limit: 10, when: (f) => `${dateFmt.format(f.at)} at ${timeFmt.format(f.at)}` },
-  { kind: "reminder", title: "Follow-up reminders", hint: "Reminders set on a customer for today or earlier.", limit: 15, when: (f) => (dayKey(f.at, "UTC") < dayKey(Date.now(), tz) ? `Was due ${dateFmt.format(f.at)}` : "Due today") },
-  { kind: "loan_app", title: "Loan apps waiting on review", hint: "Credit applications from the last 30 days without an Approved or Denied decision.", limit: 8, when: (f) => `Applied ${ago(f.at)}`, more: "/customers?fin=needs_review" },
-  { kind: "new_lead", title: "New leads nobody has contacted", hint: "From the last 2 weeks, with no status, reminder or appointment yet.", limit: 8, when: (f) => `Came in ${ago(f.at)}`, more: "/customers?status=new" },
-];
-
+const fmt = (tz: string, o: Intl.DateTimeFormatOptions) => new Intl.DateTimeFormat("en-US", { timeZone: tz, ...o });
 
 export default function DashboardView() {
-  const search = useSearchParams();
-  const repParam = search.get("rep");
-  const { data, error } = useLive<Data>(`/api/dashboard${repParam ? `?rep=${encodeURIComponent(repParam)}` : ""}`);
-  if (!data) return error ? <p role="alert" className="card max-w-2xl p-5 text-signal">Couldn&apos;t load the Dashboard: {error}. Check your connection and refresh.</p> : <PageLoading title="Dashboard" messages={["Checking today's leads…", "Counting credit applications…", "Looking for today's appointments…", "Almost there…"]} />;
-  setZone(data.tz);
-  const { state, dbReady, reps, items, counts, latest, problems, appointmentsToday, repId, firstName } = data;
-  const total = items.length;
-  const visibleAppointments = (appointmentsToday ?? []).filter((a) => a.status !== "canceled");
+  const { data, error } = useLive<Data>("/api/dashboard");
+  if (!data) {
+    return error
+      ? <p role="alert" className="card max-w-2xl p-5 text-signal">Couldn&apos;t load the Dashboard: {error}. Check your connection and refresh.</p>
+      : <PageLoading title="Dashboard" messages={["Checking what came in overnight…", "Counting credit applications…", "Looking up today's appointments…", "Almost there…"]} />;
+  }
+  if (!data.dbReady || !data.since) return <><DateHeader tz={data.tz} line="Here's what's happening at the dealership." /><DbNotice state={data.state} what="The Dashboard" /></>;
+
+  const { tz, counts, latest, problems, ai } = data;
+  const time = fmt(tz, { hour: "numeric", minute: "2-digit" });
+  const appts = data.appointmentsToday ?? [];
+  const upcoming = appts.filter((a) => a.status === "scheduled" && a.startsAt >= Date.now() - 30 * 60_000);
+  const nextId = upcoming[0]?.id;
 
   return (
-    <>
-      <PageHeader title={`${data.greeting}, ${firstName}`} description={dbReady ? (total ? `${total} ${total === 1 ? "person needs" : "people need"} a follow-up.` : "You're all caught up on follow-ups.") : "Here's what needs attention at the dealership."} />
+    <div className="max-w-6xl">
+      <DateHeader tz={tz} line={`${data.greeting}, ${data.firstName}. Here's everything since ${time.format(data.since)} yesterday.`} />
 
       {problems.length > 0 && (
-        <div role="alert" className="mb-5 max-w-5xl rounded-lg border border-signal/30 bg-warn-soft px-4 py-3 text-sm">
-          <p className="font-semibold">Part of this page couldn&apos;t load. Refresh to try again; if it keeps happening, send this to your developer:</p>
+        <div role="alert" className="mb-6 rounded-xl border border-signal/25 bg-warn-soft px-4 py-3 text-sm">
+          <p className="font-semibold">Part of this page couldn&apos;t load. Refresh to try again.</p>
           <ul className="mt-1 list-disc pl-5 text-muted">{problems.map((p) => <li key={p}>{p}</li>)}</ul>
         </div>
       )}
-      {counts && (
-        <section aria-label="Counts" className="stat-strip mb-6 max-w-5xl lg:grid-cols-4">
-          <Stat value={counts.leadsToday} label="New leads today" href="/leads?show=inquiry" highlight={counts.leadsToday > 0} />
-          <Stat value={counts.appsToday} label="Credit applications today" href="/credit-applications" highlight={counts.appsToday > 0} />
-          <Stat value={counts.week} label="Leads and applications, last 7 days" href="/leads" />
-          <Stat value={items.filter((i) => i.kind === "new_lead").length} label="Waiting on first contact" href="/pipeline" highlight={items.some((i) => i.kind === "new_lead")} />
-        </section>
-      )}
 
-      {dbReady && reps.length > 0 && (
-        <nav aria-label="Salesperson" className="segmented mb-4">
-          <Link href="/dashboard" aria-current={!repId ? "page" : undefined}>Everyone</Link>
-          {reps.map((r) => (
-            <Link key={r.id} href={`/dashboard?rep=${r.id}`} aria-current={repId === r.id ? "page" : undefined}>{r.name}</Link>
-          ))}
-        </nav>
-      )}
+      <section aria-label="Since last night" className="stat-strip mb-8 lg:grid-cols-4">
+        <Stat href="/leads?show=inquiry" value={counts?.leads} label="New leads" hot />
+        <Stat href="/credit-applications" value={counts?.applications} label="Credit applications" hot />
+        <Stat href="/appointments" value={appts.length} label={upcoming.length && upcoming.length !== appts.length ? `Appointments today, ${upcoming.length} still to come` : "Appointments today"} />
+        <Link href="/ai/emails" className="stat">
+          {ai.enabled ? (
+            <p className="stat-value">{ai.emails + ai.texts}</p>
+          ) : (
+            <p className="pt-1.5 font-condensed text-[1.6rem] font-semibold leading-tight text-faint">Not on yet</p>
+          )}
+          <p className="stat-label">{ai.enabled ? `AI replies: ${ai.emails} emails, ${ai.texts} texts` : "AI email and text replies"}</p>
+        </Link>
+      </section>
 
-      <div className="grid max-w-5xl gap-6">
-        {!dbReady ? (
-          <DbNotice state={state} what="The follow-up list" />
-        ) : total === 0 ? (
-          <p className="rounded-lg border border-dashed border-line bg-white p-5 text-muted">
-            Nothing to follow up on{repId ? " for this salesperson" : ""}. New leads, missed appointments and reminders will show up here.
-          </p>
-        ) : (
-          GROUPS.map((group) => {
-            const list = items.filter((i) => i.kind === group.kind);
-            if (list.length === 0) return null;
-            return (
-              <section key={group.kind} aria-labelledby={`fu-${group.kind}`}>
-                <div className="mb-2 flex flex-wrap items-baseline gap-x-3">
-                  <h2 id={`fu-${group.kind}`} className="text-lg font-semibold">
-                    {group.title} <span className="text-signal tabular-nums">{list.length}</span>
-                  </h2>
-                  <p className="text-sm text-muted">{group.hint}</p>
-                </div>
-                <ul className="divide-y divide-line overflow-hidden rounded-lg border border-line bg-white">
-                  {list.slice(0, group.limit).map((item) => (
-                    <FollowUpItem key={`${item.kind}-${item.appointmentId ?? item.key}`} item={item} when={group.when(item)} />
-                  ))}
-                </ul>
-                {list.length > group.limit && group.more && (
-                  <Link href={group.more} className="mt-2 inline-block text-sm font-semibold text-signal hover:underline">See all {list.length}</Link>
-                )}
-              </section>
-            );
-          })
-        )}
-
-        {appointmentsToday && (
-          <section aria-labelledby="today-appts" className="rounded-lg border border-line bg-white p-5">
-            <div className="flex items-baseline justify-between">
-              <h2 id="today-appts" className="text-lg font-semibold">Today&apos;s appointments</h2>
-              <Link href="/appointments" className="text-sm font-semibold text-signal hover:underline">All appointments</Link>
-            </div>
-            {visibleAppointments.length === 0 ? (
-              <p className="mt-2 text-muted">Nothing booked for today.</p>
-            ) : (
-              <ul className="mt-3 divide-y divide-line">
-                {visibleAppointments.map((a) => (
-                  <li key={a.id} className="flex flex-wrap items-center gap-x-4 gap-y-1 py-2">
-                    <span className="w-20 font-semibold tabular-nums">{timeFmt.format(new Date(a.startsAt))}</span>
-                    <span className="font-semibold">{a.customerName}</span>
-                    <span className="text-muted">{[a.vehicle, a.phone && formatPhone(a.phone)].filter(Boolean).join(" · ")}</span>
-                    <span className="ml-auto text-sm text-muted">{a.repName ?? "No salesperson"}{a.status !== "scheduled" ? ` · ${a.status === "showed" ? "showed up" : "no-show"}` : ""}</span>
+      <div className="grid gap-6 lg:grid-cols-[minmax(0,5fr)_minmax(0,7fr)] lg:items-start">
+        <section aria-labelledby="today-appts" className="panel">
+          <div className="panel-head">
+            <h2 id="today-appts">Today&apos;s appointments</h2>
+            <Link href="/appointments" className="panel-link">Calendar</Link>
+          </div>
+          {appts.length === 0 ? (
+            <p className="px-5 pt-1 pb-5 text-muted">Nothing booked for today. <Link href="/appointments" className="font-semibold text-ink underline">Book one</Link></p>
+          ) : (
+            <ul className="px-2 pb-2">
+              {appts.map((a) => {
+                const past = a.status !== "scheduled" || a.startsAt < Date.now() - 30 * 60_000;
+                return (
+                  <li key={a.id} className={`flex gap-4 rounded-lg px-3 py-3 ${a.id === nextId ? "bg-paper" : ""} ${past ? "opacity-55" : ""}`}>
+                    <p className="w-[4.5rem] shrink-0 font-condensed text-xl font-semibold tabular-nums leading-6">{time.format(a.startsAt)}</p>
+                    <div className="min-w-0 flex-1">
+                      <p className="font-semibold">
+                        {a.customerName}
+                        {a.id === nextId && <span className="ml-2 rounded-full bg-signal px-2 py-0.5 align-middle text-xs font-semibold text-white">Up next</span>}
+                        {a.status === "showed" && <span className="ml-2 text-sm font-medium text-go">Showed up</span>}
+                        {a.status === "no_show" && <span className="ml-2 text-sm font-medium text-signal">No-show</span>}
+                      </p>
+                      <p className="truncate text-sm text-muted">{a.vehicle ?? "Car not noted"}</p>
+                      <p className="text-sm text-muted">
+                        {a.phone && <a href={`tel:${a.phone}`} className="hover:text-ink hover:underline">{formatPhone(a.phone)}</a>}
+                        {a.phone && a.repName && <span className="mx-1.5 text-faint">/</span>}
+                        {a.repName && <span>with {a.repName}</span>}
+                      </p>
+                    </div>
                   </li>
-                ))}
-              </ul>
-            )}
-          </section>
-        )}
+                );
+              })}
+            </ul>
+          )}
+        </section>
 
-        {dbReady && (
-          <section aria-labelledby="latest">
-            <div className="mb-3 flex items-baseline justify-between">
-              <h2 id="latest" className="text-lg font-semibold">Newest leads</h2>
-              <Link href="/leads" className="text-sm font-semibold text-signal hover:underline">See all leads</Link>
-            </div>
-            {latest.length === 0 ? <p className="rounded-lg border border-dashed border-line p-6 text-muted">No leads yet.</p> : <LeadList leads={latest} />}
-          </section>
-        )}
+        <section aria-labelledby="overnight" className="panel">
+          <div className="panel-head">
+            <h2 id="overnight">Since last night</h2>
+            <Link href="/leads" className="panel-link">All leads</Link>
+          </div>
+          {latest.length === 0 ? (
+            <p className="px-5 pt-1 pb-5 text-muted">No new leads or applications since {time.format(data.since)} yesterday.</p>
+          ) : (
+            <ul className="divide-y divide-line px-5 pb-2">
+              {latest.map((lead) => (
+                <li key={lead.messageId} className="flex gap-4 py-3">
+                  <p className="w-[4.5rem] shrink-0 pt-0.5 text-sm tabular-nums text-muted">{time.format(lead.receivedAt)}</p>
+                  <div className="min-w-0 flex-1">
+                    <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
+                      <Link href={`/inbox/${lead.messageId}`} className="font-semibold hover:text-signal hover:underline">{displayName(lead.name)}</Link>
+                      <Badge tone={lead.kind}>{lead.kind === "application" ? "Credit application" : lead.type}</Badge>
+                    </div>
+                    <p className="truncate text-sm text-muted">
+                      {[lead.kind === "application" && lead.loanAmount !== null ? `Loan ${formatMoney(lead.loanAmount)}` : lead.vehicle, lead.provider].filter(Boolean).join(", ")}
+                    </p>
+                    {(lead.phone || lead.email) && (
+                      <p className="truncate text-sm">
+                        {lead.phone ? <a href={`tel:${lead.phone}`} className="hover:text-signal hover:underline">{formatPhone(lead.phone)}</a>
+                          : <a href={`mailto:${lead.email}`} className="text-muted hover:text-ink hover:underline">{lead.email}</a>}
+                      </p>
+                    )}
+                  </div>
+                </li>
+              ))}
+            </ul>
+          )}
+        </section>
       </div>
-    </>
+    </div>
   );
 }
 
-function Stat({ value, label, href, highlight }: { value: number; label: string; href: string; highlight?: boolean }) {
+/** The day's date as the page headline, with a line under it. */
+function DateHeader({ tz, line }: { tz: string; line: string }) {
+  const now = Date.now();
+  return (
+    <header className="mb-7">
+      <p className="text-[15px] font-semibold text-signal">{fmt(tz, { weekday: "long" }).format(now)}</p>
+      <h1 className="font-condensed text-[2.75rem] font-semibold leading-none tracking-[0.01em] sm:text-5xl">{fmt(tz, { month: "long", day: "numeric", year: "numeric" }).format(now)}</h1>
+      <div aria-hidden className="lane mt-4 w-[152px] rounded-full" />
+      <p className="mt-4 text-muted">{line}</p>
+    </header>
+  );
+}
+
+function Stat({ value, label, href, hot }: { value: number | undefined; label: string; href: string; hot?: boolean }) {
   return (
     <Link href={href} className="stat">
-      <p className={`stat-value ${highlight ? "text-signal" : ""}`}>{value.toLocaleString()}</p>
+      <p className={`stat-value ${hot && value ? "text-signal" : ""}`}>{value === undefined ? "–" : value.toLocaleString()}</p>
       <p className="stat-label">{label}</p>
     </Link>
   );

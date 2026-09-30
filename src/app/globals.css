@@ -1,22 +1,25 @@
 @import "tailwindcss";
 
 /*
-  AutoDash look: asphalt sidebar, cool road-gray workspace, dealer red for what needs action.
-  Barlow Condensed (road-sign lettering) for titles and big numbers; Barlow for everything else.
+  AutoDash look: a bright, quiet showroom. White sidebar and cards on a cool concrete-gray floor, asphalt ink for
+  text, and one dealer red reserved for what matters (the current page, key actions, new activity).
+  Barlow Condensed (road-sign lettering) for page titles and big numbers; Barlow for everything else.
 */
 @theme {
   --font-sans: var(--font-barlow), "Segoe UI", system-ui, -apple-system, sans-serif;
   --font-condensed: var(--font-condensed), "Arial Narrow", var(--font-barlow), sans-serif;
-  --color-graphite: #17191d;
-  --color-graphite-2: #23262c;
-  --color-graphite-3: #34383f;
+  --color-graphite: #1d2330;
+  --color-graphite-2: #2a3140;
+  --color-graphite-3: #3a4252;
   --color-signal: #c8102e;
   --color-signal-dark: #a00c24;
-  --color-lane: #f2b705;
-  --color-paper: #f1f2f0;
-  --color-ink: #16191e;
-  --color-muted: #5b6370;
-  --color-line: #dcdfe3;
+  --color-signal-soft: #fcebed;
+  --color-lane: #e0a100;
+  --color-paper: #f2f3f5;
+  --color-ink: #1a1f29;
+  --color-muted: #5f6776;
+  --color-faint: #8a919d;
+  --color-line: #e2e5ea;
   --color-go: #1f7a4d;
   --color-go-soft: #e6f3ec;
   --color-warn-soft: #fdf1f2;
@@ -25,15 +28,27 @@
 html { color-scheme: light; }
 body { background: var(--color-paper); color: var(--color-ink); -webkit-font-smoothing: antialiased; }
 :focus-visible { outline: 2px solid var(--color-signal); outline-offset: 2px; }
+::selection { background: #f6d3d8; }
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { transition: none !important; animation: none !important; }
 }
 
 @layer components {
-  .page-title { font-family: var(--font-condensed); font-weight: 600; font-size: 2.25rem; line-height: 1.05; letter-spacing: 0.005em; }
+  .page-title { font-family: var(--font-condensed); font-weight: 600; font-size: 2.125rem; line-height: 1.05; letter-spacing: 0.01em; }
   .section-title { font-family: var(--font-condensed); font-weight: 600; font-size: 1.375rem; line-height: 1.2; }
 
-  .card { background: #fff; border: 1px solid var(--color-line); border-radius: 10px; }
+  .card { background: #fff; border: 1px solid var(--color-line); border-radius: 12px; }
+  /* A titled block of content (dashboard lists, settings sections). */
+  .panel { background: #fff; border: 1px solid var(--color-line); border-radius: 12px; }
+  .panel-head { display: flex; align-items: baseline; justify-content: space-between; gap: 1rem; padding: 1rem 1.25rem 0.5rem; }
+  .panel-head h2 { font-size: 1.0625rem; font-weight: 600; }
+  .panel-link { font-size: 0.875rem; font-weight: 600; color: var(--color-signal); }
+  .panel-link:hover { text-decoration: underline; }
+  .field { display: block; font-size: 0.875rem; font-weight: 500; color: var(--color-muted); }
+  .input { margin-top: 0.3rem; height: 2.625rem; width: 100%; border-radius: 8px; border: 1px solid var(--color-line); background: #fff; padding: 0 0.75rem; font-size: 15px; color: var(--color-ink); }
+  textarea.input { height: auto; padding: 0.6rem 0.75rem; line-height: 1.5; }
+  .input:focus { outline: none; border-color: var(--color-graphite); box-shadow: 0 0 0 3px rgba(29, 35, 48, 0.08); }
+  .input:disabled { background: var(--color-paper); color: var(--color-muted); }
 
   .btn {
     display: inline-flex; align-items: center; justify-content: center; gap: 0.4rem; height: 2.5rem; padding: 0 1rem;
@@ -43,15 +58,17 @@ body { background: var(--color-paper); color: var(--color-ink); -webkit-font-smo
   .btn:disabled { opacity: 0.55; }
   .btn-primary { background: var(--color-graphite); color: #fff; box-shadow: none; }
   .btn-primary:hover { background: var(--color-graphite-3); }
+  .btn-red { background: var(--color-signal); color: #fff; box-shadow: none; }
+  .btn-red:hover { background: var(--color-signal-dark); }
   .btn-sm { height: 2rem; padding: 0 0.75rem; font-size: 0.875rem; }
 
   /* Tabs such as Everyone / Zach / Steve */
-  .segmented { display: flex; flex-wrap: wrap; width: fit-content; gap: 2px; padding: 3px; border-radius: 9px; background: #fff; box-shadow: inset 0 0 0 1px var(--color-line); }
+  .segmented { display: flex; flex-wrap: wrap; width: fit-content; gap: 2px; padding: 3px; border-radius: 10px; background: #fff; box-shadow: inset 0 0 0 1px var(--color-line); }
   .segmented > a { padding: 0.35rem 0.8rem; border-radius: 6px; font-size: 0.875rem; font-weight: 500; color: var(--color-muted); }
   .segmented > a:hover { color: var(--color-ink); }
   .segmented > a[aria-current="page"] { background: var(--color-graphite); color: #fff; }
 
-  .stat-strip { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 1px; overflow: hidden; border-radius: 10px; border: 1px solid var(--color-line); background: var(--color-line); }
+  .stat-strip { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 1px; overflow: hidden; border-radius: 12px; border: 1px solid var(--color-line); background: var(--color-line); }
   .stat { display: block; background: #fff; padding: 1.1rem 1.25rem 1rem; }
   .stat:hover { background: #fafaf9; }
   .stat-value { font-family: var(--font-condensed); font-weight: 600; font-size: 2.6rem; line-height: 1; font-variant-numeric: tabular-nums; }
@@ -69,7 +86,7 @@ body { background: var(--color-paper); color: var(--color-ink); -webkit-font-smo
 
   /* Pipeline board */
   .board { display: grid; grid-auto-flow: column; grid-auto-columns: minmax(250px, 1fr); gap: 0.75rem; overflow-x: auto; padding-bottom: 0.5rem; }
-  .board-col { display: flex; flex-direction: column; min-height: 320px; border-radius: 10px; background: #e6e8e5; border-top: 4px solid var(--stage, var(--color-graphite)); }
+  .board-col { display: flex; flex-direction: column; min-height: 320px; border-radius: 12px; background: #e8eaee; border-top: 4px solid var(--stage, var(--color-graphite)); }
   .board-col.is-over { outline: 2px dashed var(--color-graphite); outline-offset: -4px; }
   .board-col[data-status="new"] { --stage: var(--color-signal); }
   .board-col[data-status="contacted"] { --stage: #2f5fa7; }
@@ -80,11 +97,18 @@ body { background: var(--color-paper); color: var(--color-ink); -webkit-font-smo
   .board-head h2 { font-family: var(--font-condensed); font-weight: 600; font-size: 1.25rem; }
   .board-head span { font-weight: 600; color: var(--color-muted); }
   .board-list { display: grid; gap: 0.5rem; padding: 0 0.5rem 0.5rem; align-content: start; }
-  .board-card { background: #fff; border-radius: 8px; padding: 0.65rem 0.75rem; box-shadow: 0 1px 0 rgba(22, 25, 30, 0.08); cursor: grab; }
+  .board-card { background: #fff; border-radius: 9px; padding: 0.7rem 0.8rem; box-shadow: 0 1px 2px rgba(26, 31, 41, 0.08); cursor: grab; }
   .board-card:active { cursor: grabbing; }
   .board-empty { padding: 0.75rem; font-size: 0.875rem; color: var(--color-muted); }
   .board-more { margin: auto 0.5rem 0.6rem; padding-top: 0.5rem; font-size: 0.875rem; font-weight: 600; color: var(--color-signal); }
 }
+
+/* The lane marking: the dealership's one decorative mark (login page, under the Dashboard date). */
+.lane { height: 5px; background-image: repeating-linear-gradient(90deg, var(--color-signal) 0 36px, transparent 36px 58px); }
+
+/* Sidebar groups: the arrow turns when a group opens. */
+.nav-chevron { transition: transform 0.18s ease; }
+[aria-expanded="true"] > .nav-chevron { transform: rotate(90deg); }
 
 /* Loading screens: the lane marking, driving forward. */
 @keyframes lane-drive { from { background-position: 0 0; } to { background-position: 76px 0; } }

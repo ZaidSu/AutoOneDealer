@@ -6,49 +6,66 @@ import { useEffect, useState } from "react";
 import AutoSync from "./AutoSync";
 import CommandSearch from "./CommandSearch";
 import Icon from "./Icon";
-import { preloadData, useLive } from "@/lib/client/live";
+import { clearSavedData, preloadData, useLive } from "@/lib/client/live";
 
-type NavItem = { href: string; label: string; ready: boolean; icon: string };
+type NavItem = { href: string; label: string; icon: string };
+type NavGroup = { id: string; label: string; icon: string; items: NavItem[] };
+type NavEntry = NavItem | NavGroup;
 
-// Items marked ready: false keep the familiar navigation visible without pretending the page works yet.
-const mainNav: NavItem[] = [
-  { href: "/dashboard", label: "Dashboard", ready: true, icon: "dashboard" },
-  { href: "/pipeline", label: "Pipeline", ready: true, icon: "pipeline" },
-  { href: "/customers", label: "Customers", ready: true, icon: "customers" },
-  { href: "/appointments", label: "Appointments", ready: true, icon: "appointments" },
-  { href: "/inbox", label: "Inbox", ready: true, icon: "inbox" },
-  { href: "/leads", label: "Leads", ready: true, icon: "leads" },
-  { href: "/credit-applications", label: "Credit Applications", ready: true, icon: "credit" },
-  { href: "/analytics", label: "Analytics", ready: true, icon: "analytics" },
-  { href: "/train-ai", label: "Train your AI", ready: false, icon: "ai" },
-  { href: "/automations", label: "Automations", ready: false, icon: "automations" },
+// The sidebar: a few pages on their own, the rest in groups that open and close.
+const NAV: NavEntry[] = [
+  { href: "/dashboard", label: "Dashboard", icon: "dashboard" },
+  {
+    id: "sales", label: "Sales", icon: "sales", items: [
+      { href: "/pipeline", label: "Pipeline", icon: "pipeline" },
+      { href: "/customers", label: "Customers", icon: "customers" },
+      { href: "/appointments", label: "Appointments", icon: "appointments" },
+    ],
+  },
+  {
+    id: "leads", label: "Leads", icon: "leads", items: [
+      { href: "/leads", label: "All leads", icon: "leads" },
+      { href: "/credit-applications", label: "Credit applications", icon: "credit" },
+      { href: "/inbox", label: "Inbox", icon: "inbox" },
+    ],
+  },
+  { href: "/analytics", label: "Analytics", icon: "analytics" },
+  {
+    id: "ai", label: "AI assistant", icon: "ai", items: [
+      { href: "/ai/emails", label: "Email replies", icon: "mail" },
+      { href: "/ai/texts", label: "Text messages", icon: "chat" },
+      { href: "/ai/train", label: "Train your AI", icon: "ai" },
+      { href: "/ai/dealership", label: "Dealership info", icon: "store" },
+      { href: "/ai/phone-numbers", label: "Phone numbers", icon: "phone" },
+      { href: "/ai/automations", label: "Automations", icon: "automations" },
+    ],
+  },
 ];
-// The pages people open most load in the background, so clicking them is instant (a warm page opens in ~0.3s,
-// a cold one can take several seconds).
+const FOOTER: NavItem[] = [
+  { href: "/settings", label: "Settings", icon: "settings" },
+  { href: "/developer", label: "Developer", icon: "developer" },
+];
+// The pages people open most load in the background, so clicking them is instant.
 const PRELOAD = new Set(["/dashboard", "/pipeline", "/customers", "/appointments", "/leads"]);
+const DEFAULT_OPEN: Record<string, boolean> = { sales: true, leads: true, ai: false };
+const OPEN_KEY = "ad:nav-open";
 
-const footerNav: NavItem[] = [
-  { href: "/settings", label: "Settings", ready: true, icon: "settings" },
-  { href: "/developer", label: "Developer", ready: true, icon: "developer" },
-];
+const isActive = (pathname: string, href: string) => pathname === href || pathname.startsWith(href + "/");
+const isGroup = (e: NavEntry): e is NavGroup => "items" in e;
 
-type Props = { children: React.ReactNode };
 type Me = { name: string; roleLabel: string; dealershipName: string };
 
-export default function AppShell({ children }: Props) {
+export default function AppShell({ children }: { children: React.ReactNode }) {
   const me = useLive<Me>("/api/me", { every: 10 * 60_000 }).data;
   const dealershipName = me?.dealershipName ?? "Auto One Motors";
-  const staffName = me?.name ?? "";
-  const roleLabel = me?.roleLabel ?? "";
-  // Shortly after any page opens, fetch the Dashboard and Customers data into the browser's saved copy,
-  // so those pages show current data the moment they're opened.
+  const pathname = usePathname();
+  const [open, setOpen] = useState(false);
+
+  // Shortly after any page opens, fetch the Dashboard and Customers data into the browser's saved copy.
   useEffect(() => {
     const t = setTimeout(() => { preloadData("/api/dashboard"); preloadData("/api/customers"); }, 1500);
     return () => clearTimeout(t);
   }, []);
-  const pathname = usePathname();
-  const [open, setOpen] = useState(false);
-
   useEffect(() => setOpen(false), [pathname]);
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => e.key === "Escape" && setOpen(false);
@@ -57,40 +74,50 @@ export default function AppShell({ children }: Props) {
   }, []);
 
   return (
-    <div className="min-h-dvh lg:grid lg:grid-cols-[248px_minmax(0,1fr)]">
-      {/* Mobile top bar */}
-      <header className="sticky top-0 z-30 flex h-14 items-center justify-between bg-graphite px-4 text-white lg:hidden">
+    <div className="min-h-dvh lg:grid lg:grid-cols-[256px_minmax(0,1fr)]">
+      {/* Phone and tablet top bar */}
+      <header className="sticky top-0 z-30 flex h-14 items-center justify-between border-b border-line bg-white px-4 lg:hidden">
         <Brand dealershipName={dealershipName} />
         <button
-          type="button"
-          onClick={() => setOpen((v) => !v)}
-          aria-expanded={open}
-          aria-controls="sidebar"
-          className="rounded-md px-3 py-1.5 text-sm font-semibold ring-1 ring-white/20 hover:bg-graphite-2"
+          type="button" onClick={() => setOpen((v) => !v)} aria-expanded={open} aria-controls="sidebar"
+          className="rounded-lg px-3 py-1.5 text-sm font-semibold ring-1 ring-line hover:bg-paper"
         >
           {open ? "Close" : "Menu"}
         </button>
       </header>
 
-      {open && <div className="fixed inset-0 z-30 bg-black/40 lg:hidden" onClick={() => setOpen(false)} aria-hidden />}
+      {open && <div className="fixed inset-0 z-30 bg-ink/30 lg:hidden" onClick={() => setOpen(false)} aria-hidden />}
 
       <aside
         id="sidebar"
-        className={`fixed inset-y-0 left-0 z-40 flex w-[248px] flex-col bg-graphite text-white transition-transform lg:sticky lg:top-0 lg:h-dvh lg:translate-x-0 ${
+        className={`fixed inset-y-0 left-0 z-40 flex w-[256px] flex-col border-r border-line bg-white transition-transform lg:sticky lg:top-0 lg:h-dvh lg:translate-x-0 ${
           open ? "translate-x-0" : "-translate-x-full"
         }`}
       >
-        <div className="flex h-16 items-center px-5">
+        <div className="flex h-16 shrink-0 items-center px-5">
           <Brand dealershipName={dealershipName} />
         </div>
-        <nav aria-label="Main" className="mt-2 flex-1 overflow-y-auto px-3">
-          <NavList items={mainNav} pathname={pathname} />
+        <nav aria-label="Main" className="flex-1 overflow-y-auto px-3 pb-4">
+          <Nav pathname={pathname} />
         </nav>
-        <div className="border-t border-white/10 px-3 py-3">
-          <NavList items={footerNav} pathname={pathname} />
-          <div className="mt-3 px-3 pb-1">
-            <p className="truncate text-sm font-semibold">{staffName}</p>
-            <p className="text-xs text-white/60">{roleLabel}</p>
+        <div className="shrink-0 border-t border-line px-3 py-3">
+          <ul className="space-y-0.5">
+            {FOOTER.map((item) => <li key={item.href}><NavLink item={item} active={isActive(pathname, item.href)} /></li>)}
+          </ul>
+          <div className="mt-3 flex items-center gap-3 rounded-lg bg-paper px-3 py-2.5">
+            <span aria-hidden className="grid size-8 shrink-0 place-items-center rounded-full bg-graphite text-sm font-semibold text-white">
+              {(me?.name ?? "?").slice(0, 1).toUpperCase()}
+            </span>
+            <div className="min-w-0 flex-1">
+              <p className="truncate text-sm font-semibold">{me?.name ?? ""}</p>
+              <p className="truncate text-xs text-muted">{me?.roleLabel ?? ""}</p>
+            </div>
+            <form action="/api/logout" method="post" onSubmit={() => clearSavedData()}>
+              <button type="submit" title="Sign out" className="flex items-center gap-1.5 rounded-md px-2 py-1.5 text-sm font-semibold text-muted hover:bg-white hover:text-ink">
+                <Icon name="logout" className="size-4" />
+                <span>Sign out</span>
+              </button>
+            </form>
           </div>
         </div>
       </aside>
@@ -99,7 +126,7 @@ export default function AppShell({ children }: Props) {
         <div className="flex items-center gap-3 px-5 pt-5 sm:px-8 lg:px-12 lg:pt-7">
           <CommandSearch />
         </div>
-        <main className="min-w-0 px-5 pt-6 pb-10 sm:px-8 lg:px-12">{children}</main>
+        <main className="min-w-0 px-5 pt-6 pb-12 sm:px-8 lg:px-12">{children}</main>
       </div>
       <AutoSync />
     </div>
@@ -110,45 +137,64 @@ function Brand({ dealershipName }: { dealershipName: string }) {
   return (
     <Link href="/dashboard" className="flex min-w-0 items-center gap-2.5">
       <span aria-hidden className="size-2.5 shrink-0 rounded-[2px] bg-signal" />
-      <span className="font-condensed text-xl font-semibold tracking-wide">AutoDash</span>
-      <span className="truncate text-sm text-white/55">{dealershipName}</span>
+      <span className="font-condensed text-[22px] font-semibold leading-none tracking-wide">AutoDash</span>
+      <span className="truncate text-sm text-muted">{dealershipName}</span>
     </Link>
   );
 }
 
-function NavList({ items, pathname }: { items: NavItem[]; pathname: string }) {
+function Nav({ pathname }: { pathname: string }) {
+  const [openGroups, setOpenGroups] = useState<Record<string, boolean>>(DEFAULT_OPEN);
+  // Remember which groups each person keeps open.
+  useEffect(() => {
+    try { const saved = localStorage.getItem(OPEN_KEY); if (saved) setOpenGroups({ ...DEFAULT_OPEN, ...JSON.parse(saved) }); } catch { /* ignore */ }
+  }, []);
+  const toggle = (id: string) => setOpenGroups((prev) => {
+    const next = { ...prev, [id]: !prev[id] };
+    try { localStorage.setItem(OPEN_KEY, JSON.stringify(next)); } catch { /* ignore */ }
+    return next;
+  });
+
   return (
     <ul className="space-y-0.5">
-      {items.map((item) => {
-        const active = pathname === item.href || pathname.startsWith(item.href + "/");
-        if (!item.ready) {
-          return (
-            <li key={item.href}>
-              <span className="flex items-center gap-3 rounded-md px-3 py-2 text-[15px] text-white/40" aria-disabled>
-                <Icon name={item.icon} />
-                <span className="flex-1">{item.label}</span>
-                <span className="text-xs">Soon</span>
-              </span>
-            </li>
-          );
-        }
+      {NAV.map((entry) => {
+        if (!isGroup(entry)) return <li key={entry.href}><NavLink item={entry} active={isActive(pathname, entry.href)} /></li>;
+        const hasActive = entry.items.some((i) => isActive(pathname, i.href));
+        const expanded = hasActive || Boolean(openGroups[entry.id]);
         return (
-          <li key={item.href}>
-            <Link
-              prefetch={PRELOAD.has(item.href) ? true : false}
-              href={item.href}
-              aria-current={active ? "page" : undefined}
-              className={`relative flex items-center gap-3 rounded-md px-3 py-2 text-[15px] transition-colors ${
-                active ? "bg-graphite-2 font-semibold text-white" : "text-white/75 hover:bg-graphite-2 hover:text-white"
-              }`}
+          <li key={entry.id} className="pt-2">
+            <button
+              type="button" onClick={() => toggle(entry.id)} aria-expanded={expanded} aria-controls={`nav-${entry.id}`}
+              className="flex w-full items-center gap-3 rounded-lg px-3 py-2 text-left text-[15px] font-semibold text-ink hover:bg-paper"
             >
-              {active && <span aria-hidden className="absolute inset-y-1.5 left-0 w-[3px] rounded-full bg-signal" />}
-              <Icon name={item.icon} className={`size-[18px] ${active ? "text-signal" : ""}`} />
-              {item.label}
-            </Link>
+              <Icon name={entry.icon} className="size-[18px] text-muted" />
+              <span className="flex-1">{entry.label}</span>
+              <Icon name="chevron" className="nav-chevron size-4 text-faint" />
+            </button>
+            {expanded && (
+              <ul id={`nav-${entry.id}`} className="mt-0.5 space-y-0.5 border-l border-line pl-2 ml-[21px]">
+                {entry.items.map((item) => <li key={item.href}><NavLink item={item} active={isActive(pathname, item.href)} nested /></li>)}
+              </ul>
+            )}
           </li>
         );
       })}
     </ul>
+  );
+}
+
+function NavLink({ item, active, nested }: { item: NavItem; active: boolean; nested?: boolean }) {
+  return (
+    <Link
+      prefetch={PRELOAD.has(item.href)}
+      href={item.href}
+      aria-current={active ? "page" : undefined}
+      className={`relative flex items-center gap-3 rounded-lg px-3 py-2 text-[15px] transition-colors ${
+        active ? "bg-signal-soft font-semibold text-signal-dark" : "text-muted hover:bg-paper hover:text-ink"
+      }`}
+    >
+      {!nested && <Icon name={item.icon} className={`size-[18px] ${active ? "text-signal" : ""}`} />}
+      {item.label}
+    </Link>
   );
 }

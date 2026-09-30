@@ -13,6 +13,13 @@ const PATHS: Record<string, string> = {
   settings: "M12 15a3 3 0 100-6 3 3 0 000 6zM19.4 13.5l1.6 1.2-2 3.4-1.9-.7a7 7 0 01-2 1.2L14.8 21h-4l-.3-2.4a7 7 0 01-2-1.2l-1.9.7-2-3.4 1.6-1.2a7 7 0 010-2.9L4.6 9.3l2-3.4 1.9.7a7 7 0 012-1.2L10.8 3h4l.3 2.4a7 7 0 012 1.2l1.9-.7 2 3.4-1.6 1.2a7 7 0 010 2.9z",
   developer: "M8 8l-4 4 4 4M16 8l4 4-4 4M13.5 5l-3 14",
   search: "M11 18a7 7 0 100-14 7 7 0 000 14zM20 20l-4-4",
+  mail: "M3 6h18v12H3zM3 7l9 6 9-6",
+  chat: "M4 5h16v11H9l-5 4z",
+  store: "M4 10v10h16V10M3 10l2-6h14l2 6zM9 20v-5h6v5",
+  phone: "M5 4h4l2 5-2.5 1.5a11 11 0 005 5L15 13l5 2v4a1 1 0 01-1 1A16 16 0 014 5a1 1 0 011-1z",
+  chevron: "M9 6l6 6-6 6",
+  logout: "M15 4h4v16h-4M10 16l-4-4 4-4M6 12h10",
+  sales: "M3 17h2l2-5h10l2 5h2M5 17v2h3v-2M16 17v2h3v-2M7 12l1.5-4h7L17 12",
 };
 
 export default function Icon({ name, className = "size-[18px]" }: { name: keyof typeof PATHS | string; className?: string }) {

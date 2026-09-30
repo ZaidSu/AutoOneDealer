@@ -173,7 +173,9 @@ export async function createAppointmentAction(input: AppointmentInput): Promise<
   const staff = await requireStaff();
   if (!staff) return fail("Your session ended. Sign in again.");
   const name = cleanName(input.customerName, 80);
-  if (!name) return fail("Enter the customer's name.");
+  if (!name || /^name not provided$/i.test(name)) return fail("Enter the customer's name.");
+  const vehicle = cleanName(input.vehicle, 80);
+  if (vehicle.length < 2) return fail("Enter the car they're coming to see.");
   if (input.customerKey && !KEY_PATTERN.test(input.customerKey)) return fail("Unknown customer.");
   const startsAt = zonedToUtc(input.date, input.time, dealership.timeZone);
   if (!startsAt) return fail("Pick a date and time.");
@@ -202,7 +204,7 @@ export async function createAppointmentAction(input: AppointmentInput): Promise<
       customerName: name,
       phone,
       email: email || null,
-      vehicle: cleanName(input.vehicle, 80) || null,
+      vehicle,
       repId,
       startsAt,
       durationMin,
@@ -254,4 +256,24 @@ export async function followUpAction(
   }
   revalidatePath("/dashboard");
   return { ok: true };
+}
+
+// ---- AI assistant (what it knows about the dealership) ----
+
+export async function saveDealershipInfoAction(input: import("@/lib/ai/types").DealershipInfo): Promise<ActionResult> {
+  const staff = await requireStaff();
+  if (!staff || !can.manageIntegrations(staff.role)) return fail("Only owners and managers can change the dealership info.");
+  const { saveDealershipInfo } = await import("@/lib/ai/settings");
+  try { await saveDealershipInfo(input); } catch { return NO_DB; }
+  revalidatePath("/ai/dealership");
+  return { ok: true, message: "Saved." };
+}
+
+export async function saveAiTrainingAction(input: import("@/lib/ai/types").AiTraining): Promise<ActionResult> {
+  const staff = await requireStaff();
+  if (!staff || !can.manageIntegrations(staff.role)) return fail("Only owners and managers can train the AI.");
+  const { saveAiTraining } = await import("@/lib/ai/settings");
+  try { await saveAiTraining(input); } catch { return NO_DB; }
+  revalidatePath("/ai/train");
+  return { ok: true, message: "Saved." };
 }

@@ -25,58 +25,45 @@ export default async function LoginPage({ searchParams }: { searchParams: Promis
   const signedOut = params.signed_out === "1";
 
   return (
-    <main className="grid min-h-dvh lg:grid-cols-[minmax(0,5fr)_minmax(0,6fr)]">
-      <section className="relative flex flex-col justify-between overflow-hidden bg-graphite px-8 py-10 text-white sm:px-12 lg:py-14">
-        <div className="flex items-center gap-3">
-          <span aria-hidden className="size-3 rounded-[3px] bg-signal" />
-          <span className="text-lg font-semibold tracking-tight">AutoDash</span>
-        </div>
-        <div className="mt-16 lg:mt-0">
-          <p className="text-4xl font-bold leading-[1.05] tracking-tight sm:text-5xl lg:text-6xl">{dealership.name}</p>
-          <p className="mt-4 max-w-sm text-white/70">Leads, conversations and appointments for the whole team.</p>
-        </div>
-        <div aria-hidden className="mt-12 h-1.5 w-full bg-[repeating-linear-gradient(90deg,var(--color-signal)_0_44px,transparent_44px_76px)] opacity-90" />
-      </section>
+    <main className="flex min-h-dvh flex-col bg-paper">
+      <header className="flex items-center gap-2.5 px-6 py-5 sm:px-10">
+        <span aria-hidden className="size-2.5 rounded-[2px] bg-signal" />
+        <span className="font-condensed text-[22px] font-semibold leading-none tracking-wide">AutoDash</span>
+      </header>
 
-      <section className="flex items-center justify-center px-6 py-14 sm:px-10">
-        <div className="w-full max-w-sm">
-          <h1 className="text-3xl font-semibold tracking-tight">Welcome back</h1>
-          <p className="mt-2 text-muted">Sign in to your dealership account.</p>
+      <div className="mx-auto grid w-full max-w-5xl flex-1 content-center items-center gap-10 px-6 pb-16 sm:px-10 lg:grid-cols-[minmax(0,1fr)_400px] lg:gap-20">
+        <section>
+          <h1 className="font-condensed text-5xl font-semibold leading-[0.95] tracking-[0.01em] sm:text-6xl lg:text-7xl">{dealership.name}</h1>
+          <div aria-hidden className="lane mt-6 w-[152px] rounded-full" />
+          <p className="mt-6 max-w-md text-lg text-muted">Leads, customers and appointments for the whole team, in one place.</p>
+        </section>
+
+        <section aria-labelledby="signin" className="rounded-2xl border border-line bg-white p-7 shadow-[0_1px_2px_rgba(26,31,41,0.05),0_12px_32px_-12px_rgba(26,31,41,0.12)] sm:p-8">
+          <h2 id="signin" className="text-2xl font-semibold tracking-tight">Sign in</h2>
+          <p className="mt-1 text-muted">Welcome back. Sign in to see today&apos;s leads.</p>
 
           {signedOut && !error && (
-            <p role="status" className="mt-6 rounded-md border border-line bg-white px-4 py-3 text-sm">You've signed out.</p>
+            <p role="status" className="mt-5 rounded-lg bg-go-soft px-4 py-3 text-sm text-go">You&apos;ve signed out.</p>
           )}
           {error && (
-            <p role="alert" className="mt-6 rounded-md border border-signal/25 bg-warn-soft px-4 py-3 text-sm text-ink">{error}</p>
+            <p role="alert" className="mt-5 rounded-lg bg-warn-soft px-4 py-3 text-sm text-ink">{error}</p>
           )}
 
           {open ? (
-            <form action="/api/login" method="post" className="mt-8 space-y-5">
-              <div>
-                <label htmlFor="username" className="block text-sm font-semibold">Username</label>
-                <input
-                  id="username" name="username" type="text" autoComplete="username" autoCapitalize="words"
-                  className="mt-1.5 h-12 w-full rounded-md border border-line bg-white px-3.5 text-[15px] outline-none transition-colors focus:border-graphite"
-                />
-              </div>
-              <div>
-                <label htmlFor="password" className="block text-sm font-semibold">Password</label>
-                <input
-                  id="password" name="password" type="password" autoComplete="current-password"
-                  className="mt-1.5 h-12 w-full rounded-md border border-line bg-white px-3.5 text-[15px] outline-none transition-colors focus:border-graphite"
-                />
-              </div>
-              <button type="submit" className="h-12 w-full rounded-md bg-signal px-5 font-semibold text-white transition-colors hover:bg-signal-dark">
-                Sign in
-              </button>
+            <form action="/api/login" method="post" className="mt-6 space-y-4">
+              <label className="field">Your name
+                <input id="username" name="username" type="text" autoComplete="username" autoCapitalize="words" className="input h-12" />
+              </label>
+              <label className="field">Password
+                <input id="password" name="password" type="password" autoComplete="current-password" className="input h-12" />
+              </label>
+              <button type="submit" className="btn btn-red h-12 w-full text-base">Sign in</button>
             </form>
           ) : (
-            <a href="/api/google-login" className="mt-8 flex h-12 w-full items-center justify-center rounded-md bg-signal px-5 font-semibold text-white transition-colors hover:bg-signal-dark">
-              Continue with Google
-            </a>
+            <a href="/api/google-login" className="btn btn-red mt-6 h-12 w-full text-base">Continue with Google</a>
           )}
-        </div>
-      </section>
+        </section>
+      </div>
     </main>
   );
 }

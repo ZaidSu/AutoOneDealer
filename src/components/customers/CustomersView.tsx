@@ -16,7 +16,7 @@ type Option = { value: string; label: string };
 type Data = {
   state: "ready" | "unreachable" | "not_configured"; dbReady: boolean; customers: CustomerView[]; total: number; pages: number;
   pageIndex: number; perPage: number; search: string; reps: { id: number; name: string }[]; sources: string[];
-  sync: SyncInfo; statuses: Option[]; financing: Option[]; today: string;
+  sync: SyncInfo; statuses: Option[]; financing: Option[]; today: string; since?: string;
 };
 const dbMessage = "The database isn't answering right now. Try again in a minute.";
 
@@ -38,7 +38,7 @@ export default function CustomersView() {
 
   return (
     <>
-      <PageHeader title="Customers" description="Everyone who sent a lead or credit application, one row per person. Click a row to see and change their details." />
+      <PageHeader title="Customers" description={`Everyone who sent a lead or credit application since ${data.since ?? "Sep 22"}, one row per person. Click a row to see and change their details.`} />
 
       <form action="/customers" className="mb-3 flex flex-wrap items-end gap-2">
         <label className="min-w-0 flex-1 sm:max-w-xs">

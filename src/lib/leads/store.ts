@@ -4,6 +4,7 @@ import { dealershipMailbox } from "@/lib/auth/config";
 import { mergeLead, searchText, type CustomerAgg } from "@/lib/crm/aggregate";
 import { customerKey, groupCustomers } from "@/lib/customers";
 import { db, readyDb } from "@/lib/db";
+import { dataStartDate, notBeforeStart } from "@/lib/dealership";
 import type { Lead, LeadFilter } from "@/lib/gmail";
 
 function gmailUrl(id: string) {
@@ -156,6 +157,7 @@ type Query = { filter?: LeadFilter; search?: string; since?: Date; limit?: numbe
 
 export async function queryLeads({ filter = "all", search = "", since, limit = 50, offset = 0 }: Query = {}): Promise<{ leads: Lead[]; more: boolean }> {
   const sql = await readyDb();
+  const from = notBeforeStart(since);
   if (!sql) return { leads: [], more: false };
   const q = search.trim();
   const like = `%${q.replace(/[%_\\]/g, (c) => `\\${c}`)}%`;
@@ -164,7 +166,7 @@ export async function queryLeads({ filter = "all", search = "", since, limit = 5
     select * from leads
     where not ignored
       ${filter === "application" ? sql`and kind = 'application'` : filter === "inquiry" ? sql`and kind = 'inquiry'` : sql``}
-      ${since ? sql`and received_at >= ${since}` : sql``}
+      and received_at >= ${from}
       ${q ? sql`and (name ilike ${like} or email ilike ${like} or vehicle ilike ${like} or provider ilike ${like}
             or location ilike ${like} or comments ilike ${like} ${digits.length >= 3 ? sql`or phone like ${`%${digits}%`}` : sql``})` : sql``}
     order by received_at desc
@@ -175,7 +177,7 @@ export async function queryLeads({ filter = "all", search = "", since, limit = 5
 export async function leadsForCustomer(key: string, limit = 200): Promise<Lead[]> {
   const sql = await readyDb();
   if (!sql) return [];
-  return (await sql`select * from leads where not ignored and customer_key = ${key} order by received_at desc limit ${limit}`).map(toLead);
+  return (await sql`select * from leads where not ignored and customer_key = ${key} and received_at >= ${dataStartDate()} order by received_at desc limit ${limit}`).map(toLead);
 }
 
 export async function savedLeadCount(): Promise<number> {

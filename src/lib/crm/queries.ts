@@ -3,8 +3,7 @@
 import type { CustomerView } from "@/lib/customers/view";
 import { readyDb } from "@/lib/db";
 import { appointmentsForCustomers, type Financing, type Status } from "@/lib/db/data";
-import { dealership } from "@/lib/dealership";
-import { zonedToUtc } from "@/lib/utils/time";
+import { dataStartDate } from "@/lib/dealership";
 
 type Row = Record<string, unknown>;
 const t = (v: unknown) => (v ? new Date(v as string).getTime() : 0);
@@ -55,7 +54,7 @@ export async function listCustomers(f: CustomerFilters, page = 0, perPage = 50):
   const rows = await sql`
     select c.*, r.name as rep_name, count(*) over () as total
     from customers c left join reps r on r.id = c.rep_id
-    where c.last_seen is not null
+    where c.last_seen >= ${dataStartDate()}
       ${q ? sql`and (c.search like ${like} or lower(coalesce(c.heard_from, '')) like ${like} ${digits.length >= 3 ? sql`or c.phone like ${`%${digits}%`}` : sql``})` : sql``}
       ${f.rep === "none" ? sql`and c.rep_id is null` : f.rep && /^\d+$/.test(f.rep) ? sql`and c.rep_id = ${Number(f.rep)}` : sql``}
       ${f.status ? sql`and c.status = ${f.status}` : sql``}
@@ -83,7 +82,7 @@ async function recentLeads(keys: string[], each = 6) {
     select * from (
       select message_id, received_at, kind, type, provider, vehicle, customer_key,
         row_number() over (partition by customer_key order by received_at desc) as n
-      from leads where not ignored and customer_key = any(${keys})) x
+      from leads where not ignored and customer_key = any(${keys}) and received_at >= ${dataStartDate()}) x
     where n <= ${each} order by received_at desc`;
   for (const r of rows) {
     const list = map.get(r.customer_key) ?? [];
@@ -111,7 +110,7 @@ export async function pipeline(opts: { repId?: number | null; days: number; perC
   const sql = await readyDb();
   if (!sql) return [];
   const since = new Date(Date.now() - opts.days * 86400000);
-  const trackingStart = zonedToUtc(dealership.pipelineStart, "00:00", dealership.timeZone) ?? since;
+  const start = dataStartDate();
   const rows = await sql`
     select * from (
       select c.key, c.name, c.phone, c.last_vehicle, coalesce(c.heard_from, c.first_provider) as source, c.status, r.name as rep_name,
@@ -122,8 +121,8 @@ export async function pipeline(opts: { repId?: number | null; days: number; perC
       where c.last_seen is not null
         -- Only real names: not blank, not just a phone number, not an email address.
         and nullif(trim(c.name), '') is not null and c.name !~ '^[0-9()+. -]+$' and position('@' in c.name) = 0
-        -- Untouched new customers only from the tracking start date; anything staff worked on always shows.
-        and (c.status <> 'new' or c.rep_id is not null or c.last_seen >= ${trackingStart})
+        -- Only customers from the data start on (or that staff worked on since then).
+        and (c.last_seen >= ${start} or c.updated_at >= ${start})
         and (c.status = 'appointment' or c.last_seen >= ${since} or c.updated_at >= ${since})
         ${opts.repId ? sql`and c.rep_id = ${opts.repId}` : sql``}) x
     where n <= ${opts.perColumn ?? 40} order by n`;
@@ -153,7 +152,7 @@ export async function searchCustomers(query: string, limit = 8): Promise<SearchH
   const digits = q.replace(/\D/g, "");
   const rows = await sql`
     select key, name, phone, email, last_vehicle, status from customers
-    where last_seen is not null and (search like ${like} ${digits.length >= 3 ? sql`or phone like ${`%${digits}%`}` : sql``})
+    where last_seen >= ${dataStartDate()} and (search like ${like} ${digits.length >= 3 ? sql`or phone like ${`%${digits}%`}` : sql``})
     order by (lower(coalesce(name, '')) like ${`${q}%`}) desc, last_seen desc limit ${limit}`;
   return rows.map((r) => ({ key: r.key, name: r.name, phone: r.phone, email: r.email, vehicle: r.last_vehicle, status: r.status }));
 }

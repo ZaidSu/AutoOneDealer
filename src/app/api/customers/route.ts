@@ -4,7 +4,7 @@ import { STAFF_COOKIE, validateStaff } from "@/lib/auth/session";
 import { listCustomers } from "@/lib/crm/queries";
 import { dbState, fresh } from "@/lib/db";
 import { FINANCING, listReps, listSources, STATUSES } from "@/lib/db/data";
-import { dealership } from "@/lib/dealership";
+import { dealership, dataStartLabel } from "@/lib/dealership";
 import { syncInfo } from "@/lib/leads/source";
 import { dayKey } from "@/lib/utils/time";
 
@@ -33,6 +33,6 @@ export async function GET(req: NextRequest) {
   return NextResponse.json({
     state, dbReady, customers, total: list.total, pages, pageIndex, perPage: PER_PAGE, search,
     reps: reps.map((r) => ({ id: r.id, name: r.name })), sources: sources.map((s) => s.name), sync,
-    statuses: STATUSES, financing: FINANCING, today: dayKey(Date.now(), dealership.timeZone),
+    statuses: STATUSES, financing: FINANCING, since: dataStartLabel(), today: dayKey(Date.now(), dealership.timeZone),
   });
 }

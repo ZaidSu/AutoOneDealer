@@ -7,30 +7,33 @@ import PageHeader from "@/components/ui/PageHeader";
 import { analytics, type AnalyticsData } from "@/lib/crm/analytics";
 import { dbState, fresh } from "@/lib/db";
 import { listReps } from "@/lib/db/data";
-import { dealership } from "@/lib/dealership";
+import { dataStartLabel, dealership, notBeforeStart } from "@/lib/dealership";
 import { stateName } from "@/lib/utils/geo";
-import { addDays, dayKey } from "@/lib/utils/time";
+import { addDays, dayKey, zonedToUtc } from "@/lib/utils/time";
 
 export const metadata: Metadata = { title: "Analytics" };
 export const dynamic = "force-dynamic";
 export const maxDuration = 45;
 
-const RANGES = { "7": "Last 7 days", "30": "Last 30 days", "90": "Last 90 days", "365": "Last 12 months" } as const;
+const RANGES = { "1": "Today", "7": "Last 7 days", "30": "Last 30 days", all: "Everything" } as const;
 type Range = keyof typeof RANGES;
 const tz = dealership.timeZone;
 
 export default async function AnalyticsPage({ searchParams }: { searchParams: Promise<Record<string, string | undefined>> }) {
   await requirePageStaff();
   const params = await searchParams;
-  const range: Range = params.range && params.range in RANGES ? (params.range as Range) : "30";
-  const days = Number(range);
+  const range: Range = params.range && params.range in RANGES ? (params.range as Range) : "all";
   const state = await dbState();
   const dbReady = state === "ready";
-  const since = new Date(Date.now() - days * 86400000);
+  // Whole days in Dallas time (not "the last 168 hours"), and never before the data start.
+  const today = dayKey(Date.now(), tz);
+  const firstDay = range === "all" ? dealership.dataStart : [addDays(today, 1 - Number(range)), dealership.dataStart].sort()[1];
+  const since = notBeforeStart(zonedToUtc(firstDay, "00:00", tz));
+  const days = Math.max(1, Math.round((Date.parse(today) - Date.parse(firstDay)) / 86400000) + 1);
 
   const header = (
     <>
-      <PageHeader title="Analytics" description="Where customers come from and what happens next. Every number comes from real lead emails and what your team has recorded." />
+      <PageHeader title="Analytics" description={`Where customers come from and what happens next, counted from lead emails since ${dataStartLabel()} and what your team has recorded.`} />
       <nav aria-label="Date range" className="segmented mb-6">
         {(Object.keys(RANGES) as Range[]).map((r) => (
           <Link key={r} href={`/analytics?range=${r}`} aria-current={range === r ? "page" : undefined}>{RANGES[r]}</Link>
@@ -62,15 +65,14 @@ export default async function AnalyticsPage({ searchParams }: { searchParams: Pr
   const topStates = tally((p) => p.scope === "out", (p) => (p.state ? stateName(p.state) : "State not given")).slice(0, 8);
 
   // Leads over time: by day for short ranges, by week for 90 days, by month for a year.
-  const today = dayKey(Date.now(), tz);
   const sumDays = (test: (d: string) => boolean) => { let n = 0; for (const [d, c] of data.leadsByDay) if (test(d)) n += c; return n; };
   const buckets: { label: string; value: number }[] = [];
-  if (days <= 30) {
+  if (days <= 45) {
     for (let i = days - 1; i >= 0; i--) {
       const d = addDays(today, -i);
       buckets.push({ label: d.slice(5).replace("-", "/"), value: data.leadsByDay.get(d) ?? 0 });
     }
-  } else if (days <= 90) {
+  } else if (days <= 120) {
     for (let w = Math.ceil(days / 7) - 1; w >= 0; w--) {
       const end = addDays(today, -w * 7), start = addDays(end, -6);
       buckets.push({ label: start.slice(5).replace("-", "/"), value: sumDays((d) => d >= start && d <= end) });
@@ -87,8 +89,10 @@ export default async function AnalyticsPage({ searchParams }: { searchParams: Pr
   const applications = sum((p) => p.hasApp);
   const approved = sum((p) => p.hasApp && p.financing === "approved");
   const denied = sum((p) => p.hasApp && p.financing === "denied");
-  const purchased = sum((p) => p.status === "purchased");
-  const purchasesBySource = tally((p) => p.status === "purchased", (p) => p.source);
+  const purchased = data.purchases.reduce((n, p) => n + p.n, 0);
+  const purchaseMap = new Map<string, number>();
+  for (const p of data.purchases) purchaseMap.set(p.source, (purchaseMap.get(p.source) ?? 0) + p.n);
+  const purchasesBySource = [...purchaseMap.entries()].map(([label, value]) => ({ label, value })).sort((x, y) => y.value - x.value);
   const appts = (repId: number, status?: string) => data.appointments.reduce((n, a) => n + (a.repId === repId && (!status || a.status === status) ? a.n : 0), 0);
   const repRows = reps.filter((r) => r.active || sum((p) => p.repId === r.id) > 0).map((r) => ({
     name: r.name,
@@ -96,7 +100,7 @@ export default async function AnalyticsPage({ searchParams }: { searchParams: Pr
     booked: appts(r.id),
     showed: appts(r.id, "showed"),
     noShow: appts(r.id, "no_show"),
-    purchased: sum((p) => p.repId === r.id && p.status === "purchased"),
+    purchased: data.purchases.reduce((n, p) => n + (p.repId === r.id ? p.n : 0), 0),
   }));
 
   return (
@@ -106,7 +110,7 @@ export default async function AnalyticsPage({ searchParams }: { searchParams: Pr
       <section aria-label="Totals" className="mb-6 grid max-w-5xl grid-cols-2 gap-px overflow-hidden rounded-lg border border-line bg-line lg:grid-cols-4">
         <Stat value={people} label="Customers who reached out" />
         <Stat value={emails} label="Lead emails received" />
-        <Stat value={applications} label="Credit applications" />
+        <Stat value={applications} label="People who applied for credit" />
         <Stat value={purchased} label="Marked purchased" />
       </section>
 
@@ -127,7 +131,7 @@ export default async function AnalyticsPage({ searchParams }: { searchParams: Pr
           <BarList items={topStates} emptyText="No out-of-state customers in this range." />
         </Panel>
 
-        <Panel title={days <= 30 ? "Leads per day" : days <= 90 ? "Leads per week" : "Leads per month"} note="Every lead and credit application email, by the day it arrived (Dallas time)." wide>
+        <Panel title={days <= 45 ? "Leads per day" : days <= 120 ? "Leads per week" : "Leads per month"} note="Every lead and credit application email, by the day it arrived (Dallas time)." wide>
           <Columns items={buckets} emptyText="No leads in this range." />
         </Panel>
 
@@ -140,7 +144,7 @@ export default async function AnalyticsPage({ searchParams }: { searchParams: Pr
           ]} emptyText="No credit applications in this range." />
         </Panel>
 
-        <Panel title="Which sources lead to purchases" note="Customers marked Purchased, by where they heard about us.">
+        <Panel title="Which sources lead to purchases" note="Customers marked Purchased in this range, by where they heard about us.">
           {dbReady ? <BarList items={purchasesBySource} emptyText="No purchases marked in this range yet." /> : <DbNotice state={state} what="This chart" />}
         </Panel>
 

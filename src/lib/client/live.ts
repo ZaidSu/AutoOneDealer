@@ -3,7 +3,7 @@
 // anything newer and swaps it in. Anything staff change calls notifyChanged(), so every open page refreshes.
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 
-const PREFIX = "ad:v1:";
+const PREFIX = "ad:v2:"; // bumped when a page's data changes shape, so old saved copies are ignored
 const memory = new Map<string, unknown>();
 const inflight = new Map<string, Promise<unknown>>();
 const lastLoad = new Map<string, number>();

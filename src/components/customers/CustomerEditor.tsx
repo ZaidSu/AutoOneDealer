@@ -107,16 +107,20 @@ function BookAppointment({ customer, reps, today }: { customer: CustomerView; re
   const [time, setTime] = useState("11:00");
   const [repId, setRepId] = useState<string>(customer.repId ? String(customer.repId) : "");
   const [phone, setPhone] = useState(customer.phone ?? "");
+  const [name, setName] = useState(customer.name ? displayName(customer.name) : "");
+  const [vehicle, setVehicle] = useState(customer.vehicles[0] ?? "");
   const [result, setResult] = useState<{ ok: boolean; text: string; conflict?: string } | null>(null);
   const [pending, start] = useTransition();
 
   function book(force = false) {
+    if (!name.trim()) return setResult({ ok: false, text: "Add the customer's name to book." });
+    if (vehicle.trim().length < 2) return setResult({ ok: false, text: "Add the car they're coming to see." });
     if (!date) return setResult({ ok: false, text: "Pick a day first." });
     if (phone.replace(/\D/g, "").length < 10) return setResult({ ok: false, text: "Add the customer's 10-digit phone number to book." });
     start(async () => {
       const r = await createAppointmentAction({
-        customerKey: customer.key, customerName: displayName(customer.name), phone, email: customer.email,
-        vehicle: customer.vehicles[0] ?? null, repId: repId ? Number(repId) : null, date, time, force,
+        customerKey: customer.key, customerName: name, phone, email: customer.email,
+        vehicle, repId: repId ? Number(repId) : null, date, time, force,
       });
       setResult(r.ok ? { ok: true, text: r.message ?? "Booked." } : { ok: false, text: r.error, conflict: r.conflict });
       if (r.ok) notifyChanged();
@@ -129,6 +133,14 @@ function BookAppointment({ customer, reps, today }: { customer: CustomerView; re
         {customer.nextAppointment ? `Next appointment: ${formatDateTime(customer.nextAppointment.at)}${customer.nextAppointment.repName ? ` with ${customer.nextAppointment.repName}` : ""}. Book another:` : "Book an appointment:"}
       </p>
       <div className="mt-1 flex flex-wrap items-end gap-2">
+        <label className="text-sm text-muted"><span className="sr-only">Customer name (required)</span>
+          <input value={name} onChange={(e) => { setName(e.target.value); setResult(null); }} placeholder="Customer name (required)" required
+            className="h-10 w-44 rounded-md border border-line bg-white px-2.5 text-[15px] text-ink" />
+        </label>
+        <label className="text-sm text-muted"><span className="sr-only">Car (required)</span>
+          <input value={vehicle} onChange={(e) => { setVehicle(e.target.value); setResult(null); }} placeholder="Car (required)" required
+            className="h-10 w-48 rounded-md border border-line bg-white px-2.5 text-[15px] text-ink" />
+        </label>
         {!customer.phone && (
           <label className="text-sm text-muted"><span className="sr-only">Phone (required)</span>
             <input value={phone} onChange={(e) => { setPhone(e.target.value); setResult(null); }} inputMode="tel" placeholder="Phone (required)"
