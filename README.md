@@ -83,6 +83,23 @@ The server writes a short trail to **Vercel → Logs** (lines starting with `[au
 Set `AUTODASH_DEBUG=1` in Vercel (then redeploy) to log every step of every page load, including the fast ones.
 `DB_DEBUG=1` also logs each database query. Turn both off again when you're done.
 
+## AI email replies
+
+When a lead with the customer's own email address comes in, Claude writes a reply using **AI assistant → Dealership
+info** and **Train your AI**. A person checks it on **AI assistant → Email replies**, edits anything, and clicks Send;
+AutoDash sends it from the dealership Gmail to the customer (never back to the listing site's no-reply address).
+
+- Replies are written Monday to Saturday, 9 AM to 7 PM Dallas time (`aiHours` in `src/lib/dealership/index.ts`).
+- One AI email per customer per 7 days. Leads with no email (e.g. phone-call leads) are skipped.
+- Needs `ANTHROPIC_API_KEY` in Vercel, Gmail reconnected once so it can send, and the timer below.
+- Code: `src/lib/ai/replies.ts` (drafting, sending), `src/lib/ai/claude.ts` (API call), table `ai_replies`.
+
+### The timer (cron-job.org)
+
+`/api/cron/tick` pulls new leads and writes AI drafts. cron-job.org calls it every 5 minutes so this happens even
+when nobody has AutoDash open. Set `CRON_SECRET` in Vercel to a long random string, then create a cron job for
+`https://auto-one-dealer.vercel.app/api/cron/tick?key=<CRON_SECRET>` every 5 minutes.
+
 ## Features
 
 - **Sign-in**: Google identity only (`openid email profile`), staff allowlist with roles (owner, manager,

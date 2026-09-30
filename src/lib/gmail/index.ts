@@ -4,6 +4,8 @@ import { explainGoogleError, GoogleError, refreshAccessToken } from "@/lib/auth/
 import { getGmailConnection } from "@/lib/gmail/connection";
 import { parseLead, type ParsedLead } from "@/lib/parsers/leads";
 import { htmlToText } from "@/lib/parsers/html";
+import { buildEmail } from "./email.ts";
+export { buildEmail };
 
 // Short-lived access tokens cached per warm server instance, keyed by a hash of the refresh token.
 const tokenCache = new Map<string, { token: string; expires: number }>();
@@ -124,6 +126,23 @@ export class GmailClient {
     const bodies = { text: "", html: "" };
     collectBodies(m.payload, bodies);
     return { ...toSummary(m), text: bodies.text, html: bodies.html };
+  }
+
+  /** Sends a plain-text email from the connected mailbox. Returns Gmail's id for the sent message. */
+  async send({ to, subject, body, fromName }: { to: string; subject: string; body: string; fromName?: string }): Promise<string> {
+    const message = buildEmail({ from: this.mailbox, fromName, to, subject, body });
+    await takeTurn(this.lane);
+    const response = await fetch("https://gmail.googleapis.com/gmail/v1/users/me/messages/send", {
+      method: "POST", cache: "no-store",
+      headers: { Authorization: `Bearer ${this.token}`, "Content-Type": "application/json" },
+      body: JSON.stringify({ raw: Buffer.from(message, "utf8").toString("base64url") }),
+    });
+    const data = await response.json().catch(() => ({}));
+    if (!response.ok) {
+      const reason: string = data?.error?.errors?.[0]?.reason ?? data?.error?.status ?? "";
+      throw new GoogleError("gmail", `${response.status}${reason ? `:${reason}` : ""}`);
+    }
+    return String(data.id ?? "");
   }
 
   gmailLink(id: string) {

@@ -17,7 +17,7 @@ const GMAIL_MAX_AGE = 60 * 60 * 24 * 30;
 
 export type StaffSession = { email: string; name: string; picture?: string; role: Role; exp: number; open?: boolean };
 export type OAuthState = { state: string; flow: "signin" | "gmail"; exp: number };
-export type GmailConnection = { mailbox: string; refreshToken: string; connectedBy: string; connectedAt: number };
+export type GmailConnection = { mailbox: string; refreshToken: string; connectedBy: string; connectedAt: number; scopes?: string };
 
 const base = { httpOnly: true, secure: true, sameSite: "lax" as const, path: "/" };
 

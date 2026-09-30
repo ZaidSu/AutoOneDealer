@@ -1,6 +1,7 @@
 // Public health check. Proves server routes are deployed. Reveals nothing secret.
 //   /api/health?check=db   → does the database answer
 //   /api/health?check=all  → how long each part of a page load takes (database, Gmail), for troubleshooting
+import { aiConfigured } from "@/lib/ai/claude";
 import { NextResponse, type NextRequest } from "next/server";
 import { isConfigured } from "@/lib/auth/config";
 import { dbState, lastDbError, readyDb } from "@/lib/db";
@@ -14,7 +15,7 @@ export const maxDuration = 45;
 export async function GET(req: NextRequest) {
   const check = req.nextUrl.searchParams.get("check");
   const body: Record<string, unknown> = {
-    status: "ok", app: "autodash", configured: isConfigured(), region: process.env.VERCEL_REGION ?? "local", time: new Date().toISOString(),
+    status: "ok", app: "autodash", configured: isConfigured(), ai: aiConfigured(), timer: Boolean(process.env.CRON_SECRET), region: process.env.VERCEL_REGION ?? "local", time: new Date().toISOString(),
   };
   if (check === "db" || check === "all" || check === "pages") {
     const started = Date.now();

@@ -3,10 +3,10 @@
 import { useState } from "react";
 
 type Connection = { mailbox: string; connectedAt: number; connectedBy: string } | null;
-type Props = { connection: Connection; canManage: boolean; expectedMailbox: string; notice: { tone: "ok" | "error"; text: string } | null; shared: boolean };
+type Props = { connection: Connection; canManage: boolean; expectedMailbox: string; notice: { tone: "ok" | "error"; text: string } | null; shared: boolean; canSend?: boolean };
 type Result = { tone: "ok" | "error"; text: string; code?: string } | null;
 
-export default function GmailCard({ connection, canManage, expectedMailbox, notice, shared }: Props) {
+export default function GmailCard({ connection, canManage, expectedMailbox, notice, shared, canSend = false }: Props) {
   const [busy, setBusy] = useState<"test" | "disconnect" | null>(null);
   const [result, setResult] = useState<Result>(notice);
   const [connected, setConnected] = useState(connection);
@@ -46,12 +46,20 @@ export default function GmailCard({ connection, canManage, expectedMailbox, noti
         <p className="mt-2 text-muted">
           Reading <span className="font-medium text-ink">{connected.mailbox}</span>. Connected by {connected.connectedBy} on{" "}
           {new Date(connected.connectedAt).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })}.
+          {canSend ? " It can also send the AI replies you approve." : ""}
         </p>
-      ) : (
+      ) : null}
+      {connected && !canSend ? (
+        <p className="mt-3 rounded-lg border border-lane/40 bg-[#fdf6e3] px-4 py-3 text-sm">
+          <span className="font-semibold">Reconnect Gmail to turn on AI email replies.</span> AutoDash can read this inbox but doesn&apos;t
+          have permission to send yet. Click Reconnect Gmail and allow sending. It only sends replies someone approves; it can&apos;t delete anything.
+        </p>
+      ) : null}
+      {!connected && (
         <p className="mt-2 text-muted">
           Connect {expectedMailbox ? <span className="font-medium text-ink">{expectedMailbox}</span> : "the dealership inbox"} so
-          AutoDash can find new customer emails and CarsForSale finance applications. AutoDash only reads email; it can't send
-          or delete anything.
+          AutoDash can find new customer emails and CarsForSale finance applications. AutoDash reads email and sends only the
+          AI replies someone approves. It can't delete anything.
         </p>
       )}
 

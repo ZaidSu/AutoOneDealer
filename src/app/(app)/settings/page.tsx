@@ -7,6 +7,7 @@ import PageHeader from "@/components/ui/PageHeader";
 import { dbState, fresh } from "@/lib/db";
 import { listReps, listSources } from "@/lib/db/data";
 import { can, roleLabel } from "@/lib/auth/access";
+import { canSendFrom } from "@/lib/auth/google";
 import { dealershipMailbox } from "@/lib/auth/config";
 import { getStaffSession } from "@/lib/auth/session";
 import { getGmailConnection } from "@/lib/gmail/connection";
@@ -56,6 +57,7 @@ export default async function SettingsPage({ searchParams }: { searchParams: Pro
         <GmailCard
           connection={gmail ? { mailbox: gmail.mailbox, connectedAt: gmail.connectedAt, connectedBy: gmail.connectedBy } : null}
           canManage={can.manageIntegrations(staff.role)}
+          canSend={canSendFrom(gmail)}
           expectedMailbox={dealershipMailbox()}
           notice={notice}
           shared={state === "ready"}

@@ -294,3 +294,40 @@ export async function saveAiQaAction(qa: import("@/lib/ai/types").QA[]): Promise
     return { ok: true, message: "Saved.", qa: saved.qa };
   } catch { return NO_DB; }
 }
+
+// ---- AI email replies ----
+
+export async function sendAiReplyAction(id: number, subject: string, body: string): Promise<ActionResult> {
+  const staff = await requireStaff();
+  if (!staff) return fail("Your session ended. Sign in again.");
+  const { sendReply } = await import("@/lib/ai/replies");
+  const result = await sendReply(Number(id), { subject: String(subject ?? ""), body: String(body ?? "") }, staff.name);
+  if (!result.ok) return fail(result.error);
+  revalidatePath("/ai/emails");
+  return { ok: true, message: "Sent." };
+}
+
+export async function discardAiReplyAction(id: number): Promise<ActionResult> {
+  const staff = await requireStaff();
+  if (!staff) return fail("Your session ended. Sign in again.");
+  const { discardReply } = await import("@/lib/ai/replies");
+  if (!(await discardReply(Number(id)))) return fail("This reply was already sent or discarded.");
+  revalidatePath("/ai/emails");
+  return { ok: true, message: "Discarded." };
+}
+
+/** "Write replies now": has the AI draft replies for new leads right away, even outside AI hours. */
+export async function draftAiRepliesNowAction(): Promise<ActionResult> {
+  const staff = await requireStaff();
+  if (!staff) return fail("Your session ended. Sign in again.");
+  if (!can.editAiSettings(staff.role)) return fail(AI_EDIT_DENIED);
+  const { draftNewReplies } = await import("@/lib/ai/replies");
+  try {
+    const r = await draftNewReplies({ max: 4, force: true });
+    revalidatePath("/ai/emails");
+    if (r.waiting) return fail(r.waiting);
+    return { ok: true, message: r.drafted ? `Wrote ${r.drafted} ${r.drafted === 1 ? "reply" : "replies"}.` : "No new leads with an email address to reply to." };
+  } catch (error) {
+    return fail(error instanceof Error ? error.message : "The AI couldn't write replies right now.");
+  }
+}

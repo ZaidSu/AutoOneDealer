@@ -48,6 +48,28 @@ create table if not exists activities (
 );
 create index if not exists activities_customer on activities (customer_key, created_at desc);
 alter table activities enable row level security;
+-- v5: AI email replies. One row per lead: the AI's draft, then what was sent (or why not).
+create table if not exists ai_replies (
+  id bigserial primary key,
+  lead_id text not null unique,
+  customer_key text,
+  customer_name text,
+  to_email text not null,
+  vehicle text,
+  provider text,
+  customer_message text not null default '',
+  subject text not null,
+  body text not null,
+  status text not null default 'draft',
+  error text,
+  lead_received_at timestamptz,
+  created_at timestamptz not null default now(),
+  sent_at timestamptz,
+  sent_by text,
+  gmail_id text
+);
+create index if not exists ai_replies_status on ai_replies (status, created_at desc);
+alter table ai_replies enable row level security;
 `;
 
 export async function setupDatabase(): Promise<void> {

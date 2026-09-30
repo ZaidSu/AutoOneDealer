@@ -1,0 +1,42 @@
+// The timer: cron-job.org calls this every 5 minutes, day and night, so AutoDash keeps working when nobody has it
+// open. It pulls new lead emails into the database, then (during AI hours) has the AI write draft replies.
+// Protected by CRON_SECRET: the caller must send it as ?key=... or "Authorization: Bearer ...".
+import { timingSafeEqual } from "node:crypto";
+import { NextResponse, type NextRequest } from "next/server";
+import { draftNewReplies } from "@/lib/ai/replies";
+import { setSetting } from "@/lib/db/data";
+import { withGmail } from "@/lib/gmail";
+import { syncLeads } from "@/lib/leads/sync";
+
+export const dynamic = "force-dynamic";
+export const maxDuration = 60;
+
+function allowed(req: NextRequest): boolean {
+  const secret = process.env.CRON_SECRET ?? "";
+  if (secret.length < 16) return false;
+  const given = req.nextUrl.searchParams.get("key") ?? req.headers.get("authorization")?.replace(/^Bearer\s+/i, "") ?? "";
+  const a = Buffer.from(given);
+  const b = Buffer.from(secret);
+  return a.length === b.length && timingSafeEqual(a, b);
+}
+
+export async function GET(req: NextRequest) {
+  if (!process.env.CRON_SECRET) return NextResponse.json({ ok: false, message: "Set CRON_SECRET in Vercel first." }, { status: 503 });
+  if (!allowed(req)) return NextResponse.json({ ok: false, message: "Wrong or missing key." }, { status: 401 });
+  const started = Date.now();
+  const report: Record<string, unknown> = {};
+  try {
+    const sync = await withGmail((gmail) => syncLeads(gmail, { timeLimitMs: 20_000 }), undefined, "background");
+    report.leads = sync.status === "ok" ? ("busy" in sync.data ? "already updating" : { added: sync.data.added ?? 0, total: sync.data.saved }) : sync.status === "error" ? sync.message : "Gmail isn't connected";
+  } catch (error) {
+    report.leads = `failed: ${error instanceof Error ? error.message : "unknown"}`;
+  }
+  try {
+    report.ai = await draftNewReplies({ max: 4 });
+  } catch (error) {
+    report.ai = `failed: ${error instanceof Error ? error.message : "unknown"}`;
+  }
+  await setSetting("last_timer_run", String(Date.now())).catch(() => undefined);
+  console.log("[autodash:cron]", JSON.stringify(report));
+  return NextResponse.json({ ok: true, ms: Date.now() - started, ...report });
+}

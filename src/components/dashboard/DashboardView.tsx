@@ -13,7 +13,7 @@ type Appt = { id: number; customerName: string; vehicle: string | null; phone: s
 type Data = {
   state: "ready" | "unreachable" | "not_configured"; dbReady: boolean; tz: string; greeting: string; firstName: string;
   problems: string[]; since: number; counts: { leads: number; applications: number } | null; latest: Lead[];
-  appointmentsToday: Appt[] | null; ai: { enabled: boolean; emails: number; texts: number };
+  appointmentsToday: Appt[] | null; ai: { enabled: boolean; emails: number; waiting?: number; texts: number };
 };
 
 const fmt = (tz: string, o: Intl.DateTimeFormatOptions) => new Intl.DateTimeFormat("en-US", { timeZone: tz, ...o });
@@ -50,11 +50,13 @@ export default function DashboardView() {
         <Stat href="/appointments" value={appts.length} label={upcoming.length && upcoming.length !== appts.length ? `Appointments today, ${upcoming.length} still to come` : "Appointments today"} />
         <Link href="/ai/emails" className="stat">
           {ai.enabled ? (
-            <p className="stat-value">{ai.emails + ai.texts}</p>
+            <p className={`stat-value ${ai.waiting ? "text-signal" : ""}`}>{ai.waiting ? ai.waiting : ai.emails}</p>
           ) : (
             <p className="pt-1.5 font-condensed text-[1.6rem] font-semibold leading-tight text-faint">Not on yet</p>
           )}
-          <p className="stat-label">{ai.enabled ? `AI replies: ${ai.emails} emails, ${ai.texts} texts` : "AI email and text replies"}</p>
+          <p className="stat-label">
+            {!ai.enabled ? "AI email replies" : ai.waiting ? `AI replies waiting for you (${ai.emails} sent since last night)` : `AI emails sent since last night`}
+          </p>
         </Link>
       </section>
 

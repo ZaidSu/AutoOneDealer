@@ -73,6 +73,7 @@ export async function GET(req: NextRequest) {
       refreshToken: tokens.refresh_token,
       connectedBy: staff.email || staff.name,
       connectedAt: Date.now(),
+      scopes: tokens.scope ?? "",
     };
     await saveSharedGmailConnection(connection); // no-op until the database is connected
     const res = go(req, "/settings?gmail=connected");

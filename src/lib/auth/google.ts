@@ -1,8 +1,11 @@
 // Google OAuth and Gmail calls. Server-only.
 
 export const SIGNIN_SCOPES = ["openid", "email", "profile"];
-// Read-only for now. Sending email needs its own scope, added only when that feature is built.
-export const GMAIL_SCOPES = ["https://www.googleapis.com/auth/gmail.readonly"];
+// Read the mailbox, and send the AI replies a person approves (nothing else: no deleting, no changing mail).
+export const GMAIL_SEND_SCOPE = "https://www.googleapis.com/auth/gmail.send";
+export const GMAIL_SCOPES = ["https://www.googleapis.com/auth/gmail.readonly", GMAIL_SEND_SCOPE];
+/** Connections made before sending was added don't have permission to send until Gmail is reconnected. */
+export const canSendFrom = (c: { scopes?: string } | null) => Boolean(c?.scopes?.split(" ").includes(GMAIL_SEND_SCOPE));
 
 type AuthUrlOptions = { state: string; scopes: string[]; offline?: boolean; loginHint?: string };
 

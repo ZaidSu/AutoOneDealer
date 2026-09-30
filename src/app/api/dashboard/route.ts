@@ -6,6 +6,8 @@ import { dbState } from "@/lib/db";
 import { appointmentsBetween, leadCounts } from "@/lib/db/data";
 import { dealership, greeting } from "@/lib/dealership";
 import { queryLeads } from "@/lib/leads/store";
+import { aiConfigured } from "@/lib/ai/claude";
+import { replyCounts } from "@/lib/ai/replies";
 import { attempt } from "@/lib/utils/safe";
 import { addDays, dayKey, zonedToUtc } from "@/lib/utils/time";
 
@@ -25,11 +27,12 @@ export async function GET(req: NextRequest) {
   const dayEnd = zonedToUtc(addDays(today, 1), "00:00", tz)!;
 
   // Each part loads on its own, so one problem can't take the whole page down.
-  const [apptsR, countsR, latestR] = dbReady
+  const [apptsR, countsR, latestR, aiR] = dbReady
     ? await Promise.all([
         attempt("Today's appointments", () => appointmentsBetween(dayStart, dayEnd, null), null),
         attempt("Counts", () => leadCounts(since, since), null),
         attempt("Latest leads", async () => (await queryLeads({ since, limit: 30 })).leads, []),
+        attempt("AI replies", () => replyCounts(since), { waiting: 0, sent: 0 }),
       ])
     : [];
   const problems = [apptsR, countsR, latestR].map((r) => r?.error).filter(Boolean) as string[];
@@ -41,7 +44,7 @@ export async function GET(req: NextRequest) {
     counts: counts ? { leads: counts.leadsToday, applications: counts.appsToday } : null,
     latest: latestR?.data ?? [],
     appointmentsToday: apptsR?.data?.filter((a) => a.status !== "canceled").map((a) => ({ ...a, startsAt: a.startsAt.getTime(), endsAt: undefined })) ?? null,
-    // AI replies aren't switched on yet; these become real counts once they are.
-    ai: { enabled: false, emails: 0, texts: 0 },
+    // Texts come later; emails are real once the AI key is set.
+    ai: { enabled: aiConfigured(), emails: aiR?.data?.sent ?? 0, waiting: aiR?.data?.waiting ?? 0, texts: 0 },
   });
 }
