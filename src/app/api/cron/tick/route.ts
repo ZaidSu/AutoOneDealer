@@ -5,6 +5,7 @@ import { timingSafeEqual } from "node:crypto";
 import { NextResponse, type NextRequest } from "next/server";
 import { draftNewReplies } from "@/lib/ai/replies";
 import { setSetting } from "@/lib/db/data";
+import { ensureInvoice } from "@/lib/billing";
 import { withGmail } from "@/lib/gmail";
 import { syncLeads } from "@/lib/leads/sync";
 
@@ -35,6 +36,12 @@ export async function GET(req: NextRequest) {
     report.ai = await draftNewReplies({ max: 4 });
   } catch (error) {
     report.ai = `failed: ${error instanceof Error ? error.message : "unknown"}`;
+  }
+  try {
+    const bill = await ensureInvoice(undefined, { onlyIfStarted: true });
+    report.billing = bill ? `${bill.number} ${bill.status}` : "not started (the developer creates the first bill)";
+  } catch (error) {
+    report.billing = `failed: ${error instanceof Error ? error.message : "unknown"}`;
   }
   await setSetting("last_timer_run", String(Date.now())).catch(() => undefined);
   console.log("[autodash:cron]", JSON.stringify(report));

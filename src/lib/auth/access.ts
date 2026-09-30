@@ -30,6 +30,9 @@ export const can = {
   manageIntegrations: (role: Role) => role === "owner" || role === "manager",
   useDeveloperTools: (role: Role) => role === "owner" || role === "developer",
   // Dealership info and AI training: whoever runs the store, and whoever builds the AI.
+  // Billing: the dealership owner sees and pays the bill; only the developer (whoever runs AutoDash) sets prices.
+  viewBilling: (role: Role) => role === "owner" || role === "developer",
+  manageBilling: (role: Role) => role === "developer",
   editAiSettings: (role: Role) => role === "owner" || role === "manager" || role === "developer",
 };
 

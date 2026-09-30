@@ -331,3 +331,34 @@ export async function draftAiRepliesNowAction(): Promise<ActionResult> {
     return fail(error instanceof Error ? error.message : "The AI couldn't write replies right now.");
   }
 }
+
+// ---- Billing (prices are set by the developer only) ----
+
+export async function saveBillingSettingsAction(input: import("@/lib/billing/types").BillingSettings): Promise<ActionResult> {
+  const staff = await requireStaff();
+  if (!staff || !can.manageBilling(staff.role)) return fail("Only the developer can change billing.");
+  const { saveBillingSettings } = await import("@/lib/billing");
+  try { await saveBillingSettings(input); } catch { return NO_DB; }
+  revalidatePath("/billing");
+  return { ok: true, message: "Saved. New prices apply to the next bill." };
+}
+
+export async function createInvoiceNowAction(): Promise<ActionResult> {
+  const staff = await requireStaff();
+  if (!staff || !can.manageBilling(staff.role)) return fail("Only the developer can create bills.");
+  const { ensureInvoice } = await import("@/lib/billing");
+  try {
+    const bill = await ensureInvoice();
+    revalidatePath("/billing");
+    return bill ? { ok: true, message: `Bill ${bill.number} is ready.` } : NO_DB;
+  } catch { return NO_DB; }
+}
+
+export async function voidInvoiceAction(id: number): Promise<ActionResult> {
+  const staff = await requireStaff();
+  if (!staff || !can.manageBilling(staff.role)) return fail("Only the developer can cancel bills.");
+  const { voidInvoice } = await import("@/lib/billing");
+  if (!(await voidInvoice(Number(id)))) return fail("Only unpaid bills can be canceled.");
+  revalidatePath("/billing");
+  return { ok: true, message: "Bill canceled. Click Create this month's bill to make it again with the current prices." };
+}

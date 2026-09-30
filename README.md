@@ -100,6 +100,19 @@ AutoDash sends it from the dealership Gmail to the customer (never back to the l
 when nobody has AutoDash open. Set `CRON_SECRET` in Vercel to a long random string, then create a cron job for
 `https://auto-one-dealer.vercel.app/api/cron/tick?key=<CRON_SECRET>` every 5 minutes.
 
+## Billing
+
+**Billing** (sidebar, owner and developer only) shows this month's bill line by line (plan, one-time setup fee on the
+first bill, any extra AI emails/texts from last month, sales tax on the taxable share), usage against what's
+included, past bills, and documents. The owner pays by card on Stripe's own page.
+
+- Prices, limits, tax rate, due day and documents: **Billing → Prices and settings** (developer role only).
+- The developer creates the first bill with **Create this month's bill**; after that the timer creates each
+  month's bill on the 1st automatically.
+- Needs `STRIPE_SECRET_KEY`, and a Stripe webhook to `https://auto-one-dealer.vercel.app/api/stripe/webhook`
+  (event `checkout.session.completed`) with its signing secret in `STRIPE_WEBHOOK_SECRET`.
+- Tax defaults (8.25% on 80%) are placeholders to confirm with an accountant.
+
 ## Features
 
 - **Sign-in**: Google identity only (`openid email profile`), staff allowlist with roles (owner, manager,

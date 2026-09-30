@@ -42,6 +42,7 @@ const NAV: NavEntry[] = [
   },
 ];
 const FOOTER: NavItem[] = [
+  { href: "/billing", label: "Billing", icon: "credit" },
   { href: "/settings", label: "Settings", icon: "settings" },
   { href: "/developer", label: "Developer", icon: "developer" },
 ];
@@ -53,7 +54,7 @@ const OPEN_KEY = "ad:nav-open";
 const isActive = (pathname: string, href: string) => pathname === href || pathname.startsWith(href + "/");
 const isGroup = (e: NavEntry): e is NavGroup => "items" in e;
 
-type Me = { name: string; roleLabel: string; dealershipName: string };
+type Me = { name: string; role?: string; roleLabel: string; dealershipName: string };
 
 export default function AppShell({ children }: { children: React.ReactNode }) {
   const me = useLive<Me>("/api/me", { every: 10 * 60_000 }).data;
@@ -102,7 +103,8 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
         </nav>
         <div className="shrink-0 border-t border-line px-3 py-3">
           <ul className="space-y-0.5">
-            {FOOTER.map((item) => <li key={item.href}><NavLink item={item} active={isActive(pathname, item.href)} /></li>)}
+            {FOOTER.filter((item) => item.href !== "/billing" || me?.role === "owner" || me?.role === "developer")
+              .map((item) => <li key={item.href}><NavLink item={item} active={isActive(pathname, item.href)} /></li>)}
           </ul>
           <div className="mt-3 flex items-center gap-3 rounded-lg bg-paper px-3 py-2.5">
             <span aria-hidden className="grid size-8 shrink-0 place-items-center rounded-full bg-graphite text-sm font-semibold text-white">

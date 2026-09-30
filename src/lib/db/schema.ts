@@ -70,6 +70,22 @@ create table if not exists ai_replies (
 );
 create index if not exists ai_replies_status on ai_replies (status, created_at desc);
 alter table ai_replies enable row level security;
+-- v6: monthly bills for AutoDash itself. Amounts are in cents; items is the itemized breakdown.
+create table if not exists billing_invoices (
+  id bigserial primary key,
+  period text not null unique,
+  number text not null,
+  items jsonb not null,
+  subtotal integer not null,
+  tax integer not null,
+  total integer not null,
+  status text not null default 'open',
+  due_date date not null,
+  stripe_session_id text,
+  paid_at timestamptz,
+  created_at timestamptz not null default now()
+);
+alter table billing_invoices enable row level security;
 `;
 
 export async function setupDatabase(): Promise<void> {
