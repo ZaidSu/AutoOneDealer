@@ -1,0 +1,10 @@
+{
+  "version": "2.0.0",
+  "tasks": [
+    { "label": "Install dependencies", "type": "shell", "command": "npm install", "problemMatcher": [] },
+    { "label": "Pull env from Vercel", "type": "shell", "command": "npx vercel link && npx vercel env pull .env.local --environment=development", "problemMatcher": [] },
+    { "label": "Dev server", "type": "shell", "command": "npm run dev", "isBackground": true, "problemMatcher": [] },
+    { "label": "Unit tests", "type": "shell", "command": "npm test", "group": "test", "problemMatcher": [] },
+    { "label": "Production build check", "type": "shell", "command": "npm run build", "group": "build", "problemMatcher": [] }
+  ]
+}

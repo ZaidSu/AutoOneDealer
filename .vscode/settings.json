@@ -1,0 +1,7 @@
+{
+  "typescript.tsdk": "node_modules/typescript/lib",
+  "typescript.enablePromptUseWorkspaceTsdk": true,
+  "files.associations": { "*.css": "tailwindcss", ".env*": "dotenv" },
+  "files.exclude": { "**/.next": true, "**/node_modules": true },
+  "search.exclude": { "**/.next": true, "**/node_modules": true, "package-lock.json": true }
+}

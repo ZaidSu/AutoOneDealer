@@ -1,9 +1,33 @@
 {
-  "name": "auto-one-dealer",
-  "version": "1.0.0",
+  "name": "autodash",
+  "version": "0.1.0",
   "private": true,
-  "type": "module",
-  "description": "Responsive live Gmail lead management and approval-based AI draft system for Auto One Motors",
-  "engines": { "node": ">=20" },
-  "scripts": { "check": "node tests/test.mjs" }
+  "description": "AutoDash dealership operations platform (Auto One Motors first).",
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "dev": "next dev",
+    "build": "next build",
+    "start": "next start",
+    "test": "node --test --experimental-strip-types tests/unit/*.test.ts",
+    "test:db": "node --import tsx --test --test-concurrency=1 tests/integration/*.test.ts"
+  },
+  "dependencies": {
+    "@fontsource/barlow": "^5.3.0",
+    "@fontsource/barlow-condensed": "^5.3.0",
+    "next": "^16.3.6",
+    "postgres": "^3.4.9",
+    "react": "^19.3.0",
+    "react-dom": "^19.3.0"
+  },
+  "devDependencies": {
+    "@tailwindcss/postcss": "^4.3.3",
+    "@types/node": "^26.6.3",
+    "@types/react": "^19.3.0",
+    "@types/react-dom": "^19.3.0",
+    "tailwindcss": "^4.3.3",
+    "tsx": "^4.23.15",
+    "typescript": "^5.9.3"
+  }
 }
