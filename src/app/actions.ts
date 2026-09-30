@@ -326,7 +326,7 @@ export async function draftAiRepliesNowAction(): Promise<ActionResult> {
     const r = await draftNewReplies({ max: 4, force: true });
     revalidatePath("/ai/emails");
     if (r.waiting) return fail(r.waiting);
-    return { ok: true, message: r.drafted ? `Wrote ${r.drafted} ${r.drafted === 1 ? "reply" : "replies"}.` : "No new leads with an email address to reply to." };
+    return { ok: true, message: r.drafted ? `Wrote ${r.drafted} ${r.drafted === 1 ? "reply" : "replies"}${r.sent ? `, sent ${r.sent}` : ""}.` : "No new leads with an email address to reply to." };
   } catch (error) {
     return fail(error instanceof Error ? error.message : "The AI couldn't write replies right now.");
   }
@@ -361,4 +361,14 @@ export async function voidInvoiceAction(id: number): Promise<ActionResult> {
   if (!(await voidInvoice(Number(id)))) return fail("Only unpaid bills can be canceled.");
   revalidatePath("/billing");
   return { ok: true, message: "Bill canceled. Click Create this month's bill to make it again with the current prices." };
+}
+
+export async function setAutoSendAction(on: boolean): Promise<ActionResult> {
+  const staff = await requireStaff();
+  if (!staff) return fail("Your session ended. Sign in again.");
+  if (!can.editAiSettings(staff.role)) return fail(AI_EDIT_DENIED);
+  const { setAutoSend } = await import("@/lib/ai/replies");
+  try { await setAutoSend(Boolean(on)); } catch { return NO_DB; }
+  revalidatePath("/ai/emails");
+  return { ok: true, message: on ? "Automatic sending is on." : "Automatic sending is off. The AI writes drafts; your team clicks Send." };
 }

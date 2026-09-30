@@ -90,6 +90,7 @@ info** and **Train your AI**. A person checks it on **AI assistant → Email rep
 AutoDash sends it from the dealership Gmail to the customer (never back to the listing site's no-reply address).
 
 - Replies are written Monday to Saturday, 9 AM to 7 PM Dallas time (`aiHours` in `src/lib/dealership/index.ts`).
+- **Automatic sending** switch on the Email replies page: off (default) = drafts wait for someone to click Send; on = the AI sends by itself during AI hours.
 - One AI email per customer per 7 days. Leads with no email (e.g. phone-call leads) are skipped.
 - Needs `ANTHROPIC_API_KEY` in Vercel, Gmail reconnected once so it can send, and the timer below.
 - Code: `src/lib/ai/replies.ts` (drafting, sending), `src/lib/ai/claude.ts` (API call), table `ai_replies`.
@@ -107,6 +108,7 @@ first bill, any extra AI emails/texts from last month, sales tax on the taxable 
 included, past bills, and documents. The owner pays by card on Stripe's own page.
 
 - Prices, limits, tax rate, due day and documents: **Billing → Prices and settings** (developer role only).
+- Billed by High Level Technologies by default (Billing → Prices and settings to change).
 - The developer creates the first bill with **Create this month's bill**; after that the timer creates each
   month's bill on the 1st automatically.
 - Needs `STRIPE_SECRET_KEY`, and a Stripe webhook to `https://auto-one-dealer.vercel.app/api/stripe/webhook`

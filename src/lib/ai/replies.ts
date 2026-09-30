@@ -6,6 +6,7 @@ import { getAiTraining, getDealershipInfo } from "@/lib/ai/settings";
 import { canSendFrom } from "@/lib/auth/google";
 import { logActivity } from "@/lib/crm/queries";
 import { readyDb, trace } from "@/lib/db";
+import { getSetting, setSetting } from "@/lib/db/data";
 import { dataStartDate, dealership, inAiHours } from "@/lib/dealership";
 import { withGmail } from "@/lib/gmail";
 import { loadGmailConnection } from "@/lib/gmail/connection";
@@ -30,12 +31,20 @@ const toReply = (r: Record<string, unknown>): AiReply => ({
 // Addresses that can't be a customer: listing sites' no-reply senders and our own mailbox.
 const NOT_A_CUSTOMER = /(no-?reply|donotreply|notifications?@|leads?@|@(cars\.com|cargurus\.com|carsforsale\.com|edmunds\.com|autotrader\.com|carzing\.com|facebookmail\.com))/i;
 
+/** Automatic sending: off means the AI only writes drafts and a person clicks Send. Off unless someone turns it on. */
+export async function getAutoSend(): Promise<boolean> {
+  return (await getSetting("ai_auto_send").catch(() => null)) === "on";
+}
+export async function setAutoSend(on: boolean) {
+  await setSetting("ai_auto_send", on ? "on" : "off");
+}
+
 /** Writes drafts for new leads that have an email address. Called by the timer and the "Check now" button. */
-export async function draftNewReplies({ max = 4, force = false } = {}): Promise<{ drafted: number; skipped: number; waiting: string | null }> {
-  if (!aiConfigured()) return { drafted: 0, skipped: 0, waiting: "The AI key isn't set up in Vercel yet." };
-  if (!force && !inAiHours()) return { drafted: 0, skipped: 0, waiting: "Outside AI hours (Mon to Sat, 9 AM to 7 PM). New leads get replies at 9 AM." };
+export async function draftNewReplies({ max = 4, force = false } = {}): Promise<{ drafted: number; sent: number; skipped: number; waiting: string | null }> {
+  if (!aiConfigured()) return { drafted: 0, sent: 0, skipped: 0, waiting: "The AI key isn't set up in Vercel yet." };
+  if (!force && !inAiHours()) return { drafted: 0, sent: 0, skipped: 0, waiting: "Outside AI hours (Mon to Sat, 9 AM to 7 PM). New leads get replies at 9 AM." };
   const sql = await readyDb();
-  if (!sql) return { drafted: 0, skipped: 0, waiting: "The database isn't connected." };
+  if (!sql) return { drafted: 0, sent: 0, skipped: 0, waiting: "The database isn't connected." };
 
   // Recent leads with an email that don't have a reply row yet. Oldest first, so nobody waits longest.
   const since = new Date(Math.max(dataStartDate().getTime(), Date.now() - 3 * 86400_000));
@@ -44,10 +53,13 @@ export async function draftNewReplies({ max = 4, force = false } = {}): Promise<
     where not l.ignored and l.email is not null and l.email <> '' and l.received_at >= ${since}
       and not exists (select 1 from ai_replies r where r.lead_id = l.message_id)
     order by l.received_at asc limit ${max}`;
-  if (leads.length === 0) return { drafted: 0, skipped: 0, waiting: null };
+  if (leads.length === 0) return { drafted: 0, sent: 0, skipped: 0, waiting: null };
 
-  const [info, training, connection] = await Promise.all([getDealershipInfo(), getAiTraining(), loadGmailConnection(undefined)]);
+  const [info, training, connection, autoSend] = await Promise.all([getDealershipInfo(), getAiTraining(), loadGmailConnection(undefined), getAutoSend()]);
+  // Only sends by itself during AI hours (never from "Write replies now" at night) and only if Gmail may send.
+  const sendNow = autoSend && canSendFrom(connection) && inAiHours();
   let drafted = 0;
+  let sent = 0;
   let skipped = 0;
   for (const lead of leads) {
     const email = String(lead.email).trim().toLowerCase();
@@ -65,16 +77,21 @@ export async function draftNewReplies({ max = 4, force = false } = {}): Promise<
     if (recent) { await skip("This customer already has an AI email from the last 7 days."); continue; }
     try {
       const { subject, body } = await writeReply(lead, info, training);
-      await sql`insert into ai_replies ${sql({ ...base, subject, body, status: "draft" })} on conflict (lead_id) do nothing`;
+      const [row] = await sql`insert into ai_replies ${sql({ ...base, subject, body, status: "draft" })} on conflict (lead_id) do nothing returning id`;
       drafted++;
+      if (row && sendNow) {
+        const result = await sendReply(Number(row.id), { subject, body }, "AI (automatic)");
+        if (result.ok) sent++;
+        else console.error("[autodash:ai] automatic send failed, left as a draft:", result.error);
+      }
     } catch (error) {
       // Not saved, so it's tried again on the next check.
       console.error("[autodash:ai] couldn't write a reply:", error instanceof Error ? error.message : error);
       throw error;
     }
   }
-  trace("ai", `drafted ${drafted}, skipped ${skipped}`);
-  return { drafted, skipped, waiting: null };
+  trace("ai", `drafted ${drafted}, sent ${sent}, skipped ${skipped}`);
+  return { drafted, sent, skipped, waiting: null };
 }
 
 async function writeReply(lead: Record<string, unknown>, info: Awaited<ReturnType<typeof getDealershipInfo>>, training: Awaited<ReturnType<typeof getAiTraining>>) {

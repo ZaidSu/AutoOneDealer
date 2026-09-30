@@ -35,7 +35,7 @@ export const DEFAULT_BILLING: BillingSettings = {
   dueDay: 9,
   emailRange: "100 to 400",
   textRange: "0 to 500",
-  billedBy: "Marketplace Wholesale LLC",
+  billedBy: "High Level Technologies",
   documents: [],
   planParts: [
     { label: "AutoDash software, updates and support", detail: "Dashboard, leads, customers, pipeline, appointments, analytics, fixes and new features", cents: 14900 },

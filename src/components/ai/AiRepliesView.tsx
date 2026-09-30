@@ -1,7 +1,7 @@
 "use client";
 import Link from "next/link";
 import { useState, useTransition } from "react";
-import { discardAiReplyAction, draftAiRepliesNowAction, sendAiReplyAction } from "@/app/actions";
+import { discardAiReplyAction, draftAiRepliesNowAction, sendAiReplyAction, setAutoSendAction } from "@/app/actions";
 import type { AiReply } from "@/lib/ai/replies";
 
 type Setup = { ai: boolean; canSend: boolean; gmail: boolean; lastTimer: number | null };
@@ -13,7 +13,7 @@ const ago = (ms: number) => {
   return min < 1 ? "just now" : min < 60 ? `${min} min ago` : min < 1440 ? `${Math.round(min / 60)} h ago` : `${Math.round(min / 1440)} days ago`;
 };
 
-export default function AiRepliesView({ drafts: initialDrafts, history, setup, canWriteNow }: { drafts: AiReply[]; history: AiReply[]; setup: Setup; canWriteNow: boolean }) {
+export default function AiRepliesView({ drafts: initialDrafts, history, setup, canWriteNow, autoSend }: { drafts: AiReply[]; history: AiReply[]; setup: Setup; canWriteNow: boolean; autoSend: boolean }) {
   const [drafts, setDrafts] = useState(initialDrafts);
   const [done, setDone] = useState<AiReply[]>([]);
   const [msg, setMsg] = useState<Msg>(null);
@@ -45,6 +45,7 @@ export default function AiRepliesView({ drafts: initialDrafts, history, setup, c
           )}
         </div>
         {msg && <p role={msg.ok ? "status" : "alert"} className={`mt-3 text-sm ${msg.ok ? "text-go" : "text-signal"}`}>{msg.text}</p>}
+        <AutoSendToggle initial={autoSend} canChange={canWriteNow} canSend={setup.canSend} />
       </section>
 
       <section aria-labelledby="waiting">
@@ -165,5 +166,38 @@ function HistoryRow({ reply }: { reply: AiReply }) {
         )}
       </details>
     </li>
+  );
+}
+
+/** On: the AI sends its replies by itself (during AI hours). Off: it only writes drafts for a person to send. */
+function AutoSendToggle({ initial, canChange, canSend }: { initial: boolean; canChange: boolean; canSend: boolean }) {
+  const [on, setOn] = useState(initial);
+  const [msg, setMsg] = useState<Msg>(null);
+  const [pending, start] = useTransition();
+  const flip = () => {
+    const next = !on;
+    if (next && !window.confirm("Turn on automatic sending? The AI will email new leads by itself, Mon to Sat 9 AM to 7 PM, without anyone checking first. Everything it sends is listed below.")) return;
+    start(async () => {
+      const r = await setAutoSendAction(next);
+      if (r.ok) setOn(next);
+      setMsg(r.ok ? { ok: true, text: r.message ?? "" } : { ok: false, text: r.error });
+    });
+  };
+  return (
+    <div className="mt-4 flex flex-wrap items-center gap-x-4 gap-y-2 border-t border-line pt-4">
+      <button type="button" role="switch" aria-checked={on} aria-label="Automatic sending" disabled={!canChange || pending} onClick={flip}
+        className={`relative h-7 w-12 shrink-0 rounded-full transition-colors ${on ? "bg-go" : "bg-graphite-3/30"} disabled:opacity-60`}>
+        <span className={`absolute top-1 size-5 rounded-full bg-white shadow transition-all ${on ? "left-6" : "left-1"}`} />
+      </button>
+      <div className="min-w-0 flex-1">
+        <p className="font-semibold">Automatic sending is {on ? "on" : "off"}</p>
+        <p className="text-sm text-muted">
+          {on ? "The AI sends its replies by itself during AI hours. Turn off to review each one first."
+            : "The AI writes drafts; someone on your team checks each one and clicks Send."}
+          {on && !canSend ? " Gmail can't send yet, so replies wait as drafts until you reconnect Gmail." : ""}
+        </p>
+      </div>
+      {msg && <p role={msg.ok ? "status" : "alert"} className={`text-sm ${msg.ok ? "text-go" : "text-signal"}`}>{msg.text}</p>}
+    </div>
   );
 }
