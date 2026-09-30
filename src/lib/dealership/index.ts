@@ -2,6 +2,9 @@
 export const dealership = {
   name: process.env.DEALERSHIP_NAME || "Auto One Motors",
   timeZone: "America/Chicago",
+  // The Pipeline tracks new customers from this day on (Monday of the week before it went live), so years of
+  // older leads don't flood the "New" column. Customers staff already worked on always show.
+  pipelineStart: process.env.PIPELINE_START || "2026-09-21",
 };
 
 export function greeting(date = new Date()): string {

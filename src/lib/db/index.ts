@@ -22,33 +22,84 @@ export function dbConfigured(): boolean {
   return Boolean(process.env.DATABASE_URL);
 }
 
+// Vercel pauses the server between visits. While it's paused, the network can quietly drop the database
+// connection, but the connection pool doesn't know that; the next query is sent into a dead connection
+// and waits until something times out (the "took longer than 8 seconds" errors). So a connection that has
+// sat unused for a while is replaced with a fresh one (about 0.1s) instead of being trusted.
+const IDLE_REPLACE_MS = 10_000;
+
+function openPool(url: string, max: number, connectTimeout: number): Sql {
+  const local = /@(localhost|127\.0\.0\.1)[:/]/.test(url);
+  return postgres(url, {
+    prepare: false, // required by Supabase's transaction pooler
+    debug: process.env.DB_DEBUG ? (_c: number, q: string) => console.log("[q]", new Date().toISOString().slice(17, 23), q.replace(/\s+/g, " ").slice(0, 60)) : undefined,
+    onnotice: () => undefined, // "already exists, skipping" notes from setup aren't worth logging
+    max,
+    idle_timeout: 20,
+    max_lifetime: 5 * 60,
+    connect_timeout: connectTimeout, // a healthy connection takes ~0.1s; don't let a stalled one hold a page for long
+    ssl: local ? false : "require",
+  });
+}
+
+function retire(pool: Sql | null, name: string, reason: string) {
+  if (!pool) return;
+  trace("db", `replacing ${name} connection (${reason})`);
+  // Let anything still running finish (up to 10s), then close. Never waited on by a page.
+  void pool.end({ timeout: 10 }).catch(() => undefined);
+}
+
+let lastUsed = 0;
 export function db(): Sql | null {
   const url = process.env.DATABASE_URL;
   if (!url) return null;
-  if (!client) {
-    const local = /@(localhost|127\.0\.0\.1)[:/]/.test(url);
-    client = postgres(url, {
-      prepare: false, // required by Supabase's transaction pooler
-      debug: process.env.DB_DEBUG ? (_c: number, q: string) => console.log("[q]", new Date().toISOString().slice(17, 23), q.replace(/\s+/g, " ").slice(0, 60)) : undefined,
-      onnotice: () => undefined, // "already exists, skipping" notes from setup aren't worth logging
-      // Keep a little concurrency for Dashboard/Customers without opening four fresh TLS/database
-      // connections in every new Vercel instance. Most queries here are only a few milliseconds.
-      max: 2,
-      idle_timeout: 20,
-      connect_timeout: 4, // a healthy connection takes ~0.1s; don't let a stalled one hold a page for long
-      ssl: local ? false : "require",
-    });
+  const now = Date.now();
+  if (client && now - lastUsed > IDLE_REPLACE_MS) {
+    retire(client, "page", `unused for ${Math.round((now - lastUsed) / 1000)}s`);
+    client = null;
   }
+  if (!client) {
+    // Keep a little concurrency for Dashboard/Customers without opening many fresh connections per server.
+    client = openPool(url, 3, 4);
+    trace("db", "opened page connection");
+  }
+  lastUsed = now;
   return client;
 }
 
 let bgClient: Sql | null = null;
+let bgLastUsed = 0;
 /** A separate small connection pool for the background lead import, so page loads never wait behind it. */
 export function bgDb(): Sql | null {
   const url = process.env.DATABASE_URL;
   if (!url) return null;
-  bgClient ??= postgres(url, { prepare: false, onnotice: () => undefined, max: 1, idle_timeout: 20, connect_timeout: 8, ssl: /@(localhost|127\.0\.0\.1)[:/]/.test(url) ? false : "require" });
+  const now = Date.now();
+  if (bgClient && now - bgLastUsed > IDLE_REPLACE_MS) {
+    retire(bgClient, "background", `unused for ${Math.round((now - bgLastUsed) / 1000)}s`);
+    bgClient = null;
+  }
+  bgClient ??= openPool(url, 1, 8);
+  bgLastUsed = now;
   return bgClient;
+}
+
+/** Throw away the page connection now (after a query hung), so the next request starts on a fresh one. */
+export function resetDb(reason: string) {
+  retire(client, "page", reason);
+  client = null;
+}
+
+/**
+ * Debug trail in the server logs (Vercel -> Logs), like console.log("got here") while debugging.
+ * Always on for connection events and anything slow; set AUTODASH_DEBUG=1 to log every step.
+ */
+export function trace(area: string, message: string, ms?: number) {
+  const slow = ms !== undefined && ms >= 1000;
+  // Without AUTODASH_DEBUG: only connection events and slow steps, so the logs stay readable.
+  if (!process.env.AUTODASH_DEBUG && (ms !== undefined ? !slow : area !== "db")) return;
+  const line = `[autodash:${area}] ${message}${ms !== undefined ? ` (${ms}ms)` : ""}`;
+  if (slow) console.warn(line + " <- slow");
+  else console.log(line);
 }
 
 export type DbState = "not_configured" | "not_set_up" | "ready" | "unreachable";
@@ -141,7 +192,10 @@ function setupOnce(): Promise<void> {
 }
 
 export async function readyDb(): Promise<Sql | null> {
-  return (await dbState()) === "ready" ? db() : null;
+  const started = Date.now();
+  const state = await dbState();
+  trace("db", `database check: ${state}`, Date.now() - started);
+  return state === "ready" ? db() : null;
 }
 
 export function markReady() {

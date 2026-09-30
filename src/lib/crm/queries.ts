@@ -3,6 +3,8 @@
 import type { CustomerView } from "@/lib/customers/view";
 import { readyDb } from "@/lib/db";
 import { appointmentsForCustomers, type Financing, type Status } from "@/lib/db/data";
+import { dealership } from "@/lib/dealership";
+import { zonedToUtc } from "@/lib/utils/time";
 
 type Row = Record<string, unknown>;
 const t = (v: unknown) => (v ? new Date(v as string).getTime() : 0);
@@ -109,6 +111,7 @@ export async function pipeline(opts: { repId?: number | null; days: number; perC
   const sql = await readyDb();
   if (!sql) return [];
   const since = new Date(Date.now() - opts.days * 86400000);
+  const trackingStart = zonedToUtc(dealership.pipelineStart, "00:00", dealership.timeZone) ?? since;
   const rows = await sql`
     select * from (
       select c.key, c.name, c.phone, c.last_vehicle, coalesce(c.heard_from, c.first_provider) as source, c.status, r.name as rep_name,
@@ -116,7 +119,12 @@ export async function pipeline(opts: { repId?: number | null; days: number; perC
         count(*) over (partition by c.status) as total,
         row_number() over (partition by c.status order by greatest(c.last_seen, c.updated_at) desc) as n
       from customers c left join reps r on r.id = c.rep_id
-      where c.last_seen is not null and (c.status = 'appointment' or c.last_seen >= ${since} or c.updated_at >= ${since})
+      where c.last_seen is not null
+        -- Only real names: not blank, not just a phone number, not an email address.
+        and nullif(trim(c.name), '') is not null and c.name !~ '^[0-9()+. -]+$' and position('@' in c.name) = 0
+        -- Untouched new customers only from the tracking start date; anything staff worked on always shows.
+        and (c.status <> 'new' or c.rep_id is not null or c.last_seen >= ${trackingStart})
+        and (c.status = 'appointment' or c.last_seen >= ${since} or c.updated_at >= ${since})
         ${opts.repId ? sql`and c.rep_id = ${opts.repId}` : sql``}) x
     where n <= ${opts.perColumn ?? 40} order by n`;
   const columns = new Map<string, PipelineColumn>();

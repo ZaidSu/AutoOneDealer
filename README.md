@@ -71,6 +71,17 @@ in Vercel → Project → Settings → Environment Variables, set for **Producti
 
 `/api/health` confirms a deployment is live, and the Developer page shows which settings are missing.
 
+## Debugging slow pages
+
+The server writes a short trail to **Vercel → Logs** (lines starting with `[autodash:...]`):
+
+- `[autodash:db] opened page connection` / `replacing page connection (unused for 42s)`: a fresh database connection.
+- `... <- slow`: any page step or database check that took over a second, with its time.
+- `[autodash:step] Counts: FAILED after 8003ms`: a part of a page that gave up.
+
+Set `AUTODASH_DEBUG=1` in Vercel (then redeploy) to log every step of every page load, including the fast ones.
+`DB_DEBUG=1` also logs each database query. Turn both off again when you're done.
+
 ## Features
 
 - **Sign-in**: Google identity only (`openid email profile`), staff allowlist with roles (owner, manager,

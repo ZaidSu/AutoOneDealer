@@ -7,6 +7,7 @@ import PageHeader from "@/components/ui/PageHeader";
 import { pipeline } from "@/lib/crm/queries";
 import { dbState } from "@/lib/db";
 import { listReps, STATUSES } from "@/lib/db/data";
+import { dealership } from "@/lib/dealership";
 
 export const metadata: Metadata = { title: "Pipeline" };
 export const dynamic = "force-dynamic";
@@ -20,7 +21,7 @@ export default async function PipelinePage({ searchParams }: { searchParams: Pro
   const days = params.days && params.days in WINDOWS ? params.days : "60";
   const repId = params.rep && /^\d+$/.test(params.rep) ? Number(params.rep) : null;
   const state = await dbState();
-  const header = <PageHeader title="Pipeline" description="Every active customer by stage. Drag a card to move it, or open it for the full history." />;
+  const header = <PageHeader title="Pipeline" description={`Customers by stage. New customers show from ${new Date(dealership.pipelineStart + "T12:00:00").toLocaleDateString("en-US", { month: "short", day: "numeric" })} on, and only once they have a name. Drag a card to move it, or open it for the full history.`} />;
   if (state !== "ready") return <>{header}<DbNotice state={state} what="The pipeline" /></>;
   const [columns, reps] = await Promise.all([pipeline({ repId, days: Number(days) }), listReps()]);
   const link = (extra: Record<string, string | undefined>) => ({ pathname: "/pipeline", query: Object.fromEntries(Object.entries({ days, rep: repId ? String(repId) : undefined, ...extra }).filter(([, v]) => v)) });
