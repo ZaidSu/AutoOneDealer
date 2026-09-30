@@ -2,7 +2,7 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { STAFF_COOKIE, validateStaff } from "@/lib/auth/session";
 import { listCustomers } from "@/lib/crm/queries";
-import { dbState } from "@/lib/db";
+import { dbState, fresh } from "@/lib/db";
 import { FINANCING, listReps, listSources, STATUSES } from "@/lib/db/data";
 import { dealership } from "@/lib/dealership";
 import { syncInfo } from "@/lib/leads/source";
@@ -22,10 +22,10 @@ export async function GET(req: NextRequest) {
   const pageIndex = Math.max(0, Number(params.p ?? 0) || 0);
 
   const [list, reps, sources, sync] = dbReady
-    ? await Promise.all([
+    ? await fresh("Customers", () => Promise.all([
         listCustomers({ search, rep: params.rep, status: params.status, fin: params.fin, scope: params.scope }, pageIndex, PER_PAGE),
         listReps(), listSources(), syncInfo(),
-      ])
+      ]))
     : [{ customers: [], total: 0 }, [], [], null];
   const customers = list.customers;
   const pages = Math.max(1, Math.ceil(list.total / PER_PAGE));

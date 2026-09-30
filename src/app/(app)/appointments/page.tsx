@@ -5,7 +5,7 @@ import NewAppointment from "@/components/appointments/NewAppointment";
 import StatusButtons from "@/components/appointments/StatusButtons";
 import DbNotice from "@/components/ui/DbNotice";
 import PageHeader from "@/components/ui/PageHeader";
-import { dbState } from "@/lib/db";
+import { dbState, fresh } from "@/lib/db";
 import { appointmentsBetween, listReps, recentNoShows, type Appointment } from "@/lib/db/data";
 import { dealership } from "@/lib/dealership";
 import { formatPhone } from "@/lib/utils/format";
@@ -38,11 +38,11 @@ export default async function AppointmentsPage({ searchParams }: { searchParams:
   const start = addDays(today, week * 7);
   const days = Array.from({ length: 7 }, (_, i) => addDays(start, i));
   const repId = params.rep ? Number(params.rep) : null;
-  const [reps, appointments, noShows] = await Promise.all([
+  const [reps, appointments, noShows] = await fresh("Appointments", () => Promise.all([
     listReps(),
     appointmentsBetween(zonedToUtc(days[0], "00:00", tz)!, zonedToUtc(addDays(days[6], 1), "00:00", tz)!, repId),
     week === 0 ? recentNoShows(new Date(Date.now() - 14 * 86400000)) : Promise.resolve([]),
-  ]);
+  ]));
 
   const byDay = new Map<string, Appointment[]>();
   for (const a of appointments) {

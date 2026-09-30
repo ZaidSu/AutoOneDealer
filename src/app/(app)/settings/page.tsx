@@ -4,7 +4,7 @@ import GmailCard from "@/components/settings/GmailCard";
 import TeamAndSources from "@/components/settings/TeamAndSources";
 import DbNotice from "@/components/ui/DbNotice";
 import PageHeader from "@/components/ui/PageHeader";
-import { dbState } from "@/lib/db";
+import { dbState, fresh } from "@/lib/db";
 import { listReps, listSources } from "@/lib/db/data";
 import { can, roleLabel } from "@/lib/auth/access";
 import { dealershipMailbox } from "@/lib/auth/config";
@@ -28,7 +28,7 @@ export default async function SettingsPage({ searchParams }: { searchParams: Pro
   const staff = (await getStaffSession())!;
   const gmail = await getGmailConnection();
   const state = await dbState();
-  const [reps, sources] = state === "ready" ? await Promise.all([listReps(), listSources()]) : [[], []];
+  const [reps, sources] = state === "ready" ? await fresh("Settings lists", () => Promise.all([listReps(), listSources()])) : [[], []];
   const params = await searchParams;
   const notice = params.gmail ? gmailNotices[params.gmail] ?? gmailNotices.failed : null;
 

@@ -9,7 +9,7 @@ import Badge from "@/components/leads/Badge";
 import DbNotice from "@/components/ui/DbNotice";
 import { parseCustomerKey } from "@/lib/customers";
 import { ACTIVITY_KINDS, activitiesFor, getCustomer } from "@/lib/crm/queries";
-import { dbState } from "@/lib/db";
+import { dbState, fresh } from "@/lib/db";
 import { appointmentsForCustomer, FINANCING, listReps, listSources, STATUSES } from "@/lib/db/data";
 import { dealership } from "@/lib/dealership";
 import { formatDateTime, formatMoney } from "@/lib/utils/format";
@@ -29,9 +29,9 @@ export default async function CustomerPage({ params }: { params: Promise<{ key: 
   const state = await dbState();
   if (state !== "ready") return <DbNotice state={state} what="Customer profiles" />;
 
-  const [customer, leads, activities, appointments, reps, sources] = await Promise.all([
+  const [customer, leads, activities, appointments, reps, sources] = await fresh("Customer profile", () => Promise.all([
     getCustomer(key), leadsForCustomer(key), activitiesFor(key), appointmentsForCustomer(key), listReps(), listSources(),
-  ]);
+  ]));
   if (!customer) notFound();
 
   // One timeline: lead emails, appointments and everything staff logged, newest first.

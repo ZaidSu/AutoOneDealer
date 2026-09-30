@@ -5,7 +5,7 @@ import { BarList, Columns, Panel, Stat } from "@/components/analytics/Charts";
 import DbNotice from "@/components/ui/DbNotice";
 import PageHeader from "@/components/ui/PageHeader";
 import { analytics, type AnalyticsData } from "@/lib/crm/analytics";
-import { dbState } from "@/lib/db";
+import { dbState, fresh } from "@/lib/db";
 import { listReps } from "@/lib/db/data";
 import { dealership } from "@/lib/dealership";
 import { stateName } from "@/lib/utils/geo";
@@ -39,7 +39,7 @@ export default async function AnalyticsPage({ searchParams }: { searchParams: Pr
     </>
   );
   if (!dbReady) return <>{header}<DbNotice state={state} what="Analytics" /></>;
-  const [data, reps] = await Promise.all([analytics(since, tz), listReps(true)]);
+  const [data, reps] = await fresh("Analytics", () => Promise.all([analytics(since, tz), listReps(true)]));
   if (!data) return <>{header}<DbNotice state={state} what="Analytics" /></>;
 
   type P = AnalyticsData["people"][number];

@@ -90,6 +90,31 @@ export function resetDb(reason: string) {
 }
 
 /**
+ * Runs page work that reads the database. Normal reads take milliseconds, so if it hasn't finished in 4 seconds
+ * it's almost certainly stuck on a dead connection: throw that connection away and try once more on a fresh one.
+ * Worst case a page waits about 10 seconds and shows an error, instead of hanging until the server gives up.
+ */
+export async function fresh<T>(label: string, work: () => Promise<T>, firstTryMs = 4000, retryMs = 6000): Promise<T> {
+  const started = Date.now();
+  try {
+    const result = await withTimeout(work(), firstTryMs);
+    trace("step", `${label}: done`, Date.now() - started);
+    return result;
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    if (!message.startsWith("timed out")) throw error; // a real error: don't hide it behind a retry
+    console.warn(`[autodash:step] ${label}: stuck after ${firstTryMs}ms, retrying on a fresh connection`);
+    resetDb(`${label} stuck`);
+    const result = await withTimeout(work(), retryMs).catch((e) => {
+      console.error(`[autodash:step] ${label}: FAILED again after retry (${Date.now() - started}ms total)`);
+      throw e;
+    });
+    console.warn(`[autodash:step] ${label}: recovered on retry (${Date.now() - started}ms total)`);
+    return result;
+  }
+}
+
+/**
  * Debug trail in the server logs (Vercel -> Logs), like console.log("got here") while debugging.
  * Always on for connection events and anything slow; set AUTODASH_DEBUG=1 to log every step.
  */

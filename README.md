@@ -77,7 +77,8 @@ The server writes a short trail to **Vercel → Logs** (lines starting with `[au
 
 - `[autodash:db] opened page connection` / `replacing page connection (unused for 42s)`: a fresh database connection.
 - `... <- slow`: any page step or database check that took over a second, with its time.
-- `[autodash:step] Counts: FAILED after 8003ms`: a part of a page that gave up.
+- `Follow-ups: stuck after 4000ms, retrying on a fresh connection` then `recovered on retry`: a database read got stuck and
+  fixed itself. `FAILED again after retry` means it didn't, and that part of the page shows an error.
 
 Set `AUTODASH_DEBUG=1` in Vercel (then redeploy) to log every step of every page load, including the fast ones.
 `DB_DEBUG=1` also logs each database query. Turn both off again when you're done.
