@@ -16,5 +16,5 @@ export default async function TrainAiPage() {
   const header = <PageHeader title="Train your AI" description="Teach the AI how the dealership talks to customers. It follows this, plus the dealership info, whenever it replies." />;
   if (state !== "ready") return <>{header}<DbNotice state={state} what="AI training" /></>;
   const training = await fresh("AI training", () => getAiTraining());
-  return <div className="max-w-3xl">{header}<TrainingForm initial={training} canEdit={can.manageIntegrations(staff.role)} /></div>;
+  return <div className="max-w-3xl">{header}<TrainingForm initial={training} canEdit={can.editAiSettings(staff.role)} /></div>;
 }

@@ -9,6 +9,7 @@ import { dbState, fresh } from "@/lib/db";
 import { listReps } from "@/lib/db/data";
 import { dataStartLabel, dealership, notBeforeStart } from "@/lib/dealership";
 import { stateName } from "@/lib/utils/geo";
+import { sourceColor } from "@/lib/utils/sourceColors";
 import { addDays, dayKey, zonedToUtc } from "@/lib/utils/time";
 
 export const metadata: Metadata = { title: "Analytics" };
@@ -116,7 +117,7 @@ export default async function AnalyticsPage({ searchParams }: { searchParams: Pr
 
       <div className="grid max-w-5xl gap-5 lg:grid-cols-2">
         <Panel title="Where customers came from" note="People, not emails. Uses the “Heard about us” label, which lead emails fill in automatically. The gray number is how many emails that source sent." wide>
-          <BarList items={bySource} emptyText="No leads in this range." />
+          <BarList items={bySource} colorFor={sourceColor} emptyText="No leads in this range." />
         </Panel>
 
         <Panel title="In state vs out of state" note="From the city and state in each lead, or the label your team set.">
@@ -145,7 +146,7 @@ export default async function AnalyticsPage({ searchParams }: { searchParams: Pr
         </Panel>
 
         <Panel title="Which sources lead to purchases" note="Customers marked Purchased in this range, by where they heard about us.">
-          {dbReady ? <BarList items={purchasesBySource} emptyText="No purchases marked in this range yet." /> : <DbNotice state={state} what="This chart" />}
+          {dbReady ? <BarList items={purchasesBySource} colorFor={sourceColor} emptyText="No purchases marked in this range yet." /> : <DbNotice state={state} what="This chart" />}
         </Panel>
 
         <Panel title="Salespeople" note="Customers assigned, appointments in this range and how they went, and customers marked purchased." wide>

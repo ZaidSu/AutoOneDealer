@@ -29,6 +29,9 @@ html { color-scheme: light; }
 body { background: var(--color-paper); color: var(--color-ink); -webkit-font-smoothing: antialiased; }
 :focus-visible { outline: 2px solid var(--color-signal); outline-offset: 2px; }
 ::selection { background: #f6d3d8; }
+/* Anything clickable shows the hand cursor (Tailwind resets buttons to the arrow). */
+button:not(:disabled), [role="button"], summary, label:has(> input[type="checkbox"]) { cursor: pointer; }
+button:disabled { cursor: not-allowed; }
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { transition: none !important; animation: none !important; }
 }

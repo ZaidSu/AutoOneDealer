@@ -1,6 +1,7 @@
 "use client";
 import { useState, useTransition } from "react";
 import { saveDealershipInfoAction } from "@/app/actions";
+import ReadOnlyNotice from "@/components/ai/ReadOnlyNotice";
 import { DAYS, type DealershipInfo } from "@/lib/ai/types";
 
 export default function DealershipInfoForm({ initial, canEdit }: { initial: DealershipInfo; canEdit: boolean }) {
@@ -20,6 +21,7 @@ export default function DealershipInfoForm({ initial, canEdit }: { initial: Deal
 
   return (
     <div className="grid gap-6">
+      {!canEdit && <ReadOnlyNotice />}
       <section className="panel p-5">
         <h2 className="text-[17px] font-semibold">Contact</h2>
         <div className="mt-3 grid gap-4 sm:grid-cols-2">
@@ -69,12 +71,12 @@ export default function DealershipInfoForm({ initial, canEdit }: { initial: Deal
       </section>
 
       {canEdit ? (
-        <div className="flex items-center gap-3">
+        <div className="sticky bottom-0 -mx-1 flex items-center gap-3 border-t border-line bg-paper/95 px-1 py-3 backdrop-blur">
           <button type="button" disabled={pending} onClick={save} className="btn btn-red">{pending ? "Saving…" : "Save dealership info"}</button>
           {result && <p role={result.ok ? "status" : "alert"} className={`text-sm ${result.ok ? "text-go" : "text-signal"}`}>{result.text}</p>}
         </div>
       ) : (
-        <p className="text-sm text-muted">Only owners and managers can change this.</p>
+        null
       )}
     </div>
   );

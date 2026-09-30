@@ -16,5 +16,5 @@ export default async function DealershipInfoPage() {
   const header = <PageHeader title="Dealership info" description="Your address, hours and links. The AI uses these to answer customers correctly." />;
   if (state !== "ready") return <>{header}<DbNotice state={state} what="Dealership info" /></>;
   const info = await fresh("Dealership info", () => getDealershipInfo());
-  return <div className="max-w-3xl">{header}<DealershipInfoForm initial={info} canEdit={can.manageIntegrations(staff.role)} /></div>;
+  return <div className="max-w-3xl">{header}<DealershipInfoForm initial={info} canEdit={can.editAiSettings(staff.role)} /></div>;
 }

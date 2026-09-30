@@ -260,20 +260,37 @@ export async function followUpAction(
 
 // ---- AI assistant (what it knows about the dealership) ----
 
+const AI_EDIT_DENIED = "Your account can't change this. Owners, managers and the developer can.";
+
 export async function saveDealershipInfoAction(input: import("@/lib/ai/types").DealershipInfo): Promise<ActionResult> {
   const staff = await requireStaff();
-  if (!staff || !can.manageIntegrations(staff.role)) return fail("Only owners and managers can change the dealership info.");
+  if (!staff) return fail("Your session ended. Sign in again.");
+  if (!can.editAiSettings(staff.role)) return fail(AI_EDIT_DENIED);
   const { saveDealershipInfo } = await import("@/lib/ai/settings");
   try { await saveDealershipInfo(input); } catch { return NO_DB; }
   revalidatePath("/ai/dealership");
   return { ok: true, message: "Saved." };
 }
 
-export async function saveAiTrainingAction(input: import("@/lib/ai/types").AiTraining): Promise<ActionResult> {
+export async function saveAiInstructionsAction(instructions: string): Promise<ActionResult> {
   const staff = await requireStaff();
-  if (!staff || !can.manageIntegrations(staff.role)) return fail("Only owners and managers can train the AI.");
+  if (!staff) return fail("Your session ended. Sign in again.");
+  if (!can.editAiSettings(staff.role)) return fail(AI_EDIT_DENIED);
   const { saveAiTraining } = await import("@/lib/ai/settings");
-  try { await saveAiTraining(input); } catch { return NO_DB; }
+  try { await saveAiTraining({ instructions: String(instructions ?? "") }); } catch { return NO_DB; }
   revalidatePath("/ai/train");
   return { ok: true, message: "Saved." };
+}
+
+/** Saves the whole list of questions and answers (after adding, editing or deleting one). */
+export async function saveAiQaAction(qa: import("@/lib/ai/types").QA[]): Promise<ActionResult & { qa?: import("@/lib/ai/types").QA[] }> {
+  const staff = await requireStaff();
+  if (!staff) return fail("Your session ended. Sign in again.");
+  if (!can.editAiSettings(staff.role)) return fail(AI_EDIT_DENIED);
+  const { saveAiTraining } = await import("@/lib/ai/settings");
+  try {
+    const saved = await saveAiTraining({ qa });
+    revalidatePath("/ai/train");
+    return { ok: true, message: "Saved.", qa: saved.qa };
+  } catch { return NO_DB; }
 }

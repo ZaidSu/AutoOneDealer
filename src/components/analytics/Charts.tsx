@@ -1,16 +1,23 @@
 // Simple, readable charts drawn with plain HTML so they're fast and work on any screen.
 
-export function BarList({ items, emptyText, highlightFirst = true }: { items: { label: string; value: number; note?: string }[]; emptyText: string; highlightFirst?: boolean }) {
+export function BarList({ items, emptyText, highlightFirst = true, colorFor }: {
+  items: { label: string; value: number; note?: string }[]; emptyText: string; highlightFirst?: boolean;
+  /** Gives each row its own color (lead sources); otherwise the first row is red and the rest gray. */
+  colorFor?: (label: string) => string;
+}) {
   if (items.length === 0 || items.every((i) => i.value === 0)) return <p className="text-sm text-muted">{emptyText}</p>;
   const max = Math.max(...items.map((i) => i.value), 1);
   return (
     <ul className="space-y-2.5">
       {items.map((item, index) => (
         <li key={item.label} className="grid grid-cols-[minmax(90px,150px)_minmax(0,1fr)_auto] items-center gap-3 text-[15px]">
-          <span className="truncate" title={item.label}>{item.label}</span>
+          <span className="flex min-w-0 items-center gap-2" title={item.label}>
+            {colorFor && <span aria-hidden className="size-2.5 shrink-0 rounded-full" style={{ background: colorFor(item.label) }} />}
+            <span className="truncate">{item.label}</span>
+          </span>
           <span className="h-5 overflow-hidden rounded-sm bg-paper" aria-hidden>
-            <span className={`block h-full rounded-sm ${index === 0 && highlightFirst ? "bg-signal" : "bg-graphite-3"}`}
-              style={{ width: `${Math.max(2, (item.value / max) * 100)}%` }} />
+            <span className={`block h-full rounded-sm ${colorFor ? "" : index === 0 && highlightFirst ? "bg-signal" : "bg-graphite-3"}`}
+              style={{ width: `${Math.max(2, (item.value / max) * 100)}%`, background: colorFor ? colorFor(item.label) : undefined }} />
           </span>
           <span className="text-right tabular-nums">
             <span className="font-semibold">{item.value}</span>
@@ -48,7 +55,7 @@ export function Columns({ items, emptyText }: { items: { label: string; value: n
 
 export function Panel({ title, note, children, wide }: { title: string; note: string; children: React.ReactNode; wide?: boolean }) {
   return (
-    <section className={`rounded-lg border border-line bg-white p-5 ${wide ? "lg:col-span-2" : ""}`}>
+    <section className={`rounded-xl border border-line bg-white p-5 ${wide ? "lg:col-span-2" : ""}`}>
       <h2 className="text-lg font-semibold">{title}</h2>
       <div className="mt-4">{children}</div>
       <p className="mt-4 text-xs text-muted">{note}</p>

@@ -29,6 +29,8 @@ export function parseStaffAccess(staffAccess: string | undefined, fallbackOwner:
 export const can = {
   manageIntegrations: (role: Role) => role === "owner" || role === "manager",
   useDeveloperTools: (role: Role) => role === "owner" || role === "developer",
+  // Dealership info and AI training: whoever runs the store, and whoever builds the AI.
+  editAiSettings: (role: Role) => role === "owner" || role === "manager" || role === "developer",
 };
 
 export const roleLabel: Record<Role, string> = {
