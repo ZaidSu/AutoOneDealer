@@ -63,7 +63,7 @@ export function db(): Sql | null {
   }
   if (!client) {
     // Keep a little concurrency for Dashboard/Customers without opening many fresh connections per server.
-    client = openPool(url, 3, 4);
+    client = openPool(url, 5, 4);
     trace("db", "opened page connection");
   }
   lastUsed = now;

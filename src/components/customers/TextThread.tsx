@@ -16,16 +16,20 @@ export default function TextThread({ customerKey, firstName }: { customerKey: st
   const [msg, setMsg] = useState<{ ok: boolean; text: string } | null>(null);
   const [pending, start] = useTransition();
   const bottom = useRef<HTMLDivElement>(null);
+  const loading = useRef(false);
 
   const load = useCallback(async () => {
+    if (loading.current) return; // don't stack up requests if one is still running
+    loading.current = true;
     try {
       const r = await fetch(`/api/customers/${encodeURIComponent(customerKey)}/texts`, { cache: "no-store" });
       if (!r.ok) throw new Error((await r.json().catch(() => ({}))).error ?? "Couldn't load texts");
       setData(await r.json());
       setLoadError("");
     } catch (e) { setLoadError(e instanceof Error ? e.message : "Couldn't load texts"); }
+    finally { loading.current = false; }
   }, [customerKey]);
-  // New texts show up on their own: check every 8 seconds while the page is open and visible.
+  // New texts show up on their own: check every 15 seconds while the page is open and visible.
   useEffect(() => {
     load();
     const t = setInterval(() => document.visibilityState === "visible" && load(), 8000);

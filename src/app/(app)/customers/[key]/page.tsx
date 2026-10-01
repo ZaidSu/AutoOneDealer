@@ -13,7 +13,7 @@ import Badge from "@/components/leads/Badge";
 import DbNotice from "@/components/ui/DbNotice";
 import { parseCustomerKey } from "@/lib/customers";
 import { ACTIVITY_KINDS, activitiesFor, getCustomer } from "@/lib/crm/queries";
-import { dbState, fresh } from "@/lib/db";
+import { dbState, fresh, isConnectionError } from "@/lib/db";
 import { appointmentsForCustomer, FINANCING, listReps, listSources, STATUSES } from "@/lib/db/data";
 import { dealership } from "@/lib/dealership";
 import { formatDateTime, formatMoney } from "@/lib/utils/format";
@@ -33,9 +33,27 @@ export default async function CustomerPage({ params }: { params: Promise<{ key: 
   const state = await dbState();
   if (state !== "ready") return <DbNotice state={state} what="Customer profiles" />;
 
-  const [customer, leads, activities, appointments, reps, sources, summary] = await fresh("Customer profile", () => Promise.all([
-    getCustomer(key), leadsForCustomer(key), activitiesFor(key), appointmentsForCustomer(key), listReps(), listSources(), getSummary(key).catch(() => null),
-  ]));
+  // The customer is the one thing the page can't open without. Everything else loads on its own: if one part is slow or
+  // fails, the page still opens with that part empty and a note, instead of the whole page failing.
+  const failed: string[] = [];
+  const part = <T,>(label: string, work: () => Promise<T>, fallback: T): Promise<T> => work().catch((error) => {
+    if (isConnectionError(error)) throw error; // a dropped connection: let fresh() retry everything on a new one
+    failed.push(label);
+    console.error(`[autodash:customer] ${label} failed for ${key}:`, error instanceof Error ? error.message : error);
+    return fallback;
+  });
+  const [customer, leads, activities, appointments, reps, sources, summary] = await fresh("Customer profile", () => {
+    failed.length = 0;
+    return Promise.all([
+      getCustomer(key),
+      part("lead emails", () => leadsForCustomer(key), []),
+      part("history", () => activitiesFor(key), []),
+      part("appointments", () => appointmentsForCustomer(key), []),
+      part("salespeople", () => listReps(), []),
+      part("sources", () => listSources(), []),
+      getSummary(key).catch(() => null),
+    ]);
+  }, 7000, 10000);
   if (!customer) notFound();
 
   // One timeline: lead emails, appointments and everything staff logged, newest first.
@@ -82,6 +100,11 @@ export default async function CustomerPage({ params }: { params: Promise<{ key: 
   return (
     <article className="max-w-5xl">
       <Link href="/customers" className="text-sm font-semibold text-muted hover:text-ink">All customers</Link>
+      {failed.length > 0 && (
+        <p role="status" className="mt-3 rounded-lg border border-lane/40 bg-[#fdf6e3] px-4 py-3 text-sm">
+          Some parts of this page didn&apos;t load ({failed.join(", ")}). Nothing was lost. Refresh the page to try again.
+        </p>
+      )}
       <CustomerProfile
         customer={customer}
         reps={reps.map((r) => ({ id: r.id, name: r.name }))}
