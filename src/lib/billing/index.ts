@@ -48,6 +48,12 @@ export async function saveBillingSettings(input: BillingSettings) {
   await setSetting("billing", JSON.stringify(clean));
 }
 
+/** Billing starts on its own from the month in BILLING_START (like "2026-10"), so no one has to press a button. */
+export function billingStarted(period = periodOf()): boolean {
+  const start = String(process.env.BILLING_START ?? "").trim();
+  return /^\d{4}-\d{2}$/.test(start) && period >= start;
+}
+
 /** "2026-10" for the month a moment falls in, Dallas time. */
 export const periodOf = (at: Date | number = Date.now()) => dayKey(at, dealership.timeZone).slice(0, 7);
 function previousPeriod(period: string) {
@@ -85,10 +91,13 @@ const toInvoice = (r: Record<string, unknown>): Invoice => ({
  *  bill, and anything over the included emails/texts from the month before. */
 export async function draftItems(period: string, s: BillingSettings): Promise<InvoiceItem[]> {
   const sql = await readyDb();
-  const covers = s.planParts.map((p) => p.label.split(",")[0]).join(", ");
-  const items: InvoiceItem[] = [{ label: "AutoDash monthly plan", detail: `${periodLabel(period)}. ${covers ? `Covers ${covers}. ` : ""}Includes up to ${s.includedEmails.toLocaleString()} AI emails and ${s.includedTexts.toLocaleString()} AI texts.`, cents: s.monthlyCents }];
+  const items: InvoiceItem[] = [{
+    label: `${dealership.name} monthly plan`,
+    detail: `${periodLabel(period)}. Covers software for ${dealership.name}, AI email replies, AI texting, appointment setting, hosting, database and backups. Up to ${s.includedEmails.toLocaleString()} emails and ${s.includedTexts.toLocaleString()} texts a month.`,
+    cents: s.monthlyCents,
+  }];
   const [{ n }] = sql ? await sql`select count(*)::int as n from billing_invoices where status <> 'void'` : [{ n: 0 }];
-  if (n === 0 && s.setupFeeCents > 0) items.push({ label: "One-time setup fee", detail: "Setup, Gmail connection and AI training. First bill only.", cents: s.setupFeeCents });
+  if (n === 0 && s.setupFeeCents > 0) items.push({ label: "One-time connection fee", detail: "Phone number, Gmail and AI connection and training. First bill only.", cents: s.setupFeeCents });
   const prev = previousPeriod(period);
   const used = await usageFor(prev);
   const extraEmails = Math.max(0, used.emails - s.includedEmails);
@@ -103,7 +112,7 @@ export async function draftItems(period: string, s: BillingSettings): Promise<In
 export async function ensureInvoice(period = periodOf(), { onlyIfStarted = false } = {}): Promise<Invoice | null> {
   const sql = await readyDb();
   if (!sql) return null;
-  if (onlyIfStarted) {
+  if (onlyIfStarted && !billingStarted(period)) {
     const [started] = await sql`select 1 from billing_invoices limit 1`;
     if (!started) return null;
   }
@@ -235,3 +244,73 @@ export function isOverdue(invoice: Invoice): boolean {
   return invoice.status === "open" && invoice.dueDate < dayKey(Date.now(), dealership.timeZone);
 }
 
+
+// ---- Card autopay (Stripe) ----
+
+export type CardAutopay = { customer: string; paymentMethod: string; brand: string; last4: string; since: number };
+export async function getCardAutopay(): Promise<CardAutopay | null> {
+  try { const raw = await getSetting("stripe_autopay"); return raw ? JSON.parse(raw) : null; } catch { return null; }
+}
+export async function setCardAutopay(value: CardAutopay | null) {
+  await setSetting("stripe_autopay", value ? JSON.stringify(value) : "");
+}
+
+/** After a card payment: marks the bill paid and, if they chose autopay, remembers the card for the next bills. */
+export async function completeCardCheckout(sessionId: string): Promise<"paid" | "pending"> {
+  const { getCheckout } = await import("./stripe");
+  const session = await getCheckout(sessionId);
+  const invoiceId = Number(session.metadata?.invoice_id);
+  if (session.payment_status !== "paid" || !invoiceId) return "pending";
+  await markPaid(invoiceId, session.id);
+  const pi = typeof session.payment_intent === "object" ? session.payment_intent : null;
+  const pm = pi && typeof pi.payment_method === "object" ? pi.payment_method : null;
+  if (session.metadata?.autopay === "1" && session.customer && pm?.id) {
+    await setCardAutopay({ customer: session.customer, paymentMethod: pm.id, brand: pm.card?.brand ?? "card", last4: pm.card?.last4 ?? "", since: Date.now() });
+  }
+  return "paid";
+}
+
+/** Charges the saved card for every unpaid bill that's due today or earlier (the timer runs this daily). */
+export async function chargeDueBillsByCard(): Promise<number> {
+  const sql = await readyDb();
+  const autopay = await getCardAutopay();
+  if (!sql || !autopay) return 0;
+  const { chargeSavedCard } = await import("./stripe");
+  const today = dayKey(Date.now(), dealership.timeZone);
+  let paid = 0;
+  for (const invoice of (await listInvoices()).filter((i) => i.status === "open" && i.dueDate <= today)) {
+    const [{ gc_attempts: attempts }] = await sql`select gc_attempts from billing_invoices where id = ${invoice.id}`;
+    if (attempts >= 3) continue; // stop retrying after 3 declines; the owner pays by hand or updates the card
+    try {
+      const pi = await chargeSavedCard({ customer: autopay.customer, paymentMethod: autopay.paymentMethod, cents: invoice.total, invoiceId: invoice.id, attempt: attempts,
+        description: `AutoDash ${invoice.number} (${periodLabel(invoice.period)}) autopay` });
+      if (pi.status === "succeeded") {
+        await sql`update billing_invoices set status = 'paid', paid_at = now(), payment_method = 'card', payment_note = 'Paid automatically (autopay)' where id = ${invoice.id} and status = 'open'`;
+        paid++;
+      } else {
+        await sql`update billing_invoices set gc_attempts = gc_attempts + 1, payment_note = ${`Autopay didn't go through (${pi.status}). Pay by hand below.`} where id = ${invoice.id}`;
+      }
+    } catch (error) {
+      const why = error instanceof Error ? error.message : "the card was declined";
+      await sql`update billing_invoices set gc_attempts = gc_attempts + 1, payment_note = ${`Autopay didn't go through: ${why}`.slice(0, 300)} where id = ${invoice.id}`;
+    }
+  }
+  return paid;
+}
+
+/** How a bill looks: green when nothing's needed, yellow when due within a week, red when past due. */
+export type BillTone = { tone: "green" | "yellow" | "red"; label: string; detail: string; lockOn: string | null };
+export function billTone(invoice: Invoice, autopay: boolean): BillTone {
+  const today = dayKey(Date.now(), dealership.timeZone);
+  const fmt = (d: string) => new Date(`${d}T12:00:00Z`).toLocaleDateString("en-US", { month: "short", day: "numeric", timeZone: "UTC" });
+  if (invoice.status === "paid") return { tone: "green", label: "Paid", detail: invoice.paidAt ? `Paid ${new Date(invoice.paidAt).toLocaleDateString("en-US", { month: "short", day: "numeric", timeZone: dealership.timeZone })}` : "Paid", lockOn: null };
+  if (invoice.status === "processing") return { tone: "green", label: "Processing", detail: invoice.note ?? "Payment is processing", lockOn: null };
+  const daysLeft = Math.round((Date.parse(invoice.dueDate) - Date.parse(today)) / 86400000);
+  if (daysLeft < 0) {
+    const lock = addDays(invoice.dueDate, 3);
+    return { tone: "red", label: "Past due", detail: `Was due ${fmt(invoice.dueDate)}`, lockOn: lock };
+  }
+  if (autopay && !invoice.note) return { tone: "green", label: "Autopay", detail: `Enrolled in autopay. Charged automatically on ${fmt(invoice.dueDate)}`, lockOn: null };
+  if (daysLeft <= 7) return { tone: "yellow", label: daysLeft === 0 ? "Due today" : "Due soon", detail: `Due ${fmt(invoice.dueDate)}${daysLeft ? ` (in ${daysLeft} day${daysLeft === 1 ? "" : "s"})` : ""}`, lockOn: null };
+  return { tone: "green", label: "Due", detail: `Due ${fmt(invoice.dueDate)}`, lockOn: null };
+}

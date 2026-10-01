@@ -19,7 +19,7 @@ export async function POST(req: NextRequest) {
   const invoice = await getInvoice(Number(form?.get("invoiceId")));
   if (!invoice || invoice.status !== "open") return back("error=not_open");
   try {
-    const session = await createCheckout(invoice, req.nextUrl.origin, staff.email || undefined);
+    const session = await createCheckout(invoice, req.nextUrl.origin, staff.email || undefined, form?.get("autopay") === "on");
     await setCheckoutSession(invoice.id, session.id);
     return NextResponse.redirect(session.url, 303);
   } catch (error) {

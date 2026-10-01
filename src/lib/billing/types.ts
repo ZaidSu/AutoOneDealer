@@ -25,7 +25,7 @@ export type BillingSettings = {
 
 export const DEFAULT_BILLING: BillingSettings = {
   monthlyCents: 36900,
-  setupFeeCents: 8000,
+  setupFeeCents: 9900,
   includedEmails: 1000,
   includedTexts: 1000,
   extraEmailCents: 10,
@@ -38,11 +38,11 @@ export const DEFAULT_BILLING: BillingSettings = {
   billedBy: "High Level Technologies",
   documents: [],
   planParts: [
-    { label: "AutoDash software, updates and support", detail: "Dashboard, leads, customers, pipeline, appointments, analytics, fixes and new features", cents: 14900 },
-    { label: "AI email replies", detail: "The AI reads each new lead and writes a reply for your team to approve", cents: 7900 },
-    { label: "AI texting", detail: "The AI answers customer texts in a friendly, human way, for your team to approve or send automatically", cents: 5300 },
-    { label: "Hosting", detail: "Keeping AutoDash online, fast and secure around the clock", cents: 4900 },
-    { label: "Database and backups", detail: "Storing your leads, customers and appointments safely", cents: 3900 },
+    { label: "Auto One Motors software, updates and support", detail: "The whole AutoDash system, kept up to date, with support and all your connections maintained", cents: 14900 },
+    { label: "AI email replies", detail: "The AI reads each new lead and writes a reply", cents: 6900 },
+    { label: "AI texting and call forwarding", detail: "The AI answers customer texts, and calls to the texting number ring the dealership", cents: 6900 },
+    { label: "AI training", detail: "Keeping the AI up to date with your hours, inventory questions and answers", cents: 2900 },
+    { label: "AI follow-up, hosting, database and backups", detail: "Follow-ups, keeping AutoDash online and fast, and storing your data safely, all in one", cents: 5300 },
   ],
 };
 

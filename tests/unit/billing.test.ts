@@ -2,11 +2,12 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 import { DEFAULT_BILLING, totals } from "../../src/lib/billing/types.ts";
 
-test("first bill: plan + setup fee, Texas-style tax on 80%", () => {
-  const t = totals([{ label: "Plan", cents: 36900 }, { label: "Setup", cents: 8000 }], DEFAULT_BILLING);
-  assert.equal(t.subtotal, 44900);
-  assert.equal(t.tax, 2963); // 44900 * 0.8 * 0.0825 = 2963.4
-  assert.equal(t.total, 47863);
+test("first bill: plan + $99 connection fee, Texas-style tax on 80%", () => {
+  const t = totals([{ label: "Plan", cents: 36900 }, { label: "Connection", cents: DEFAULT_BILLING.setupFeeCents }], DEFAULT_BILLING);
+  assert.equal(DEFAULT_BILLING.setupFeeCents, 9900);
+  assert.equal(t.subtotal, 46800);
+  assert.equal(t.tax, 3089); // 46800 * 0.8 * 0.0825 = 3088.8
+  assert.equal(t.total, 49889);
 });
 
 test("no tax when the rate is zero", () => {

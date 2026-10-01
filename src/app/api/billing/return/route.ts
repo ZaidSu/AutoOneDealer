@@ -1,17 +1,13 @@
-// Where Stripe sends people after paying. Confirms with Stripe directly (never trusts the address alone).
+// Where Stripe sends people after paying. Confirms with Stripe directly (never trusts the address alone), marks the
+// bill paid, and saves the card for autopay if they chose it.
 import { NextResponse, type NextRequest } from "next/server";
-import { markPaid } from "@/lib/billing";
-import { getCheckout } from "@/lib/billing/stripe";
+import { completeCardCheckout } from "@/lib/billing";
 
 export const dynamic = "force-dynamic";
 
 export async function GET(req: NextRequest) {
-  const id = req.nextUrl.searchParams.get("session_id") ?? "";
   try {
-    const session = await getCheckout(id);
-    const invoiceId = Number(session.metadata?.invoice_id);
-    if (session.payment_status === "paid" && invoiceId) {
-      await markPaid(invoiceId, session.id);
+    if ((await completeCardCheckout(req.nextUrl.searchParams.get("session_id") ?? "")) === "paid") {
       return NextResponse.redirect(new URL("/billing?paid=1", req.url), 303);
     }
   } catch (error) {

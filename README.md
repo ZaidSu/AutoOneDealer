@@ -124,8 +124,12 @@ included, past bills, and documents. The owner pays by card on Stripe's own page
 
 - Prices, limits, tax rate, due day and documents: **Billing → Prices and settings** (developer role only).
 - Billed by High Level Technologies by default (Billing → Prices and settings to change).
-- The developer creates the first bill with **Create this month's bill**; after that the timer creates each
-  month's bill on the 1st automatically.
+- Set `BILLING_START` (like `2026-10`) and bills create themselves from that month on, no developer needed.
+- Bills are green (paid, on autopay, or due later), yellow (due within 7 days) or red (past due, with a warning that
+  AutoDash will be locked 3 days after the due date).
+- **Card autopay:** the owner ticks *Pay automatically each month* when paying; Stripe saves the card and the timer
+  charges it on the due date. The restricted key needs Checkout Sessions (write), PaymentIntents (write),
+  PaymentMethods (read) and Customers (write).
 - Needs `STRIPE_SECRET_KEY`, and a Stripe webhook to `https://auto-one-dealer.vercel.app/api/stripe/webhook`
   (event `checkout.session.completed`) with its signing secret in `STRIPE_WEBHOOK_SECRET`.
 - Tax defaults (8.25% on 80%) are placeholders to confirm with an accountant.

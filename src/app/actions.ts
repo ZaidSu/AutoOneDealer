@@ -473,3 +473,12 @@ export async function retryBankPaymentAction(invoiceId: number): Promise<ActionR
   revalidatePath("/billing");
   return r.ok ? { ok: true, message: "Bank payment started." } : fail(r.error);
 }
+
+export async function turnOffCardAutopayAction(): Promise<ActionResult> {
+  const staff = await requireStaff();
+  if (!staff || !can.viewBilling(staff.role)) return fail("Only the owner can change how bills are paid.");
+  const { setCardAutopay } = await import("@/lib/billing");
+  await setCardAutopay(null);
+  revalidatePath("/billing");
+  return { ok: true, message: "Autopay is off. Pay each bill with the Pay button." };
+}

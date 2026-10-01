@@ -5,7 +5,7 @@ import { timingSafeEqual } from "node:crypto";
 import { NextResponse, type NextRequest } from "next/server";
 import { draftNewReplies } from "@/lib/ai/replies";
 import { setSetting } from "@/lib/db/data";
-import { collectOpenBills, ensureInvoice } from "@/lib/billing";
+import { chargeDueBillsByCard, collectOpenBills, ensureInvoice } from "@/lib/billing";
 import { withGmail } from "@/lib/gmail";
 import { syncLeads } from "@/lib/leads/sync";
 
@@ -41,6 +41,9 @@ export async function GET(req: NextRequest) {
     const bill = await ensureInvoice(undefined, { onlyIfStarted: true });
     // With a bank account connected, new bills are scheduled for collection on their due date.
     const collecting = bill ? await collectOpenBills() : 0;
+    // With card autopay on, bills are charged on their due date.
+    const charged = bill ? await chargeDueBillsByCard() : 0;
+    if (charged) report.autopay = `charged ${charged}`;
     report.billing = bill ? `${bill.number} ${bill.status}${collecting ? ", bank collection started" : ""}` : "not started (the developer creates the first bill)";
   } catch (error) {
     report.billing = `failed: ${error instanceof Error ? error.message : "unknown"}`;

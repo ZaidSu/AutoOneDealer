@@ -7,23 +7,31 @@ export const stripeConfigured = () => Boolean(process.env.STRIPE_SECRET_KEY);
 // Secret keys start with sk_, restricted keys (limited permissions) with rk_; either kind can be test or live.
 export const stripeTestMode = () => /^(sk|rk)_test_/.test(String(process.env.STRIPE_SECRET_KEY ?? ""));
 
-async function stripe<T>(path: string, form?: Record<string, string>): Promise<T> {
+async function stripe<T>(path: string, form?: Record<string, string>, idempotencyKey?: string): Promise<T> {
   const key = process.env.STRIPE_SECRET_KEY;
   if (!key) throw new Error("Stripe isn't set up yet (STRIPE_SECRET_KEY).");
-  const response = await fetch(`https://api.stripe.com/v1/${path}`, {
+  const response = await fetch(`${process.env.STRIPE_BASE_URL || "https://api.stripe.com"}/v1/${path}`, {
     method: form ? "POST" : "GET",
     cache: "no-store",
-    headers: { Authorization: `Bearer ${key}`, ...(form ? { "Content-Type": "application/x-www-form-urlencoded" } : {}) },
+    headers: {
+      Authorization: `Bearer ${key}`,
+      ...(form ? { "Content-Type": "application/x-www-form-urlencoded" } : {}),
+      ...(idempotencyKey ? { "Idempotency-Key": idempotencyKey } : {}),
+    },
     body: form ? new URLSearchParams(form).toString() : undefined,
     signal: AbortSignal.timeout(20_000),
   });
   const data = await response.json().catch(() => ({}));
-  if (!response.ok) throw new Error(data?.error?.message ?? `Stripe error ${response.status}`);
+  if (!response.ok) {
+    const error = new Error(data?.error?.message ?? `Stripe error ${response.status}`) as Error & { paymentIntentStatus?: string };
+    error.paymentIntentStatus = data?.error?.payment_intent?.status;
+    throw error;
+  }
   return data as T;
 }
 
 /** A Stripe payment page for one bill. Each line of the bill (and the tax) shows on Stripe's page too. */
-export async function createCheckout(invoice: Invoice, baseUrl: string, customerEmail?: string): Promise<{ id: string; url: string }> {
+export async function createCheckout(invoice: Invoice, baseUrl: string, customerEmail?: string, autopay = false): Promise<{ id: string; url: string }> {
   const form: Record<string, string> = {
     mode: "payment",
     success_url: `${baseUrl}/api/billing/return?session_id={CHECKOUT_SESSION_ID}`,
@@ -34,6 +42,13 @@ export async function createCheckout(invoice: Invoice, baseUrl: string, customer
     "payment_intent_data[metadata][invoice_id]": String(invoice.id),
   };
   if (customerEmail) form.customer_email = customerEmail;
+  if (autopay) {
+    // Save the card (on Stripe, never in AutoDash) so the next bills can be paid automatically on their due date.
+    form.customer_creation = "always";
+    form["payment_intent_data[setup_future_usage]"] = "off_session";
+    form["metadata[autopay]"] = "1";
+    form["custom_text[submit][message]"] = "Your card will be saved and charged automatically for each monthly AutoDash bill on its due date. You can turn autopay off anytime on the Billing page.";
+  }
   const lines = [...invoice.items.map((i) => ({ name: i.label, cents: i.cents })), ...(invoice.tax ? [{ name: "Sales tax", cents: invoice.tax }] : [])];
   lines.forEach((line, n) => {
     form[`line_items[${n}][quantity]`] = "1";
@@ -45,8 +60,22 @@ export async function createCheckout(invoice: Invoice, baseUrl: string, customer
   return { id: session.id, url: session.url };
 }
 
+export type CheckoutSession = {
+  id: string; payment_status: string; amount_total: number; customer: string | null;
+  metadata?: { invoice_id?: string; autopay?: string };
+  payment_intent?: { id: string; payment_method?: { id: string; card?: { brand: string; last4: string } } | string | null } | string | null;
+};
 export async function getCheckout(id: string) {
-  return stripe<{ id: string; payment_status: string; amount_total: number; metadata?: { invoice_id?: string } }>(`checkout/sessions/${encodeURIComponent(id)}`);
+  return stripe<CheckoutSession>(`checkout/sessions/${encodeURIComponent(id)}?expand[]=payment_intent.payment_method`);
+}
+
+/** Charges a saved card for one bill without the customer being there (autopay). */
+export async function chargeSavedCard(opts: { customer: string; paymentMethod: string; cents: number; invoiceId: number; description: string; attempt: number }) {
+  return stripe<{ id: string; status: string }>("payment_intents", {
+    amount: String(opts.cents), currency: "usd", customer: opts.customer, payment_method: opts.paymentMethod,
+    off_session: "true", confirm: "true", description: opts.description.slice(0, 200),
+    "metadata[invoice_id]": String(opts.invoiceId), "metadata[autopay]": "1",
+  }, `autodash-card-${opts.invoiceId}-${opts.attempt}`);
 }
 
 /** Checks the "Stripe-Signature" header, so only Stripe can mark a bill paid. */

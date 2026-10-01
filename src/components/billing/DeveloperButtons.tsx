@@ -1,6 +1,6 @@
 "use client";
 import { useState, useTransition } from "react";
-import { createInvoiceNowAction, disconnectBankAction, retryBankPaymentAction, voidInvoiceAction } from "@/app/actions";
+import { createInvoiceNowAction, disconnectBankAction, retryBankPaymentAction, turnOffCardAutopayAction, voidInvoiceAction } from "@/app/actions";
 
 export function CreateBillButton() {
   const [msg, setMsg] = useState("");
@@ -51,6 +51,20 @@ export function RetryBankButton({ id }: { id: number }) {
     <span className="flex flex-wrap items-center gap-3">
       <button type="button" className="btn btn-red" disabled={pending} onClick={() => start(async () => { const r = await retryBankPaymentAction(id); setMsg(r.ok ? r.message ?? "" : r.error); })}>
         {pending ? "Starting…" : "Pay from connected bank"}
+      </button>
+      {msg && <span role="status" className="text-sm text-muted">{msg}</span>}
+    </span>
+  );
+}
+
+export function TurnOffAutopayButton() {
+  const [msg, setMsg] = useState("");
+  const [pending, start] = useTransition();
+  return (
+    <span className="flex flex-wrap items-center gap-3">
+      <button type="button" className="btn btn-sm" disabled={pending}
+        onClick={() => { if (window.confirm("Turn off autopay? You'll need to pay each bill yourself.")) start(async () => { const r = await turnOffCardAutopayAction(); setMsg(r.ok ? r.message ?? "" : r.error); }); }}>
+        Turn off autopay
       </button>
       {msg && <span role="status" className="text-sm text-muted">{msg}</span>}
     </span>
