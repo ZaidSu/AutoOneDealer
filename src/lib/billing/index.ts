@@ -78,6 +78,7 @@ const toInvoice = (r: Record<string, unknown>): Invoice => ({
   subtotal: r.subtotal as number, tax: r.tax as number, total: r.total as number, status: r.status as Invoice["status"],
   dueDate: r.due_date instanceof Date ? r.due_date.toISOString().slice(0, 10) : String(r.due_date).slice(0, 10),
   paidAt: r.paid_at ? new Date(r.paid_at as string).getTime() : null, createdAt: new Date(r.created_at as string).getTime(),
+  method: (r.payment_method as string) ?? null, note: (r.payment_note as string) ?? null,
 });
 
 /** What a month's bill would be: the plan (billed at the start of the month), the setup fee on the very first
@@ -145,9 +146,81 @@ export async function setCheckoutSession(id: number, sessionId: string) {
 export async function markPaid(id: number, sessionId: string): Promise<boolean> {
   const sql = await readyDb();
   if (!sql) return false;
-  const rows = await sql`update billing_invoices set status = 'paid', paid_at = now(), stripe_session_id = ${sessionId}
+  const rows = await sql`update billing_invoices set status = 'paid', paid_at = now(), stripe_session_id = ${sessionId}, payment_method = 'card', payment_note = null
     where id = ${id} and status = 'open' returning id`;
   return rows.length > 0;
+}
+
+// ---- Bank payments (GoCardless) ----
+
+export async function getBankMandate(): Promise<string | null> {
+  return (await getSetting("gc_mandate").catch(() => null)) || null;
+}
+export async function setBankMandate(id: string | null) {
+  await setSetting("gc_mandate", id ?? "");
+}
+
+const shortDate = (d: string) => new Date(`${d}T12:00:00Z`).toLocaleDateString("en-US", { month: "short", day: "numeric", timeZone: "UTC" });
+
+/** Starts collecting one open bill from the connected bank account, on its due date (or the earliest date the bank
+ *  allows, if that's later). The bill shows "Processing" until the bank confirms the money arrived. */
+export async function collectFromBank(invoice: Invoice): Promise<{ ok: true } | { ok: false; error: string }> {
+  const sql = await readyDb();
+  const mandate = await getBankMandate();
+  if (!sql || !mandate) return { ok: false, error: "No bank account is connected." };
+  if (invoice.status !== "open") return { ok: false, error: "This bill isn't waiting for payment." };
+  const { collectPayment, getMandate } = await import("./gocardless");
+  try {
+    const m = await getMandate(mandate);
+    if (["cancelled", "failed", "expired", "consumed", "blocked"].includes(m.status)) {
+      await setBankMandate(null);
+      return { ok: false, error: "The bank connection was canceled. Connect the bank account again." };
+    }
+    const earliest = m.next_possible_charge_date;
+    const chargeDate = earliest && invoice.dueDate < earliest ? null : invoice.dueDate;
+    const [{ gc_attempts: attempts }] = await sql`select gc_attempts from billing_invoices where id = ${invoice.id}`;
+    const payment = await collectPayment({
+      mandateId: mandate, cents: invoice.total, invoiceId: invoice.id, chargeDate,
+      description: `AutoDash ${invoice.number} (${periodLabel(invoice.period)})${attempts ? ` retry ${attempts}` : ""}`,
+      attempt: attempts,
+    });
+    await sql`update billing_invoices set status = 'processing', gc_payment_id = ${payment.id}, payment_method = 'bank',
+      payment_note = ${`Collecting from the bank on ${shortDate(payment.chargeDate)}`} where id = ${invoice.id} and status = 'open'`;
+    return { ok: true };
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "GoCardless couldn't start the payment.";
+    await sql`update billing_invoices set payment_note = ${`Bank payment couldn't start: ${message}`.slice(0, 300)} where id = ${invoice.id}`;
+    return { ok: false, error: message };
+  }
+}
+
+/** Collects every open bill once a bank account is connected (called after setup and each day by the timer). */
+export async function collectOpenBills(): Promise<number> {
+  if (!(await getBankMandate())) return 0;
+  let started = 0;
+  for (const invoice of (await listInvoices()).filter((i) => i.status === "open").reverse()) {
+    if ((await collectFromBank(invoice)).ok) started++;
+  }
+  return started;
+}
+
+/** Updates from GoCardless: payments confirmed or failed, bank connections canceled. */
+export async function handleBankEvent(event: { resource_type: string; action: string; links?: Record<string, string>; details?: { description?: string; cause?: string } }) {
+  const sql = await readyDb();
+  if (!sql) return;
+  if (event.resource_type === "payments" && event.links?.payment) {
+    const id = event.links.payment;
+    if (event.action === "confirmed" || event.action === "paid_out") {
+      await sql`update billing_invoices set status = 'paid', paid_at = coalesce(paid_at, now()), payment_note = null where gc_payment_id = ${id} and status in ('processing', 'open')`;
+    } else if (["failed", "cancelled", "charged_back", "late_failure_settled"].includes(event.action)) {
+      const why = event.details?.description ?? event.action.replace(/_/g, " ");
+      await sql`update billing_invoices set status = 'open', paid_at = null, gc_payment_id = null, gc_attempts = gc_attempts + 1,
+        payment_note = ${`Bank payment didn't go through: ${why}`.slice(0, 300)} where gc_payment_id = ${id}`;
+    }
+  }
+  if (event.resource_type === "mandates" && event.links?.mandate && ["cancelled", "failed", "expired", "blocked"].includes(event.action)) {
+    if ((await getBankMandate()) === event.links.mandate) await setBankMandate(null);
+  }
 }
 
 /** Throws away an unpaid bill so it's recreated with the current prices (developer only). */

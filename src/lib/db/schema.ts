@@ -119,6 +119,12 @@ create table if not exists sms_optouts (
   opted_out_at timestamptz not null default now()
 );
 alter table sms_optouts enable row level security;
+-- v9: bank payments through GoCardless (ACH). A bill being collected is 'processing' until the bank confirms it.
+alter table billing_invoices add column if not exists gc_payment_id text;
+alter table billing_invoices add column if not exists payment_method text;
+alter table billing_invoices add column if not exists payment_note text;
+alter table billing_invoices add column if not exists gc_attempts integer not null default 0;
+create unique index if not exists billing_invoices_gc_payment on billing_invoices (gc_payment_id) where gc_payment_id is not null;
 `;
 
 export async function setupDatabase(): Promise<void> {

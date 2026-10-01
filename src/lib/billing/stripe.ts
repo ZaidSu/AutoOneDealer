@@ -4,7 +4,8 @@ import { createHmac, timingSafeEqual } from "node:crypto";
 import { money, periodLabel, type Invoice } from "./types.ts";
 
 export const stripeConfigured = () => Boolean(process.env.STRIPE_SECRET_KEY);
-export const stripeTestMode = () => String(process.env.STRIPE_SECRET_KEY ?? "").startsWith("sk_test_");
+// Secret keys start with sk_, restricted keys (limited permissions) with rk_; either kind can be test or live.
+export const stripeTestMode = () => /^(sk|rk)_test_/.test(String(process.env.STRIPE_SECRET_KEY ?? ""));
 
 async function stripe<T>(path: string, form?: Record<string, string>): Promise<T> {
   const key = process.env.STRIPE_SECRET_KEY;

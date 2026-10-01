@@ -1,11 +1,12 @@
 import type { Metadata } from "next";
 import BillingSettingsForm from "@/components/billing/BillingSettingsForm";
-import { CreateBillButton, VoidBillButton } from "@/components/billing/DeveloperButtons";
+import { CreateBillButton, DisconnectBankButton, RetryBankButton, VoidBillButton } from "@/components/billing/DeveloperButtons";
 import DbNotice from "@/components/ui/DbNotice";
 import PageHeader from "@/components/ui/PageHeader";
 import { can } from "@/lib/auth/access";
 import { requirePageStaff } from "@/lib/auth/guard";
-import { draftItems, getBillingSettings, isOverdue, listInvoices, periodOf, usageFor } from "@/lib/billing";
+import { draftItems, getBankMandate, getBillingSettings, isOverdue, listInvoices, periodOf, usageFor } from "@/lib/billing";
+import { gocardlessConfigured, gocardlessSandbox } from "@/lib/billing/gocardless";
 import { stripeConfigured, stripeTestMode } from "@/lib/billing/stripe";
 import { money, periodLabel, totals, type Invoice } from "@/lib/billing/types";
 import { dbState, fresh } from "@/lib/db";
@@ -24,14 +25,17 @@ export default async function BillingPage({ searchParams }: { searchParams: Prom
   if (state !== "ready") return <>{header}<DbNotice state={state} what="Billing" /></>;
 
   const period = periodOf();
-  const [settings, invoices, usage] = await fresh("Billing", () => Promise.all([getBillingSettings(), listInvoices(), usageFor(period)]));
+  const [settings, invoices, usage, mandate] = await fresh("Billing", () => Promise.all([getBillingSettings(), listInvoices(), usageFor(period), getBankMandate().catch(() => null)]));
+  const bankReady = gocardlessConfigured();
   const current = invoices.find((i) => i.period === period) ?? null;
   const unpaid = invoices.filter((i) => i.status === "open");
   const manage = can.manageBilling(staff.role);
   // Before this month's bill exists, show what it will be.
   const previewItems = current ? null : await fresh("Bill preview", () => draftItems(period, settings));
   const preview = previewItems ? { items: previewItems, ...totals(previewItems, settings) } : null;
-  const notice = params.paid ? { ok: true, text: "Payment received. Thank you!" }
+  const notice = params.bank === "connected" ? { ok: true, text: "Bank account connected. Bills will be paid from it automatically on their due date." }
+    : params.error === "bank" || params.error === "bank_setup" ? { ok: false, text: "The bank connection didn't finish. Nothing was charged. Try again in a minute." }
+    : params.paid ? { ok: true, text: "Payment received. Thank you!" }
     : params.pending ? { ok: true, text: "Payment is processing. It will show as paid in a minute." }
     : params.canceled ? { ok: false, text: "Payment canceled. Nothing was charged." }
     : params.error ? { ok: false, text: params.error === "stripe" ? "Couldn't open the payment page. Try again in a minute." : "That bill can't be paid right now." } : null;
@@ -40,7 +44,7 @@ export default async function BillingPage({ searchParams }: { searchParams: Prom
     <div className="max-w-5xl">
       {header}
       {notice && <p role={notice.ok ? "status" : "alert"} className={`mb-6 rounded-xl px-4 py-3 text-[15px] ${notice.ok ? "bg-go-soft text-go" : "border border-signal/25 bg-warn-soft"}`}>{notice.text}</p>}
-      {stripeTestMode() && <p className="mb-6 rounded-xl border border-lane/40 bg-[#fdf6e3] px-4 py-3 text-sm"><b>Test mode.</b> Payments use Stripe&apos;s test cards; no real money moves.</p>}
+      {(stripeTestMode() || gocardlessSandbox()) && <p className="mb-6 rounded-xl border border-lane/40 bg-[#fdf6e3] px-4 py-3 text-sm"><b>Test mode.</b> Payments use test cards and test bank accounts; no real money moves.</p>}
 
       <div className="grid gap-6 lg:grid-cols-[minmax(0,3fr)_minmax(0,2fr)] lg:items-start">
         {/* This month's bill */}
@@ -55,12 +59,27 @@ export default async function BillingPage({ searchParams }: { searchParams: Prom
           <Breakdown items={(current ?? preview)!.items} subtotal={(current ?? preview)!.subtotal} tax={(current ?? preview)!.tax} total={(current ?? preview)!.total}
             taxNote={`Sales tax: ${settings.taxRatePercent}% on ${settings.taxablePercent}% of the bill`} />
           <div className="flex flex-wrap items-center gap-3 border-t border-line p-5">
-            {current?.status === "open" && (stripeConfigured() ? (
-              <form action="/api/billing/checkout" method="post">
-                <input type="hidden" name="invoiceId" value={current.id} />
-                <button type="submit" className="btn btn-red h-11 px-6 text-base">Pay {money(current.total)} with card</button>
-              </form>
-            ) : <p className="text-sm text-muted">Online payment isn&apos;t set up yet.</p>)}
+            {current?.status === "processing" && <p className="text-[15px]"><span className="font-semibold">Paying from your bank account.</span> <span className="text-muted">{current.note ?? "It shows as paid once the bank confirms, usually within a few business days."}</span></p>}
+            {current?.status === "open" && current.note && <p className="w-full text-sm text-signal">{current.note}</p>}
+            {current?.status === "open" && (
+              mandate ? <RetryBankButton id={current.id} />
+              : bankReady || stripeConfigured() ? (
+                <div className="flex flex-wrap items-center gap-3">
+                  {bankReady && (
+                    <form action="/api/billing/gocardless/setup" method="post">
+                      <button type="submit" className="btn btn-red h-11 px-6 text-base">Pay {money(current.total)} by bank</button>
+                    </form>
+                  )}
+                  {stripeConfigured() && (
+                    <form action="/api/billing/checkout" method="post">
+                      <input type="hidden" name="invoiceId" value={current.id} />
+                      <button type="submit" className={`btn h-11 px-6 text-base ${bankReady ? "" : "btn-red"}`}>{bankReady ? "Pay with card instead" : `Pay ${money(current.total)} with card`}</button>
+                    </form>
+                  )}
+                  {bankReady && <p className="w-full text-sm text-muted">Paying by bank connects your account once; after that each month&apos;s bill is paid automatically on the {ordinal(settings.dueDay)}.</p>}
+                </div>
+              ) : <p className="text-sm text-muted">Online payment isn&apos;t set up yet.</p>
+            )}
             {current?.status === "paid" && <p className="text-go">Paid {current.paidAt ? date(current.paidAt) : ""}. Thank you!</p>}
             {!current && manage && <CreateBillButton />}
             {!current && !manage && <p className="text-sm text-muted">Your bill for {periodLabel(period)} will appear here.</p>}
@@ -88,6 +107,20 @@ export default async function BillingPage({ searchParams }: { searchParams: Prom
               </>
             )}
           </section>
+
+          {bankReady && (
+            <section aria-labelledby="paying" className="panel p-5">
+              <h2 id="paying" className="text-[17px] font-semibold">How you pay</h2>
+              {mandate ? (
+                <>
+                  <p className="mt-2 flex items-center gap-2 text-[15px]"><span aria-hidden className="size-2.5 rounded-full bg-go" />Bank account connected (ACH). Bills are paid automatically on the {ordinal(settings.dueDay)}.</p>
+                  <div className="mt-3"><DisconnectBankButton /></div>
+                </>
+              ) : (
+                <p className="mt-2 text-[15px] text-muted">No bank account connected yet. Pay a bill by bank once and the next ones are paid automatically.</p>
+              )}
+            </section>
+          )}
 
           <section aria-labelledby="usage" className="panel p-5">
             <h2 id="usage" className="text-[17px] font-semibold">Used this month</h2>
@@ -119,10 +152,11 @@ export default async function BillingPage({ searchParams }: { searchParams: Prom
                     <td className="px-3 py-3 tabular-nums">{money(i.total)}</td>
                     <td className="px-3 py-3"><StatusChip invoice={i} /></td>
                     <td className="px-5 py-3 text-right">
-                      {i.status === "open" && stripeConfigured() && (
+                      {i.status === "processing" && <span className="text-sm text-muted">{i.note ?? "Paying from bank"}</span>}
+                      {i.status === "open" && !mandate && stripeConfigured() && (
                         <form action="/api/billing/checkout" method="post"><input type="hidden" name="invoiceId" value={i.id} /><button className="btn btn-sm">Pay</button></form>
                       )}
-                      {i.status === "paid" && <span className="text-sm text-muted">Paid {i.paidAt ? date(i.paidAt) : ""}</span>}
+                      {i.status === "paid" && <span className="text-sm text-muted">Paid {i.paidAt ? date(i.paidAt) : ""}{i.method === "bank" ? " by bank" : i.method === "card" ? " by card" : ""}</span>}
                     </td>
                   </tr>
                 ))}
@@ -197,6 +231,6 @@ function Usage({ label, used, included, range, extra, note }: { label: string; u
 
 function StatusChip({ invoice }: { invoice: Invoice }) {
   const overdue = isOverdue(invoice);
-  const [label, cls] = invoice.status === "paid" ? ["Paid", "bg-go-soft text-go"] : overdue ? ["Overdue", "bg-signal text-white"] : ["Due", "bg-warn-soft text-signal"];
+  const [label, cls] = invoice.status === "paid" ? ["Paid", "bg-go-soft text-go"] : invoice.status === "processing" ? ["Processing", "bg-[#e7f0ff] text-[#1c56c4]"] : overdue ? ["Overdue", "bg-signal text-white"] : ["Due", "bg-warn-soft text-signal"];
   return <span className={`rounded-full px-2.5 py-0.5 text-xs font-semibold ${cls}`}>{label}</span>;
 }

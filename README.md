@@ -129,6 +129,11 @@ included, past bills, and documents. The owner pays by card on Stripe's own page
 - Needs `STRIPE_SECRET_KEY`, and a Stripe webhook to `https://auto-one-dealer.vercel.app/api/stripe/webhook`
   (event `checkout.session.completed`) with its signing secret in `STRIPE_WEBHOOK_SECRET`.
 - Tax defaults (8.25% on 80%) are placeholders to confirm with an accountant.
+- **Pay by bank (GoCardless, ACH):** the owner connects the bank once ("Pay by bank"); then each bill is collected
+  automatically on its due date (shows "Processing" until the bank confirms, usually a few business days). Failed
+  payments go back to "Due" with the reason and a retry button. Needs `GOCARDLESS_ACCESS_TOKEN` and a GoCardless
+  webhook to `/api/billing/gocardless/webhook` with its secret in `GOCARDLESS_WEBHOOK_SECRET`. Card (Stripe) stays
+  available as a backup if its keys are set.
 
 ## Features
 

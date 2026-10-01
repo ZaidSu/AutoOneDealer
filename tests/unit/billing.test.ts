@@ -31,3 +31,13 @@ test("the plan's parts add up to $369 and bills are due on the 9th", async () =>
   assert.equal(DEFAULT_BILLING.monthlyCents, 36900);
   assert.equal(DEFAULT_BILLING.dueDay, 9);
 });
+
+test("GoCardless webhook signatures: only the right secret and untouched body pass", async () => {
+  const { validGoCardlessSignature } = await import("../../src/lib/billing/gocardless.ts");
+  const body = '{"events":[{"resource_type":"payments","action":"confirmed"}]}';
+  const sig = createHmac("sha256", "gc_secret").update(body).digest("hex");
+  assert.equal(validGoCardlessSignature(body, sig, "gc_secret"), true);
+  assert.equal(validGoCardlessSignature(body + " ", sig, "gc_secret"), false);
+  assert.equal(validGoCardlessSignature(body, sig, "other"), false);
+  assert.equal(validGoCardlessSignature(body, null, "gc_secret"), false);
+});

@@ -217,7 +217,7 @@ export async function dbState(): Promise<DbState> {
   }
 }
 
-export const SCHEMA_VERSION = "8";
+export const SCHEMA_VERSION = "9";
 let setupPromise: Promise<void> | null = null;
 function setupOnce(): Promise<void> {
   setupPromise ??= import("./schema")

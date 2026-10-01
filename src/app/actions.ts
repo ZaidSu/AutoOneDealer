@@ -349,8 +349,10 @@ export async function createInvoiceNowAction(): Promise<ActionResult> {
   const { ensureInvoice } = await import("@/lib/billing");
   try {
     const bill = await ensureInvoice();
+    const { collectOpenBills } = await import("@/lib/billing");
+    const collecting = bill ? await collectOpenBills() : 0;
     revalidatePath("/billing");
-    return bill ? { ok: true, message: `Bill ${bill.number} is ready.` } : NO_DB;
+    return bill ? { ok: true, message: `Bill ${bill.number} is ready.${collecting ? " It will be collected from the connected bank account." : ""}` } : NO_DB;
   } catch { return NO_DB; }
 }
 
@@ -446,4 +448,28 @@ export async function setAutoTextAction(on: boolean): Promise<ActionResult> {
   try { await setAutoText(Boolean(on)); } catch { return NO_DB; }
   revalidatePath("/ai/texts");
   return { ok: true, message: on ? "Automatic texting is on." : "Automatic texting is off. The AI writes drafts; your team clicks Send." };
+}
+
+export async function disconnectBankAction(): Promise<ActionResult> {
+  const staff = await requireStaff();
+  if (!staff || !can.viewBilling(staff.role)) return fail("Only the owner can change how bills are paid.");
+  const { getBankMandate, setBankMandate } = await import("@/lib/billing");
+  const { cancelMandate } = await import("@/lib/billing/gocardless");
+  const mandate = await getBankMandate();
+  if (!mandate) return fail("No bank account is connected.");
+  try { await cancelMandate(mandate); } catch { /* already canceled at GoCardless */ }
+  await setBankMandate(null);
+  revalidatePath("/billing");
+  return { ok: true, message: "Bank account disconnected. Future bills won't be collected automatically." };
+}
+
+export async function retryBankPaymentAction(invoiceId: number): Promise<ActionResult> {
+  const staff = await requireStaff();
+  if (!staff || !can.viewBilling(staff.role)) return fail("Only the owner can pay bills.");
+  const { collectFromBank, getInvoice } = await import("@/lib/billing");
+  const invoice = await getInvoice(Number(invoiceId));
+  if (!invoice) return fail("Bill not found.");
+  const r = await collectFromBank(invoice);
+  revalidatePath("/billing");
+  return r.ok ? { ok: true, message: "Bank payment started." } : fail(r.error);
 }
