@@ -48,9 +48,19 @@ export async function saveBillingSettings(input: BillingSettings) {
   await setSetting("billing", JSON.stringify(clean));
 }
 
+/** Why there's no bill yet, in plain words (shown on the Billing page instead of failing quietly). */
+export function billingStartProblem(period = periodOf()): string | null {
+  const raw = process.env.BILLING_START;
+  if (raw === undefined || raw === "") return "BILLING_START isn't set in Vercel (or Vercel hasn't redeployed since it was added).";
+  const start = raw.trim().replace(/^["']|["']$/g, "");
+  if (!/^\d{4}-\d{2}$/.test(start)) return `BILLING_START is "${raw}", but it should look like 2026-10 (year, dash, two-digit month, no quotes or spaces).`;
+  if (period < start) return `Billing starts in ${start}; this month is ${period}.`;
+  return null;
+}
+
 /** Billing starts on its own from the month in BILLING_START (like "2026-10"), so no one has to press a button. */
 export function billingStarted(period = periodOf()): boolean {
-  const start = String(process.env.BILLING_START ?? "").trim();
+  const start = String(process.env.BILLING_START ?? "").trim().replace(/^["']|["']$/g, "");
   return /^\d{4}-\d{2}$/.test(start) && period >= start;
 }
 

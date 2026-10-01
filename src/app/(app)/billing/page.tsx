@@ -6,7 +6,7 @@ import PageHeader from "@/components/ui/PageHeader";
 import { can } from "@/lib/auth/access";
 import { requirePageStaff } from "@/lib/auth/guard";
 import {
-  billingStarted, billTone, draftItems, ensureInvoice, getBankMandate, getBillingSettings, getCardAutopay, listInvoices, periodOf, usageFor,
+  billingStarted, billingStartProblem, billTone, draftItems, ensureInvoice, getBankMandate, getBillingSettings, getCardAutopay, listInvoices, periodOf, usageFor,
   type BillTone,
 } from "@/lib/billing";
 import { gocardlessConfigured, gocardlessSandbox } from "@/lib/billing/gocardless";
@@ -36,7 +36,14 @@ export default async function BillingPage({ searchParams }: { searchParams: Prom
 
   const period = periodOf();
   // Once billing has started, this month's bill exists as soon as anyone opens this page.
-  if (billingStarted(period)) await fresh("Bill", () => ensureInvoice(period)).catch(() => null);
+  let createError: string | null = null;
+  if (billingStarted(period)) {
+    await fresh("Bill", () => ensureInvoice(period)).catch((e) => {
+      createError = e instanceof Error ? e.message : String(e);
+      console.error("[autodash:billing] couldn't create this month's bill:", createError);
+    });
+  }
+  const whyNoBill = createError ? `Couldn't create this month's bill: ${createError}` : billingStartProblem(period);
   const [settings, invoices, usage, mandate, card] = await fresh("Billing", () => Promise.all([
     getBillingSettings(), listInvoices(), usageFor(period), getBankMandate().catch(() => null), getCardAutopay(),
   ]));
@@ -87,6 +94,7 @@ export default async function BillingPage({ searchParams }: { searchParams: Prom
           <Breakdown items={shown.items} subtotal={shown.subtotal} tax={shown.tax} total={shown.total} taxNote={`Sales tax (${settings.taxRatePercent}% on ${settings.taxablePercent}% of the bill)`} />
           <div className="border-t border-line p-5">
             <PayArea invoice={current} manage={manage} autopay={autopay} hasMandate={Boolean(mandate)} dueDay={settings.dueDay} />
+            {!current && whyNoBill && <p className="mt-2 rounded-lg bg-paper px-3 py-2 text-sm text-muted"><b>Why there&apos;s no bill yet:</b> {whyNoBill}</p>}
           </div>
         </section>
 
