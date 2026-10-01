@@ -74,3 +74,15 @@ export function totals(items: InvoiceItem[], s: Pick<BillingSettings, "taxRatePe
   const tax = Math.round(subtotal * (s.taxablePercent / 100) * (s.taxRatePercent / 100));
   return { subtotal, tax, total: subtotal + tax };
 }
+
+/** An unpaid bill, brought in line with the current plan: the monthly-plan line gets today's price and the tax is
+ *  recalculated. Returns null if nothing changes. Extra-usage lines and the connection fee are left alone. */
+export function repricedBill(
+  bill: { items: InvoiceItem[]; subtotal: number; tax: number; total: number },
+  planLabel: string,
+  s: Pick<BillingSettings, "monthlyCents" | "taxRatePercent" | "taxablePercent">,
+): { items: InvoiceItem[]; subtotal: number; tax: number; total: number } | null {
+  const items = bill.items.map((i) => (i.label === planLabel ? { ...i, cents: s.monthlyCents } : i));
+  const t = totals(items, s);
+  return t.subtotal === bill.subtotal && t.tax === bill.tax && t.total === bill.total ? null : { items, ...t };
+}

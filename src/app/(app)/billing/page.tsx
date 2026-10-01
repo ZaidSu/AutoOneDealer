@@ -95,7 +95,7 @@ export default async function BillingPage({ searchParams }: { searchParams: Prom
             {tone && <span className={`rounded-full px-3 py-1 text-sm font-semibold ${TONE[tone.tone].chip}`}>{tone.label}</span>}
           </div>
           {tone && <StatusBox tone={tone} />}
-          <Breakdown items={shown.items} subtotal={shown.subtotal} tax={shown.tax} total={shown.total} taxNote={settings.taxRatePercent > 0 ? `Sales tax (${settings.taxRatePercent}% on ${settings.taxablePercent}% of the bill)` : "Sales tax (exempt)"} />
+          <Breakdown items={shown.items} subtotal={shown.subtotal} tax={shown.tax} total={shown.total} taxNote={shown.tax === 0 ? "Sales tax (exempt)" : settings.taxRatePercent > 0 ? `Sales tax (${settings.taxRatePercent}% on ${settings.taxablePercent}% of the bill)` : "Sales tax"} />
           <div className="border-t border-line p-5">
             <PayArea invoice={current} manage={manage} autopay={autopay} hasMandate={Boolean(mandate)} dueDay={settings.dueDay} />
             {!current && whyNoBill && <p className="mt-2 rounded-lg bg-paper px-3 py-2 text-sm text-muted"><b>Why there&apos;s no bill yet:</b> {whyNoBill}</p>}

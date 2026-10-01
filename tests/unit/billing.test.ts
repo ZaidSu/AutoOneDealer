@@ -48,3 +48,14 @@ test("the standard plan is $379 a month, has no sales tax, and the plan parts ad
   assert.equal(partsTotal(DEFAULT_BILLING.planParts), 37900);
   assert.deepEqual(totals([{ label: "Plan", cents: 37900 }, { label: "Connection", cents: 9900 }], DEFAULT_BILLING), { subtotal: 47800, tax: 0, total: 47800 });
 });
+
+import { repricedBill } from "../../src/lib/billing/types.ts";
+test("an unpaid bill made at the old price with tax is brought to $379 with no tax", () => {
+  const plan = "Auto One Motors monthly plan";
+  const old = { items: [{ label: plan, cents: 36900 }, { label: "One-time connection fee", cents: 9900 }], subtotal: 46800, tax: 3089, total: 49889 };
+  const fixed = repricedBill(old, plan, { monthlyCents: 37900, taxRatePercent: 0, taxablePercent: 80 })!;
+  assert.equal(fixed.items[0].cents, 37900);
+  assert.equal(fixed.items[1].cents, 9900); // the connection fee is untouched
+  assert.deepEqual({ subtotal: fixed.subtotal, tax: fixed.tax, total: fixed.total }, { subtotal: 47800, tax: 0, total: 47800 });
+  assert.equal(repricedBill(fixed, plan, { monthlyCents: 37900, taxRatePercent: 0, taxablePercent: 80 }), null); // already current
+});

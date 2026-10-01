@@ -3,7 +3,7 @@ import { readyDb } from "@/lib/db";
 import { getSetting, setSetting } from "@/lib/db/data";
 import { dealership } from "@/lib/dealership";
 import { addDays, dayKey, zonedToUtc } from "@/lib/utils/time";
-import { DEFAULT_BILLING, PLAN_VERSION, periodLabel, totals, type BillingSettings, type Invoice, type InvoiceItem } from "./types";
+import { DEFAULT_BILLING, PLAN_VERSION, periodLabel, repricedBill, totals, type BillingSettings, type Invoice, type InvoiceItem } from "./types";
 
 export async function getBillingSettings(): Promise<BillingSettings> {
   try {
@@ -138,7 +138,14 @@ export async function ensureInvoice(period = periodOf(), { onlyIfStarted = false
     if (!started) return null;
   }
   const [existing] = await sql`select * from billing_invoices where period = ${period}`;
-  if (existing) return toInvoice(existing);
+  if (existing) {
+    // An unpaid bill made before a price or tax change gets the current plan, so nobody is charged the old amount.
+    if (existing.status === "open" && (await repriceOpenInvoices().catch(() => 0)) > 0) {
+      const [updated] = await sql`select * from billing_invoices where id = ${existing.id}`;
+      return toInvoice(updated);
+    }
+    return toInvoice(existing);
+  }
   const s = await getBillingSettings();
   const items = await draftItems(period, s);
   const t = totals(items, s);
@@ -155,6 +162,26 @@ export async function ensureInvoice(period = periodOf(), { onlyIfStarted = false
     values (${period}, ${`AD-${period.replace("-", "")}`}, ${sql.json(items)}, ${t.subtotal}, ${t.tax}, ${t.total}, ${due})
     on conflict (period) do nothing returning *`;
   return row ? toInvoice(row) : ensureInvoice(period);
+}
+
+/** Unpaid bills for this month or later follow the current plan (price and tax). Bills already paid, being paid, or from
+ *  earlier months are never touched. Returns how many bills changed. */
+export async function repriceOpenInvoices(): Promise<number> {
+  const sql = await readyDb();
+  if (!sql) return 0;
+  const s = await getBillingSettings();
+  const rows = await sql`select * from billing_invoices where status = 'open' and period >= ${periodOf()}`;
+  let changed = 0;
+  for (const row of rows) {
+    const bill = toInvoice(row);
+    const next = repricedBill(bill, `${dealership.name} monthly plan`, s);
+    if (!next) continue;
+    await sql`update billing_invoices set items = ${sql.json(next.items)}, subtotal = ${next.subtotal}, tax = ${next.tax}, total = ${next.total}
+      where id = ${bill.id} and status = 'open'`;
+    changed++;
+  }
+  if (changed) console.log(`[autodash:billing] updated ${changed} unpaid bill(s) to the current plan`);
+  return changed;
 }
 
 export async function listInvoices(): Promise<Invoice[]> {
@@ -299,6 +326,7 @@ export async function chargeDueBillsByCard(): Promise<number> {
   const sql = await readyDb();
   const autopay = await getCardAutopay();
   if (!sql || !autopay) return 0;
+  await repriceOpenInvoices().catch(() => 0); // never charge a card the old amount or old tax
   const { chargeSavedCard } = await import("./stripe");
   const today = dayKey(Date.now(), dealership.timeZone);
   let paid = 0;
