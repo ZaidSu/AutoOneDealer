@@ -86,6 +86,15 @@ create table if not exists billing_invoices (
   created_at timestamptz not null default now()
 );
 alter table billing_invoices enable row level security;
+-- v7: the AI's summary of everything that happened with a customer (emails, AI replies, texts, notes).
+create table if not exists customer_summaries (
+  customer_key text primary key,
+  summary text not null,
+  next_step text,
+  sources text,
+  updated_at timestamptz not null default now()
+);
+alter table customer_summaries enable row level security;
 `;
 
 export async function setupDatabase(): Promise<void> {

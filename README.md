@@ -91,7 +91,9 @@ AutoDash sends it from the dealership Gmail to the customer (never back to the l
 
 - Replies are written Monday to Saturday, 9 AM to 7 PM Dallas time (`aiHours` in `src/lib/dealership/index.ts`).
 - **Automatic sending** switch on the Email replies page: off (default) = drafts wait for someone to click Send; on = the AI sends by itself during AI hours.
-- One AI email per customer per 7 days. Leads with no email (e.g. phone-call leads) are skipped.
+- Only replies to leads from `AI_REPLIES_START` (default 2026-09-30) on, and never to leads more than 2 days old.
+- One AI email per customer per 7 days.
+- **AI summary** on each customer page: reads their leads, Gmail back-and-forth, AI emails, appointments and notes, and writes what happened plus a next step (`src/lib/ai/summary.ts`, table `customer_summaries`). Leads with no email (e.g. phone-call leads) are skipped.
 - Needs `ANTHROPIC_API_KEY` in Vercel, Gmail reconnected once so it can send, and the timer below.
 - Code: `src/lib/ai/replies.ts` (drafting, sending), `src/lib/ai/claude.ts` (API call), table `ai_replies`.
 

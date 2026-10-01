@@ -1,4 +1,7 @@
 import { requirePageStaff } from "@/lib/auth/guard";
+import AiSummary from "@/components/customers/AiSummary";
+import { aiConfigured } from "@/lib/ai/claude";
+import { getSummary } from "@/lib/ai/summary";
 import type { Metadata } from "next";
 import Link from "next/link";
 import { notFound } from "next/navigation";
@@ -29,8 +32,8 @@ export default async function CustomerPage({ params }: { params: Promise<{ key: 
   const state = await dbState();
   if (state !== "ready") return <DbNotice state={state} what="Customer profiles" />;
 
-  const [customer, leads, activities, appointments, reps, sources] = await fresh("Customer profile", () => Promise.all([
-    getCustomer(key), leadsForCustomer(key), activitiesFor(key), appointmentsForCustomer(key), listReps(), listSources(),
+  const [customer, leads, activities, appointments, reps, sources, summary] = await fresh("Customer profile", () => Promise.all([
+    getCustomer(key), leadsForCustomer(key), activitiesFor(key), appointmentsForCustomer(key), listReps(), listSources(), getSummary(key).catch(() => null),
   ]));
   if (!customer) notFound();
 
@@ -86,6 +89,8 @@ export default async function CustomerPage({ params }: { params: Promise<{ key: 
         financing={FINANCING}
         today={dayKey(Date.now(), dealership.timeZone)}
       />
+
+      <AiSummary customerKey={customer.key} initial={summary} aiReady={aiConfigured()} />
 
       <div className="mt-8 grid gap-8 lg:grid-cols-[minmax(0,1fr)_320px]">
         <section aria-labelledby="timeline">

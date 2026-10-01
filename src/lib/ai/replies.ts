@@ -7,7 +7,7 @@ import { canSendFrom } from "@/lib/auth/google";
 import { logActivity } from "@/lib/crm/queries";
 import { readyDb, trace } from "@/lib/db";
 import { getSetting, setSetting } from "@/lib/db/data";
-import { dataStartDate, dealership, inAiHours } from "@/lib/dealership";
+import { aiStartDate, dataStartDate, dealership, inAiHours } from "@/lib/dealership";
 import { withGmail } from "@/lib/gmail";
 import { loadGmailConnection } from "@/lib/gmail/connection";
 
@@ -29,7 +29,7 @@ const toReply = (r: Record<string, unknown>): AiReply => ({
 });
 
 // Addresses that can't be a customer: listing sites' no-reply senders and our own mailbox.
-const NOT_A_CUSTOMER = /(no-?reply|donotreply|notifications?@|leads?@|@(cars\.com|cargurus\.com|carsforsale\.com|edmunds\.com|autotrader\.com|carzing\.com|facebookmail\.com))/i;
+const NOT_A_CUSTOMER = /^(no-?reply|do-?not-?reply|notifications?|leads?|alerts?|mailer-daemon)(\+[^@]*)?@|@(cars\.com|cargurus\.com|carsforsale\.com|edmunds\.com|autotrader\.com|carzing\.com|facebookmail\.com|truecar\.com|offerup\.com)$/i;
 
 /** Automatic sending: off means the AI only writes drafts and a person clicks Send. Off unless someone turns it on. */
 export async function getAutoSend(): Promise<boolean> {
@@ -46,8 +46,12 @@ export async function draftNewReplies({ max = 4, force = false } = {}): Promise<
   const sql = await readyDb();
   if (!sql) return { drafted: 0, sent: 0, skipped: 0, waiting: "The database isn't connected." };
 
-  // Recent leads with an email that don't have a reply row yet. Oldest first, so nobody waits longest.
-  const since = new Date(Math.max(dataStartDate().getTime(), Date.now() - 3 * 86400_000));
+  // Drafts written for leads from before the AI start day are cleared out, so nobody sends them by mistake.
+  await sql`update ai_replies set status = 'discarded', error = 'From before the AI start date'
+    where status = 'draft' and lead_received_at < ${aiStartDate()}`;
+  // Recent leads with an email that don't have a reply row yet: from the AI start day on, and at most 2 days old.
+  // Oldest first, so nobody waits longest.
+  const since = new Date(Math.max(aiStartDate().getTime(), Date.now() - 2 * 86400_000));
   const leads = await sql`
     select l.* from leads l
     where not l.ignored and l.email is not null and l.email <> '' and l.received_at >= ${since}

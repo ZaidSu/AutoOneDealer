@@ -372,3 +372,17 @@ export async function setAutoSendAction(on: boolean): Promise<ActionResult> {
   revalidatePath("/ai/emails");
   return { ok: true, message: on ? "Automatic sending is on." : "Automatic sending is off. The AI writes drafts; your team clicks Send." };
 }
+
+// ---- AI customer summary ----
+
+export async function summarizeCustomerAction(key: string): Promise<ActionResult & { summary?: import("@/lib/ai/summary").CustomerSummary }> {
+  const staff = await requireStaff();
+  if (!staff) return fail("Your session ended. Sign in again.");
+  const { summarizeCustomer } = await import("@/lib/ai/summary");
+  try {
+    const summary = await summarizeCustomer(String(key));
+    return { ok: true, message: "Summary updated.", summary };
+  } catch (error) {
+    return fail(error instanceof Error ? error.message : "The AI couldn't summarize right now.");
+  }
+}
