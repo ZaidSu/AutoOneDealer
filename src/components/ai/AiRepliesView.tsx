@@ -2,7 +2,7 @@
 import Link from "next/link";
 import { useState, useTransition } from "react";
 import { discardAiReplyAction, draftAiRepliesNowAction, sendAiReplyAction, setAutoSendAction } from "@/app/actions";
-import type { AiReply } from "@/lib/ai/replies";
+import type { AiReply, LeadOutcome } from "@/lib/ai/replies";
 
 type Setup = { ai: boolean; canSend: boolean; gmail: boolean; lastTimer: number | null };
 type Msg = { ok: boolean; text: string } | null;
@@ -13,7 +13,7 @@ const ago = (ms: number) => {
   return min < 1 ? "just now" : min < 60 ? `${min} min ago` : min < 1440 ? `${Math.round(min / 60)} h ago` : `${Math.round(min / 1440)} days ago`;
 };
 
-export default function AiRepliesView({ drafts: initialDrafts, history, setup, canWriteNow, autoSend }: { drafts: AiReply[]; history: AiReply[]; setup: Setup; canWriteNow: boolean; autoSend: boolean }) {
+export default function AiRepliesView({ drafts: initialDrafts, history, setup, canWriteNow, autoSend, outcomes, lastReport }: { drafts: AiReply[]; history: AiReply[]; setup: Setup; canWriteNow: boolean; autoSend: boolean; outcomes: LeadOutcome[]; lastReport: string | null }) {
   const [drafts, setDrafts] = useState(initialDrafts);
   const [done, setDone] = useState<AiReply[]>([]);
   const [msg, setMsg] = useState<Msg>(null);
@@ -37,6 +37,7 @@ export default function AiRepliesView({ drafts: initialDrafts, history, setup, c
             <Check ok={timerOk} good={`Timer running (last check ${setup.lastTimer ? ago(setup.lastTimer) : ""})`}
               bad={setup.lastTimer ? `Timer hasn't run since ${ago(setup.lastTimer)}` : "Timer not set up: replies are only written when you click Write replies now"} />
           </ul>
+          {lastReport && <p className="mt-2 text-sm text-muted"><b className="font-semibold text-ink">Last check:</b> {lastReport}</p>}
           {canWriteNow && (
             <div className="flex flex-col items-end gap-1">
               <button type="button" className="btn" disabled={pending || !setup.ai} onClick={writeNow}>{pending ? "Writing…" : "Write replies now"}</button>
@@ -58,6 +59,25 @@ export default function AiRepliesView({ drafts: initialDrafts, history, setup, c
               <li key={d.id}>
                 <Draft reply={d} canSend={setup.canSend}
                   onDone={(r) => { setDrafts((all) => all.filter((x) => x.id !== d.id)); setDone((all) => [r, ...all]); }} />
+              </li>
+            ))}
+          </ul>
+        )}
+      </section>
+
+      <section aria-labelledby="recent-leads">
+        <h2 id="recent-leads" className="mb-1 text-lg font-semibold">Recent leads and what the AI did</h2>
+        <p className="mb-3 text-sm text-muted">Every lead from the last 2 days, so you can see why one did or didn&apos;t get a reply.</p>
+        {outcomes.length === 0 ? <p className="panel p-5 text-muted">No leads in the last 2 days.</p> : (
+          <ul className="panel divide-y divide-line">
+            {outcomes.map((o) => (
+              <li key={o.leadId} className="flex flex-wrap items-start gap-x-3 gap-y-1 px-5 py-3">
+                <span className={`mt-0.5 rounded-full px-2.5 py-0.5 text-xs font-semibold ${OUTCOME[o.outcome].cls}`}>{OUTCOME[o.outcome].label}</span>
+                <div className="min-w-0 flex-1">
+                  <p className="font-semibold">{o.name || "Name not provided"} <span className="font-normal text-muted">{o.email ?? "no email"}{o.provider ? `, ${o.provider}` : ""}</span></p>
+                  <p className="text-sm text-muted">{o.reason}</p>
+                </div>
+                <span className="text-sm text-muted">{when(o.receivedAt)}</span>
               </li>
             ))}
           </ul>
@@ -110,7 +130,10 @@ function Draft({ reply, canSend, onDone }: { reply: AiReply; canSend: boolean; o
   return (
     <article className="panel grid gap-0 overflow-hidden lg:grid-cols-[minmax(0,2fr)_minmax(0,3fr)]">
       <div className="border-b border-line bg-paper/60 p-5 lg:border-r lg:border-b-0">
-        <p className="text-sm text-muted">{when(reply.leadReceivedAt)}{reply.provider ? `, from ${reply.provider}` : ""}</p>
+        <p className="text-sm text-muted">
+          {reply.kind === "reply" && <span className="mr-2 rounded-full bg-go-soft px-2 py-0.5 text-xs font-semibold text-go">Wrote back</span>}
+          {when(reply.leadReceivedAt)}{reply.kind === "reply" ? ", replying to your email" : reply.provider ? `, from ${reply.provider}` : ""}
+        </p>
         <h3 className="mt-1 text-lg font-semibold">{reply.customerName || "Name not provided"}</h3>
         <p className="text-sm text-muted">{reply.toEmail}</p>
         {reply.vehicle && <p className="mt-2 text-[15px]"><span className="text-muted">Asked about</span> {reply.vehicle}</p>}
@@ -201,3 +224,12 @@ function AutoSendToggle({ initial, canChange, canSend }: { initial: boolean; can
     </div>
   );
 }
+
+const OUTCOME: Record<LeadOutcome["outcome"], { label: string; cls: string }> = {
+  drafted: { label: "Reply ready", cls: "bg-[#fff3d6] text-[#8a5300]" },
+  sent: { label: "Replied", cls: "bg-go-soft text-go" },
+  skipped: { label: "Skipped", cls: "bg-paper text-muted ring-1 ring-line" },
+  discarded: { label: "Discarded", cls: "bg-paper text-muted ring-1 ring-line" },
+  no_email: { label: "No email", cls: "bg-paper text-muted ring-1 ring-line" },
+  waiting: { label: "Waiting", cls: "bg-[#e7f0ff] text-[#1c56c4]" },
+};

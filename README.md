@@ -92,7 +92,8 @@ AutoDash sends it from the dealership Gmail to the customer (never back to the l
 - Replies are written Monday to Saturday, 9 AM to 7 PM Dallas time (`aiHours` in `src/lib/dealership/index.ts`).
 - **Automatic sending** switch on the Email replies page: off (default) = drafts wait for someone to click Send; on = the AI sends by itself during AI hours.
 - Only replies to leads from `AI_REPLIES_START` (default 2026-09-30) on, and never to leads more than 2 days old.
-- One AI email per customer per 7 days.
+- **Customers who write back:** the timer finds inbox emails from existing customers, logs "Replied by email", shows them on the Dashboard, and drafts an answer in the same Gmail thread using the whole conversation (skipped if the team already answered). Code: `src/lib/ai/followups.ts`, table `customer_replies`.
+- One AI email per customer per 7 days (first replies to new leads only; follow-ups in a conversation are not limited).
 - **AI summary** on each customer page: reads their leads, Gmail back-and-forth, AI emails, appointments and notes, and writes what happened plus a next step (`src/lib/ai/summary.ts`, table `customer_summaries`). Leads with no email (e.g. phone-call leads) are skipped.
 - Needs `ANTHROPIC_API_KEY` in Vercel, Gmail reconnected once so it can send, and the timer below.
 - Code: `src/lib/ai/replies.ts` (drafting, sending), `src/lib/ai/claude.ts` (API call), table `ai_replies`.
@@ -150,6 +151,7 @@ included, past bills, and documents. The owner pays by card on Stripe's own page
 - **Credit Applications**: CarsForSale "New Loan App Submitted" emails parsed into applicant, phone, location,
   loan amount, down payment, application ID and a link to the full application.
 - **Leads**: credit applications plus website inquiries from every lead source, newest first.
+- **Westlake Financial pre-qualifications** ("Pre-Qualification" in the subject) are read as financing leads: customer, car, down payment, amount financed, monthly payment, voucher and what to bring. The AI welcomes them in as pre-qualified (never as a final approval).
 - **Customers**: leads grouped into people by phone (then email), with every inquiry, application, source,
   vehicle asked about, and their email conversations with the dealership.
 - **Dashboard**: today's date, today's appointments, and every lead and credit application since 6 PM the night before.

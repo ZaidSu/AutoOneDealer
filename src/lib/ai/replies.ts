@@ -16,6 +16,8 @@ export type AiReply = {
   id: number; leadId: string; customerKey: string | null; customerName: string | null; toEmail: string; vehicle: string | null;
   provider: string | null; customerMessage: string; subject: string; body: string; status: ReplyStatus; error: string | null;
   leadReceivedAt: number | null; createdAt: number; sentAt: number | null; sentBy: string | null;
+  /** "lead": first reply to a new lead. "reply": answering a customer who wrote back. */
+  kind: "lead" | "reply";
 };
 
 const toReply = (r: Record<string, unknown>): AiReply => ({
@@ -26,6 +28,7 @@ const toReply = (r: Record<string, unknown>): AiReply => ({
   leadReceivedAt: r.lead_received_at ? new Date(r.lead_received_at as string).getTime() : null,
   createdAt: new Date(r.created_at as string).getTime(), sentAt: r.sent_at ? new Date(r.sent_at as string).getTime() : null,
   sentBy: (r.sent_by as string) ?? null,
+  kind: (r.kind as "lead" | "reply") ?? "lead",
 });
 
 // Addresses that can't be a customer: listing sites' no-reply senders and our own mailbox.
@@ -98,19 +101,10 @@ export async function draftNewReplies({ max = 4, force = false } = {}): Promise<
   return { drafted, sent, skipped, waiting: null };
 }
 
-async function writeReply(lead: Record<string, unknown>, info: Awaited<ReturnType<typeof getDealershipInfo>>, training: Awaited<ReturnType<typeof getAiTraining>>) {
+/** Everything the AI knows about the dealership, as text for its instructions. Shared by every kind of reply. */
+export function dealershipFacts(info: Awaited<ReturnType<typeof getDealershipInfo>>, training: Awaited<ReturnType<typeof getAiTraining>>): string {
   const hours = info.hours.map((h, i) => `${DAYS[i]}: ${h.closed ? "Closed" : `${h.open} to ${h.close}`}`).join("\n");
-  const system = `You write email replies for ${dealership.name}, a used car dealership, to customers who just sent a lead through a car listing site.
-Write like a friendly, professional salesperson at the dealership. Rules:
-- Plain text only. No markdown, no bullet symbols, no emojis. 60 to 130 words.
-- Thank them by first name if you have it, mention the exact car they asked about, and answer their question if you can from the facts below.
-- Never make up prices, availability, financing approvals, interest rates, trade-in values, or anything not in the facts. If you don't know, say a salesperson will confirm.
-- End by inviting them to come see the car, with a clear next step (reply with a time that works, or call).
-- Sign off as "The team at ${dealership.name}" with the dealership phone number if you have it.
-- If the customer wrote in Spanish, reply in Spanish.
-- Follow the dealership's own instructions below over these defaults when they conflict, except never invent facts.
-Reply with only JSON: {"subject": "...", "body": "..."}`;
-  const prompt = `DEALERSHIP FACTS
+  return `DEALERSHIP FACTS
 Name: ${dealership.name}
 Address: ${info.address || "not given"}
 Phone: ${info.phone || "not given"}
@@ -126,7 +120,22 @@ DEALERSHIP INSTRUCTIONS
 ${training.instructions || "none"}
 
 QUESTIONS CUSTOMERS ASK, WITH THE ANSWERS TO GIVE
-${training.qa.map((q) => `Q: ${q.question}\nA: ${q.answer}`).join("\n\n") || "none"}
+${training.qa.map((q) => `Q: ${q.question}\nA: ${q.answer}`).join("\n\n") || "none"}`;
+}
+
+async function writeReply(lead: Record<string, unknown>, info: Awaited<ReturnType<typeof getDealershipInfo>>, training: Awaited<ReturnType<typeof getAiTraining>>) {
+  const system = `You write email replies for ${dealership.name}, a used car dealership, to customers who just sent a lead through a car listing site.
+Write like a friendly, professional salesperson at the dealership. Rules:
+- Plain text only. No markdown, no bullet symbols, no emojis. 60 to 130 words.
+- Thank them by first name if you have it, mention the exact car they asked about, and answer their question if you can from the facts below.
+- Never make up prices, availability, financing approvals, interest rates, trade-in values, or anything not in the facts. If you don't know, say a salesperson will confirm.
+- End by inviting them to come see the car, with a clear next step (reply with a time that works, or call).
+- Sign off as "The team at ${dealership.name}" with the dealership phone number if you have it.
+- If the customer wrote in Spanish, reply in Spanish.
+- If the lead is a financing pre-qualification (for example from Westlake Financial): congratulate them on being pre-qualified for that car, invite them to come in to finish the deal and see the car, and list what to bring if it's given. You may mention the down payment and monthly payment it shows, but always as pre-qualified estimates, never as a final approval, and don't mention the APR. Don't promise the car is still available; say the team will confirm.
+- Follow the dealership's own instructions below over these defaults when they conflict, except never invent facts.
+Reply with only JSON: {"subject": "...", "body": "..."}`;
+  const prompt = `${dealershipFacts(info, training)}
 
 THE LEAD
 Type: ${lead.kind === "application" ? "Credit application" : `${lead.type ?? "Inquiry"}`}
@@ -177,13 +186,16 @@ export async function sendReply(id: number, edits: { subject: string; body: stri
     await sql`update ai_replies set status = 'draft' where id = ${id}`;
     return { ok: false, error: "Gmail needs permission to send. Go to Settings and click Reconnect Gmail." };
   }
-  const result = await withGmail((gmail) => gmail.send({ to: row.to_email, subject, body, fromName: dealership.name }), connection);
+  const result = await withGmail((gmail) => gmail.send({
+    to: row.to_email, subject, body, fromName: dealership.name,
+    threadId: row.thread_id, inReplyTo: row.in_reply_to, references: row.references_header,
+  }), connection);
   if (result.status !== "ok") {
     await sql`update ai_replies set status = 'draft', error = ${result.status === "error" ? result.message : "Gmail isn't connected."} where id = ${id}`;
     return { ok: false, error: result.status === "error" ? result.message : "Gmail isn't connected." };
   }
   await sql`update ai_replies set status = 'sent', sent_at = now(), sent_by = ${staffName}, gmail_id = ${result.data}, error = null where id = ${id}`;
-  if (row.customer_key) await logActivity(row.customer_key, "email", `AI email sent: ${subject}`, staffName).catch(() => undefined);
+  if (row.customer_key) await logActivity(row.customer_key, "email", `${row.kind === "reply" ? "AI answered their email" : "AI email sent"}: ${subject}`, staffName).catch(() => undefined);
   return { ok: true };
 }
 
@@ -192,4 +204,32 @@ export async function discardReply(id: number): Promise<boolean> {
   if (!sql) return false;
   const rows = await sql`update ai_replies set status = 'discarded' where id = ${id} and status = 'draft' returning id`;
   return rows.length > 0;
+}
+
+export type LeadOutcome = { leadId: string; name: string | null; email: string | null; vehicle: string | null; provider: string | null;
+  receivedAt: number; outcome: "drafted" | "sent" | "skipped" | "discarded" | "waiting" | "no_email"; reason: string };
+
+/** Every lead from the last 2 days (since the AI start day) and what the AI did with it, in plain words. */
+export async function recentLeadOutcomes(): Promise<LeadOutcome[]> {
+  const sql = await readyDb();
+  if (!sql) return [];
+  const since = new Date(Math.max(aiStartDate().getTime(), Date.now() - 2 * 86400_000));
+  const rows = await sql`
+    select l.message_id, l.name, l.email, l.vehicle, l.provider, l.received_at, r.status as reply_status, r.error as reply_error, r.sent_by
+    from leads l left join ai_replies r on r.lead_id = l.message_id
+    where not l.ignored and l.received_at >= ${since}
+    order by l.received_at desc limit 40`;
+  const hours = inAiHours();
+  const configured = aiConfigured();
+  return rows.map((r) => {
+    const base = { leadId: r.message_id, name: r.name, email: r.email, vehicle: r.vehicle, provider: r.provider, receivedAt: new Date(r.received_at).getTime() };
+    if (r.reply_status === "draft") return { ...base, outcome: "drafted" as const, reason: "Reply written, waiting for you above" };
+    if (r.reply_status === "sent" || r.reply_status === "sending") return { ...base, outcome: "sent" as const, reason: `Reply sent${r.sent_by ? ` by ${r.sent_by}` : ""}` };
+    if (r.reply_status === "skipped") return { ...base, outcome: "skipped" as const, reason: r.reply_error ?? "Skipped" };
+    if (r.reply_status === "discarded") return { ...base, outcome: "discarded" as const, reason: r.reply_error ?? "Discarded" };
+    if (!r.email) return { ...base, outcome: "no_email" as const, reason: "No email address in this lead (often a phone-call or history-report lead), so there's no one to email" };
+    if (!configured) return { ...base, outcome: "waiting" as const, reason: "The AI key isn't set up in Vercel" };
+    if (!hours) return { ...base, outcome: "waiting" as const, reason: "Arrived outside AI hours (Mon to Sat, 9 AM to 7 PM); the reply is written at 9 AM" };
+    return { ...base, outcome: "waiting" as const, reason: "Will be written on the next check (every 5 minutes)" };
+  });
 }

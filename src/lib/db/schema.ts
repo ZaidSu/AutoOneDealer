@@ -125,6 +125,28 @@ alter table billing_invoices add column if not exists payment_method text;
 alter table billing_invoices add column if not exists payment_note text;
 alter table billing_invoices add column if not exists gc_attempts integer not null default 0;
 create unique index if not exists billing_invoices_gc_payment on billing_invoices (gc_payment_id) where gc_payment_id is not null;
+-- v10: customers replying by email. Replies are saved, and AI answers go back in the same Gmail thread.
+alter table ai_replies add column if not exists kind text not null default 'lead';
+alter table ai_replies add column if not exists thread_id text;
+alter table ai_replies add column if not exists in_reply_to text;
+alter table ai_replies add column if not exists references_header text;
+create table if not exists customer_replies (
+  gmail_id text primary key,
+  thread_id text,
+  customer_key text,
+  from_email text not null,
+  from_name text,
+  subject text not null default '',
+  body text not null default '',
+  message_id text,
+  references_header text,
+  received_at timestamptz not null,
+  created_at timestamptz not null default now()
+);
+create index if not exists customer_replies_received on customer_replies (received_at desc);
+alter table customer_replies enable row level security;
+create table if not exists email_seen (gmail_id text primary key, seen_at timestamptz not null default now());
+alter table email_seen enable row level security;
 `;
 
 export async function setupDatabase(): Promise<void> {

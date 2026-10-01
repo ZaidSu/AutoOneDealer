@@ -129,13 +129,15 @@ export class GmailClient {
   }
 
   /** Sends a plain-text email from the connected mailbox. Returns Gmail's id for the sent message. */
-  async send({ to, subject, body, fromName }: { to: string; subject: string; body: string; fromName?: string }): Promise<string> {
-    const message = buildEmail({ from: this.mailbox, fromName, to, subject, body });
+  async send({ to, subject, body, fromName, threadId, inReplyTo, references }: {
+    to: string; subject: string; body: string; fromName?: string; threadId?: string | null; inReplyTo?: string | null; references?: string | null;
+  }): Promise<string> {
+    const message = buildEmail({ from: this.mailbox, fromName, to, subject, body, inReplyTo, references });
     await takeTurn(this.lane);
     const response = await fetch("https://gmail.googleapis.com/gmail/v1/users/me/messages/send", {
       method: "POST", cache: "no-store",
       headers: { Authorization: `Bearer ${this.token}`, "Content-Type": "application/json" },
-      body: JSON.stringify({ raw: Buffer.from(message, "utf8").toString("base64url") }),
+      body: JSON.stringify({ raw: Buffer.from(message, "utf8").toString("base64url"), ...(threadId ? { threadId } : {}) }),
     });
     const data = await response.json().catch(() => ({}));
     if (!response.ok) {
@@ -162,6 +164,8 @@ export type MessageSummary = {
   snippet: string;
   receivedAt: number;
   unread: boolean;
+  messageIdHeader?: string | null;
+  referencesHeader?: string | null;
 };
 export type FullMessage = MessageSummary & { text: string; html: string };
 
@@ -177,6 +181,9 @@ function toSummary(m: RawMessage): MessageSummary {
     snippet: decode(m.snippet ?? ""),
     receivedAt: Number(m.internalDate ?? 0),
     unread: (m.labelIds ?? []).includes("UNREAD"),
+    // For replying in the same thread.
+    messageIdHeader: headers["message-id"] ?? null,
+    referencesHeader: headers.references ?? null,
   };
 }
 
@@ -244,8 +251,8 @@ export async function mapLimit<T, R>(items: T[], limit: number, fn: (item: T) =>
 
 const NOT_OURS = "-in:sent -in:drafts";
 export const LEAD_QUERIES = {
-  all: `(subject:lead OR subject:"loan app") ${NOT_OURS}`,
-  application: `subject:"loan app" ${NOT_OURS}`,
+  all: `(subject:lead OR subject:"loan app" OR subject:"pre-qualification" OR subject:prequalification) ${NOT_OURS}`,
+  application: `(subject:"loan app" OR subject:"pre-qualification" OR subject:prequalification) ${NOT_OURS}`,
   inquiry: `subject:lead -subject:"loan app" ${NOT_OURS}`,
 } as const;
 export type LeadFilter = keyof typeof LEAD_QUERIES;

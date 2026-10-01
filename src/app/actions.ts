@@ -322,11 +322,16 @@ export async function draftAiRepliesNowAction(): Promise<ActionResult> {
   if (!staff) return fail("Your session ended. Sign in again.");
   if (!can.editAiSettings(staff.role)) return fail(AI_EDIT_DENIED);
   const { draftNewReplies } = await import("@/lib/ai/replies");
+  const { checkCustomerReplies, draftFollowups } = await import("@/lib/ai/followups");
+  const { withGmail } = await import("@/lib/gmail");
   try {
+    await withGmail((gmail) => checkCustomerReplies(gmail));
+    const f = await draftFollowups({ max: 3, force: true });
     const r = await draftNewReplies({ max: 4, force: true });
     revalidatePath("/ai/emails");
-    if (r.waiting) return fail(r.waiting);
-    return { ok: true, message: r.drafted ? `Wrote ${r.drafted} ${r.drafted === 1 ? "reply" : "replies"}${r.sent ? `, sent ${r.sent}` : ""}.` : "No new leads with an email address to reply to." };
+    if (r.waiting && !f.drafted) return fail(r.waiting);
+    const total = r.drafted + f.drafted;
+    return { ok: true, message: total ? `Wrote ${total} ${total === 1 ? "reply" : "replies"}${f.drafted ? ` (${f.drafted} to customers who wrote back)` : ""}.` : "Nothing new to reply to." };
   } catch (error) {
     return fail(error instanceof Error ? error.message : "The AI couldn't write replies right now.");
   }

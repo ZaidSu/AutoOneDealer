@@ -80,3 +80,20 @@ test("unknown layouts fall back to finding a phone and email in the text", () =>
   assert.equal(lead.email, "pat@example.com");
   assert.equal(lead.vehicle, "2019 Toyota Camry");
 });
+
+test("Westlake pre-qualification", () => {
+  const text = readFileSync(new URL("../fixtures/westlake-prequal.txt", import.meta.url), "utf8");
+  const lead = parseLead({ from: "noreply@westlakefinancial.com", subject: "Westlake: New Pre-Qualification Received for 2015 NISSAN MURANO", text, html: "", mailbox: "txautoone@gmail.com" })!;
+  assert.equal(lead.kind, "application");
+  assert.equal(lead.type, "Pre-qualification");
+  assert.equal(lead.provider, "Westlake Financial");
+  assert.equal(lead.name, "Randy Briggs");
+  assert.equal(lead.email, "randy_briggs2000@yahoo.com");
+  assert.equal(lead.phone, "8046831578");
+  assert.equal(lead.vehicle, "2015 NISSAN MURANO");
+  assert.equal(lead.loanAmount, 8538);
+  assert.equal(lead.downPayment, 3500);
+  assert.equal(lead.applicationId, "130427432");
+  assert.match(lead.comments!, /\$235\/mo/);
+  assert.match(lead.comments!, /Proof of Income/);
+});

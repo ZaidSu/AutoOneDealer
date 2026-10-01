@@ -14,6 +14,7 @@ type Appt = { id: number; customerName: string; vehicle: string | null; phone: s
 type Data = {
   state: "ready" | "unreachable" | "not_configured"; dbReady: boolean; tz: string; greeting: string; firstName: string;
   problems: string[]; since: number; counts: { leads: number; applications: number } | null; latest: Lead[];
+  replies?: { gmailId: string; customerKey: string | null; name: string | null; email: string; subject: string; body: string; at: number }[];
   appointmentsToday: Appt[] | null; ai: { enabled: boolean; emails: number; waiting?: number; texts: number };
 };
 
@@ -103,6 +104,23 @@ export default function DashboardView() {
             <h2 id="overnight">Since last night</h2>
             <Link href="/leads" className="panel-link">All leads</Link>
           </div>
+          {(data.replies?.length ?? 0) > 0 && (
+            <ul className="divide-y divide-line border-b border-line px-5 pb-2">
+              {data.replies!.map((r) => (
+                <li key={r.gmailId} className="flex gap-4 py-3">
+                  <p className="w-[4.5rem] shrink-0 pt-0.5 text-sm tabular-nums text-muted">{time.format(r.at)}</p>
+                  <div className="min-w-0 flex-1">
+                    <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
+                      {r.customerKey ? <Link href={`/customers/${encodeURIComponent(r.customerKey)}`} className="font-semibold hover:text-signal hover:underline">{displayName(r.name)}</Link> : <span className="font-semibold">{displayName(r.name)}</span>}
+                      <span className="rounded-full bg-go-soft px-2 py-0.5 text-xs font-semibold text-go">Replied by email</span>
+                    </div>
+                    <p className="line-clamp-2 text-sm text-ink">&ldquo;{r.body || r.subject}&rdquo;</p>
+                    <Link href="/ai/emails" className="text-sm font-semibold text-signal hover:underline">See the AI&apos;s answer</Link>
+                  </div>
+                </li>
+              ))}
+            </ul>
+          )}
           {latest.length === 0 ? (
             <p className="px-5 pt-1 pb-5 text-muted">No new leads or applications since {time.format(data.since)} yesterday.</p>
           ) : (
@@ -113,7 +131,7 @@ export default function DashboardView() {
                   <div className="min-w-0 flex-1">
                     <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
                       <Link href={`/inbox/${lead.messageId}`} className="font-semibold hover:text-signal hover:underline">{displayName(lead.name)}</Link>
-                      <Badge tone={lead.kind}>{lead.kind === "application" ? "Credit application" : lead.type}</Badge>
+                      <Badge tone={lead.kind}>{lead.type === "Pre-qualification" ? "Pre-qualified" : lead.kind === "application" ? "Credit application" : lead.type}</Badge>
                       <SourceBadge source={lead.provider} size="sm" />
                     </div>
                     <p className="truncate text-sm text-muted">

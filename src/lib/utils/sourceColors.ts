@@ -14,6 +14,7 @@ const KNOWN: [RegExp, string][] = [
   [/^auto link/i, "#66a80f"],        // lime
   [/^google/i, "#4263eb"],           // indigo
   [/^hammer/i, "#795548"],           // brown
+  [/^westlake/i, "#2b8a3e"],         // dark green
   [/^word of mouth/i, "#868e96"],
   [/^repeat/i, "#495057"],
   [/^drive-?by/i, "#adb5bd"],

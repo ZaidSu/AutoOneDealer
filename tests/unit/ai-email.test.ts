@@ -16,3 +16,16 @@ test("non-English subjects are encoded", () => {
   const raw = buildEmail({ from: "a@b.co", to: "c@d.co", subject: "¿Sigue disponible?", body: "Sí" });
   assert.match(raw, /Subject: =\?UTF-8\?B\?/);
 });
+
+import { newPartOnly } from "../../src/lib/gmail/email.ts";
+test("a customer's reply keeps only what they just wrote", () => {
+  const text = "Hello i am interested in this car and i live in austin texas.\n\nOn Wed, Sep 30, 2026 at 4:43 PM AUTO ONE <txautoone@gmail.com> wrote:\n> Hello, this vehicle is currently available.\n> Best regards, Zach";
+  assert.equal(newPartOnly(text), "Hello i am interested in this car and i live in austin texas.");
+  assert.equal(newPartOnly("Just checking in"), "Just checking in");
+});
+
+test("replies stay in the same thread", () => {
+  const raw = buildEmail({ from: "a@b.co", to: "c@d.co", subject: "Re: Your BMW", body: "Hi", inReplyTo: "<abc@mail.gmail.com>", references: "<first@cars.com>" });
+  assert.match(raw, /In-Reply-To: <abc@mail\.gmail\.com>/);
+  assert.match(raw, /References: <first@cars\.com> <abc@mail\.gmail\.com>/);
+});

@@ -3,6 +3,7 @@
 // Protected by CRON_SECRET: the caller must send it as ?key=... or "Authorization: Bearer ...".
 import { timingSafeEqual } from "node:crypto";
 import { NextResponse, type NextRequest } from "next/server";
+import { checkCustomerReplies, draftFollowups } from "@/lib/ai/followups";
 import { draftNewReplies } from "@/lib/ai/replies";
 import { setSetting } from "@/lib/db/data";
 import { chargeDueBillsByCard, collectOpenBills, ensureInvoice } from "@/lib/billing";
@@ -33,6 +34,14 @@ export async function GET(req: NextRequest) {
     report.leads = `failed: ${error instanceof Error ? error.message : "unknown"}`;
   }
   try {
+    // Customers who wrote back by email (answered in the same thread).
+    const replies = await withGmail((gmail) => checkCustomerReplies(gmail), undefined, "background");
+    report.customerReplies = replies.status === "ok" ? replies.data : replies.status === "error" ? replies.message : "Gmail isn't connected";
+    report.followups = await draftFollowups({ max: 3 });
+  } catch (error) {
+    report.customerReplies = `failed: ${error instanceof Error ? error.message : "unknown"}`;
+  }
+  try {
     report.ai = await draftNewReplies({ max: 4 });
   } catch (error) {
     report.ai = `failed: ${error instanceof Error ? error.message : "unknown"}`;
@@ -49,6 +58,7 @@ export async function GET(req: NextRequest) {
     report.billing = `failed: ${error instanceof Error ? error.message : "unknown"}`;
   }
   await setSetting("last_timer_run", String(Date.now())).catch(() => undefined);
+  await setSetting("last_timer_report", JSON.stringify({ at: Date.now(), leads: report.leads ?? null, ai: report.ai ?? null })).catch(() => undefined);
   console.log("[autodash:cron]", JSON.stringify(report));
   return NextResponse.json({ ok: true, ms: Date.now() - started, ...report });
 }

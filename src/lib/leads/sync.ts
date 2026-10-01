@@ -4,6 +4,7 @@
 //     stopped, so it never re-lists what it has already checked.
 // Every run stops on time and records its progress, so it can't run past Vercel's limit.
 import { bgDb, readyDb } from "@/lib/db";
+import { dataStartDate } from "@/lib/dealership";
 import { LEAD_QUERIES, mapLimit, readLead, type GmailClient } from "@/lib/gmail";
 import { ensureCustomersBuilt, knownMessageIds, markIgnored, saveLead } from "./store";
 
@@ -95,6 +96,16 @@ export async function syncLeads(gmail: GmailClient, { timeLimitMs = 20_000 } = {
         await importIds(result.ids);
         if (!result.next) break;
         token = result.next;
+      }
+    }
+
+    // 1b. Lead types added later (Westlake pre-qualifications): look back to the data start once, so none are missed.
+    const [catchup] = await sql`select value from app_settings where key = 'catchup_prequal'`;
+    if (!catchup && Date.now() < deadline - 3000) {
+      const since = Math.floor(dataStartDate().getTime() / 1000);
+      const result = await gmail.listPage(`(subject:"pre-qualification" OR subject:prequalification) -in:sent -in:drafts after:${since}`, PAGE);
+      if (await importIds(result.ids)) {
+        await sql`insert into app_settings (key, value) values ('catchup_prequal', 'done') on conflict (key) do update set value = 'done'`;
       }
     }
 

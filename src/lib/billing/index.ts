@@ -131,11 +131,14 @@ export async function ensureInvoice(period = periodOf(), { onlyIfStarted = false
   const s = await getBillingSettings();
   const items = await draftItems(period, s);
   const t = totals(items, s);
-  // Due on the plan's due day, but never sooner than 10 days after the bill is made (e.g. a bill made late in a month).
+  // Always due on the plan's due day (the 9th) of the bill's month. Only if a bill is made after that day already
+  // passed (rare: billing started mid-month) is it due on that day of the next month instead, never "past due" at birth.
   const today = dayKey(Date.now(), dealership.timeZone);
-  const dueDay = `${period}-${String(s.dueDay).padStart(2, "0")}`;
-  const earliest = addDays(today, 10);
-  const due = dueDay > earliest ? dueDay : earliest;
+  const day = String(s.dueDay).padStart(2, "0");
+  const thisMonth = `${period}-${day}`;
+  const [y, m] = period.split("-").map(Number);
+  const nextMonth = `${m === 12 ? y + 1 : y}-${String(m === 12 ? 1 : m + 1).padStart(2, "0")}-${day}`;
+  const due = thisMonth >= today ? thisMonth : nextMonth;
   const [row] = await sql`
     insert into billing_invoices (period, number, items, subtotal, tax, total, due_date)
     values (${period}, ${`AD-${period.replace("-", "")}`}, ${sql.json(items)}, ${t.subtotal}, ${t.tax}, ${t.total}, ${due})
