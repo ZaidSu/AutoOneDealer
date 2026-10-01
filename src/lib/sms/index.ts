@@ -8,6 +8,7 @@ import { readyDb, trace } from "@/lib/db";
 import { getSetting, setSetting } from "@/lib/db/data";
 import { dealership, inAiHours } from "@/lib/dealership";
 import { availabilityNote } from "@/lib/inventory";
+import { keywordFor } from "./keywords";
 import { cleanDays, FOLLOWUP_WINDOW_DAYS, followupState, type FollowupState } from "./followup-rules";
 import { sendSms, tenDigits, toE164, twilioConfigured } from "./twilio";
 
@@ -22,9 +23,6 @@ const toMessage = (r: Record<string, unknown>): TextMessage => ({
   error: (r.error as string) ?? null, at: new Date((r.sent_at ?? r.created_at) as string).getTime(),
 });
 
-const STOP_WORDS = new Set(["STOP", "STOPALL", "UNSUBSCRIBE", "CANCEL", "END", "QUIT", "REVOKE", "OPTOUT"]);
-const START_WORDS = new Set(["START", "UNSTOP", "YES", "SUBSCRIBE"]);
-const HELP_WORDS = new Set(["HELP", "INFO"]);
 export const OPT_IN_MESSAGE = `${dealership.name}: You're now subscribed to messages about your vehicle inquiry. Msg frequency varies. Msg & data rates may apply. Reply HELP for help, STOP to opt out.`;
 
 // ---- settings ----
@@ -145,18 +143,18 @@ export async function receiveText(from: string, body: string, sid: string): Prom
   await sql`insert into sms_messages (customer_key, phone, direction, body, status, sent_at, twilio_sid) values (${customerKey}, ${e164}, 'in', ${body.slice(0, 2000)}, 'received', now(), ${sid})
     on conflict (twilio_sid) do nothing`;
   if (customerKey) await sql`update customers set last_seen = now() where key = ${customerKey}`.catch(() => undefined);
-  const word = body.trim().toUpperCase().replace(/[^A-Z]/g, "");
-  if (STOP_WORDS.has(word)) {
+  const keyword = keywordFor(body, await isOptedOut(e164));
+  if (keyword === "stop") {
     await sql`insert into sms_optouts (phone) values (${e164}) on conflict do nothing`;
     await sql`update sms_messages set status = 'discarded' where phone = ${e164} and status = 'draft'`;
     if (customerKey) await logActivity(customerKey, "note", "Replied STOP: no more texts", null).catch(() => undefined);
     return { customerKey, keyword: "stop", phone: e164 };
   }
-  if (START_WORDS.has(word)) {
+  if (keyword === "start") {
     await sql`delete from sms_optouts where phone = ${e164}`;
     return { customerKey, keyword: "start", phone: e164 };
   }
-  return { customerKey, keyword: HELP_WORDS.has(word) ? "help" : null, phone: e164 };
+  return { customerKey, keyword, phone: e164 };
 }
 
 export async function updateStatus(sid: string, status: string, errorCode?: string) {
@@ -180,7 +178,7 @@ export async function aiReplyToText(customerKey: string | null, phone: string, {
   const thread = (await sql`select * from sms_messages where phone = ${e164} and status not in ('discarded', 'draft', 'failed') order by coalesce(sent_at, created_at) desc limit 20`).map(toMessage).reverse();
   const last = thread.at(-1);
   if (!last || (last.direction !== "in" && !force)) return "skipped"; // only answer when the customer is waiting
-  if (last && /^(STOP|START|HELP|INFO|UNSUBSCRIBE|CANCEL|END|QUIT|YES)\W*$/i.test(last.body.trim())) return "skipped";
+  if (last && /^(STOP|START|HELP|INFO|UNSUBSCRIBE|CANCEL|END|QUIT)\W*$/i.test(last.body.trim())) return "skipped";
 
   const [customer] = customerKey ? await sql`select * from customers where key = ${customerKey}` : [];
   const [summary] = customerKey ? await sql`select summary from customer_summaries where customer_key = ${customerKey}` : [];

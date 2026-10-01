@@ -64,6 +64,9 @@ export default async function LoginPage({ searchParams }: { searchParams: Promis
           )}
         </section>
       </div>
+      <footer className="flex flex-wrap gap-x-5 gap-y-1 px-6 pb-6 text-sm text-muted sm:px-10">
+        <a href="/privacy" className="hover:text-ink">Privacy</a><a href="/sms-terms" className="hover:text-ink">Text terms</a><a href="/email-terms" className="hover:text-ink">Email terms</a><a href="/terms" className="hover:text-ink">Service agreement</a>
+      </footer>
     </main>
   );
 }

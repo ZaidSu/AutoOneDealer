@@ -1,5 +1,7 @@
 import type { Metadata } from "next";
 import BillingSettingsForm from "@/components/billing/BillingSettingsForm";
+import AcceptAgreement from "@/components/legal/AcceptAgreement";
+import { getAcceptance, isCurrent } from "@/lib/legal/accept";
 import { CreateBillButton, DisconnectBankButton, RetryBankButton, TurnOffAutopayButton, VoidBillButton } from "@/components/billing/DeveloperButtons";
 import DbNotice from "@/components/ui/DbNotice";
 import PageHeader from "@/components/ui/PageHeader";
@@ -44,6 +46,7 @@ export default async function BillingPage({ searchParams }: { searchParams: Prom
     });
   }
   const whyNoBill = createError ? `Couldn't create this month's bill: ${createError}` : billingStartProblem(period);
+  const acceptance = await getAcceptance();
   const [settings, invoices, usage, mandate, card] = await fresh("Billing", () => Promise.all([
     getBillingSettings(), listInvoices(), usageFor(period), getBankMandate().catch(() => null), getCardAutopay(),
   ]));
@@ -65,6 +68,7 @@ export default async function BillingPage({ searchParams }: { searchParams: Prom
     <div className="max-w-5xl">
       {header}
       {notice && <p role={notice.ok ? "status" : "alert"} className={`mb-6 rounded-xl px-4 py-3 text-[15px] ${notice.ok ? "bg-go-soft text-go" : "border border-signal/25 bg-warn-soft"}`}>{notice.text}</p>}
+      {!isCurrent(acceptance) && <AcceptAgreement canAccept={staff.role === "owner"} />}
       {(stripeTestMode() || gocardlessSandbox()) && <p className="mb-6 rounded-xl border border-lane/40 bg-[#fdf6e3] px-4 py-3 text-sm"><b>Test mode.</b> Payments use test cards; no real money moves.</p>}
 
       {pastDue.length > 0 && (
@@ -180,15 +184,18 @@ export default async function BillingPage({ searchParams }: { searchParams: Prom
 
       <section aria-labelledby="docs" className="mt-8">
         <h2 id="docs" className="mb-3 text-lg font-semibold">Documents</h2>
-        {settings.documents.length === 0 ? <p className="panel p-5 text-muted">No documents yet. Your service agreement and terms will be here.</p> : (
-          <ul className="panel divide-y divide-line">
-            {settings.documents.map((d) => (
-              <li key={d.url} className="flex items-center justify-between gap-3 px-5 py-3">
-                <span className="font-medium">{d.title}</span>
-                <a href={d.url} target="_blank" rel="noopener noreferrer" className="panel-link">Open</a>
-              </li>
-            ))}
-          </ul>
+        <ul className="panel divide-y divide-line">
+          {[...[{ title: "AutoDash Service Agreement (billing, AI use, responsibilities)", url: "/terms" }, { title: "Privacy Policy", url: "/privacy" }, { title: "Text Message Terms", url: "/sms-terms" }, { title: "Email Terms", url: "/email-terms" }], ...settings.documents].map((d) => (
+            <li key={d.url} className="flex items-center justify-between gap-3 px-5 py-3">
+              <span className="font-medium">{d.title}</span>
+              <a href={d.url} target="_blank" rel="noopener noreferrer" className="panel-link">Open</a>
+            </li>
+          ))}
+        </ul>
+        {acceptance && (
+          <p className="mt-2 text-sm text-muted">
+            Service Agreement {isCurrent(acceptance) ? "accepted" : `(version ${acceptance.version}) accepted`} by {acceptance.by} ({acceptance.email}) on {new Date(acceptance.at).toLocaleDateString("en-US", { month: "long", day: "numeric", year: "numeric", timeZone: "America/Chicago" })}.
+          </p>
         )}
       </section>
 

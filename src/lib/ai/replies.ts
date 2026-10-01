@@ -11,6 +11,7 @@ import { aiStartDate, dataStartDate, dealership, inAiHours } from "@/lib/dealers
 import { withGmail } from "@/lib/gmail";
 import { loadGmailConnection } from "@/lib/gmail/connection";
 import { availabilityNote } from "@/lib/inventory";
+import { EMAIL_FOOTER } from "@/lib/legal/config";
 
 export type ReplyStatus = "draft" | "sent" | "discarded" | "skipped" | "failed";
 export type AiReply = {
@@ -80,6 +81,9 @@ export async function draftNewReplies({ max = 4, force = false } = {}): Promise<
       await sql`insert into ai_replies ${sql({ ...base, subject: "", body: "", status: "skipped", error: reason })} on conflict (lead_id) do nothing`;
     };
     if (NOT_A_CUSTOMER.test(email) || email === connection?.mailbox) { await skip("Not a customer's email address."); continue; }
+    // Anyone who asked to unsubscribe never gets an AI email.
+    const [stopped] = await sql`select 1 from customers where lower(email) = ${email} and email_optout limit 1`;
+    if (stopped) { await skip("This customer asked to stop emails."); continue; }
     // One AI email per customer per week, even if they send several leads.
     const [recent] = await sql`select 1 from ai_replies where to_email = ${email} and status in ('draft', 'sent') and created_at > now() - interval '7 days' limit 1`;
     if (recent) { await skip("This customer already has an AI email from the last 7 days."); continue; }
@@ -184,13 +188,21 @@ export async function sendReply(id: number, edits: { subject: string; body: stri
   // Claim the draft first, so two people clicking Send at once can't send it twice.
   const [row] = await sql`update ai_replies set status = 'sending', subject = ${subject}, body = ${body} where id = ${id} and status = 'draft' returning *`;
   if (!row) return { ok: false, error: "This reply was already sent or discarded." };
+  // Never email someone who asked to unsubscribe, even from a draft written earlier.
+  const [stopped] = await sql`select 1 from customers where lower(email) = ${String(row.to_email).toLowerCase()} and email_optout limit 1`;
+  if (stopped) {
+    await sql`update ai_replies set status = 'discarded', error = 'This customer asked to stop emails.' where id = ${id}`;
+    return { ok: false, error: "This customer asked to stop emails, so the reply wasn't sent." };
+  }
   const connection = await loadGmailConnection(undefined);
   if (!canSendFrom(connection)) {
     await sql`update ai_replies set status = 'draft' where id = ${id}`;
     return { ok: false, error: "Gmail needs permission to send. Go to Settings and click Reconnect Gmail." };
   }
+  // Every email says who it's from and how to stop (added here, so edited drafts get it too).
+  const fullBody = /unsubscribe/i.test(body) ? body : `${body}\n\n${EMAIL_FOOTER}`;
   const result = await withGmail((gmail) => gmail.send({
-    to: row.to_email, subject, body, fromName: dealership.name,
+    to: row.to_email, subject, body: fullBody, fromName: dealership.name,
     threadId: row.thread_id, inReplyTo: row.in_reply_to, references: row.references_header,
   }), connection);
   if (result.status !== "ok") {

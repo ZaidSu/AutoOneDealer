@@ -11,6 +11,7 @@ import { aiStartDate, dealership, inAiHours } from "@/lib/dealership";
 import { mapLimit, withGmail, type GmailClient } from "@/lib/gmail";
 import { loadGmailConnection } from "@/lib/gmail/connection";
 import { newPartOnly } from "@/lib/gmail/email";
+import { wantsNoMoreEmail } from "@/lib/ai/unsubscribe";
 import { availabilityNote } from "@/lib/inventory";
 export { newPartOnly };
 
@@ -42,6 +43,11 @@ export async function checkCustomerReplies(gmail: GmailClient): Promise<number> 
         found++;
         await sql`update customers set last_seen = greatest(last_seen, ${new Date(m.receivedAt)}) where key = ${customer.key}`;
         await logActivity(customer.key, "email", `Replied by email: ${body.slice(0, 160) || m.subject}`, null).catch(() => undefined);
+        // "Unsubscribe": no more AI emails to this customer, from now on.
+        if (wantsNoMoreEmail(body)) {
+          await sql`update customers set email_optout = true, updated_at = now() where key = ${customer.key}`;
+          await logActivity(customer.key, "note", "Asked to stop emails: no more AI emails", null).catch(() => undefined);
+        }
       }
     }
     await sql`insert into email_seen (gmail_id) values (${id}) on conflict do nothing`;
@@ -82,6 +88,13 @@ export async function draftFollowups({ max = 3, force = false } = {}): Promise<{
     // If someone at the dealership already answered after this email, the AI stays out of it.
     if (last && emailOf(last.from) !== reply.from_email && last.receivedAt > new Date(reply.received_at).getTime()) {
       await sql`insert into ai_replies ${sql({ ...base, subject: "", body: "", status: "skipped", error: "Your team already answered this email." })} on conflict (lead_id) do nothing`;
+      out.skipped++;
+      continue;
+    }
+    // Someone who asked to unsubscribe (or already had) gets no AI answer.
+    const [optRow] = await sql`select email_optout from customers where key = ${reply.customer_key}`;
+    if (optRow?.email_optout || wantsNoMoreEmail(String(reply.body ?? ""))) {
+      await sql`insert into ai_replies ${sql({ ...base, subject: "", body: "", status: "skipped", error: "Asked to stop emails." })} on conflict (lead_id) do nothing`;
       out.skipped++;
       continue;
     }

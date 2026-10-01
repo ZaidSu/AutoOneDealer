@@ -473,6 +473,17 @@ export async function savePurchaseFollowupAction(on: boolean, days: number): Pro
   return { ok: true, message: on ? `Saved. Customers get a follow-up text ${d} day${d === 1 ? "" : "s"} after they're marked purchased.` : "Saved. Purchase follow-up texts are off." };
 }
 
+export async function acceptAgreementAction(): Promise<ActionResult> {
+  const staff = await requireStaff();
+  if (!staff) return fail("Your session ended. Sign in again.");
+  // Only the dealership's owner can accept it for the dealership (not the developer who runs AutoDash).
+  if (staff.role !== "owner") return fail("Only the dealership owner can accept the agreement. Sign in with the owner's account.");
+  const { recordAcceptance } = await import("@/lib/legal/accept");
+  try { await recordAcceptance(staff.name, staff.email); } catch { return NO_DB; }
+  revalidatePath("/billing");
+  return { ok: true, message: "Thank you. The agreement is accepted." };
+}
+
 export async function disconnectBankAction(): Promise<ActionResult> {
   const staff = await requireStaff();
   if (!staff || !can.viewBilling(staff.role)) return fail("Only the owner can change how bills are paid.");
