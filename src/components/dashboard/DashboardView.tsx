@@ -1,6 +1,7 @@
 "use client";
 // The Dashboard: today's date, today's appointments, and everything that came in since last night.
 // Drawn from the browser's saved copy first, then refreshed quietly in the background.
+import SourceBadge from "@/components/leads/SourceBadge";
 import Link from "next/link";
 import Badge from "@/components/leads/Badge";
 import DbNotice from "@/components/ui/DbNotice";
@@ -45,12 +46,13 @@ export default function DashboardView() {
       )}
 
       <section aria-label="Since last night" className="stat-strip mb-8 lg:grid-cols-4">
-        <Stat href="/leads?show=inquiry" value={counts?.leads} label="New leads" hot />
-        <Stat href="/credit-applications" value={counts?.applications} label="Credit applications" hot />
-        <Stat href="/appointments" value={appts.length} label={upcoming.length && upcoming.length !== appts.length ? `Appointments today, ${upcoming.length} still to come` : "Appointments today"} />
-        <Link href="/ai/emails" className="stat">
+        <Stat href="/leads?show=inquiry" value={counts?.leads} label="New leads" color="#1c7ed6" />
+        <Stat href="/credit-applications" value={counts?.applications} label="Credit applications" color="#f08c00" />
+        <Stat href="/appointments" value={appts.length} color="#0ca678" label={upcoming.length && upcoming.length !== appts.length ? `Appointments today, ${upcoming.length} still to come` : "Appointments today"} />
+        <Link href="/ai/emails" className="stat relative">
+          <span aria-hidden className="absolute inset-x-0 top-0 h-1" style={{ background: "#7048e8" }} />
           {ai.enabled ? (
-            <p className={`stat-value ${ai.waiting ? "text-signal" : ""}`}>{ai.waiting ? ai.waiting : ai.emails}</p>
+            <p className="stat-value" style={{ color: "#7048e8" }}>{ai.waiting ? ai.waiting : ai.emails}</p>
           ) : (
             <p className="pt-1.5 font-condensed text-[1.6rem] font-semibold leading-tight text-faint">Not on yet</p>
           )}
@@ -112,9 +114,10 @@ export default function DashboardView() {
                     <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
                       <Link href={`/inbox/${lead.messageId}`} className="font-semibold hover:text-signal hover:underline">{displayName(lead.name)}</Link>
                       <Badge tone={lead.kind}>{lead.kind === "application" ? "Credit application" : lead.type}</Badge>
+                      <SourceBadge source={lead.provider} size="sm" />
                     </div>
                     <p className="truncate text-sm text-muted">
-                      {[lead.kind === "application" && lead.loanAmount !== null ? `Loan ${formatMoney(lead.loanAmount)}` : lead.vehicle, lead.provider].filter(Boolean).join(", ")}
+                      {(lead.kind === "application" && lead.loanAmount !== null ? `Loan ${formatMoney(lead.loanAmount)}` : lead.vehicle) ?? "No vehicle mentioned"}
                     </p>
                     {(lead.phone || lead.email) && (
                       <p className="truncate text-sm">
@@ -146,10 +149,11 @@ function DateHeader({ tz, line }: { tz: string; line: string }) {
   );
 }
 
-function Stat({ value, label, href, hot }: { value: number | undefined; label: string; href: string; hot?: boolean }) {
+function Stat({ value, label, href, color }: { value: number | undefined; label: string; href: string; color: string }) {
   return (
-    <Link href={href} className="stat">
-      <p className={`stat-value ${hot && value ? "text-signal" : ""}`}>{value === undefined ? "–" : value.toLocaleString()}</p>
+    <Link href={href} className="stat relative">
+      <span aria-hidden className="absolute inset-x-0 top-0 h-1" style={{ background: color }} />
+      <p className="stat-value" style={value ? { color } : undefined}>{value === undefined ? "–" : value.toLocaleString()}</p>
       <p className="stat-label">{label}</p>
     </Link>
   );

@@ -10,7 +10,7 @@ export default function GmailState(props: Props) {
       <h2 className="text-lg font-semibold">{notConnected ? "Connect the dealership inbox" : "Can't read the inbox right now"}</h2>
       <p className="mt-1 text-muted">
         {notConnected
-          ? "This page reads from the dealership Gmail. It can be connected in Settings. For now, the connection is saved in the browser that connected it."
+          ? "This page reads from the dealership Gmail. Connect it once in Settings and it works for everyone, on every device."
           : props.message ?? "Google stopped accepting the inbox connection, or Gmail didn't respond. Reconnecting usually fixes it."}
       </p>
       {!notConnected && props.code && <p className="mt-1 text-xs text-muted">Error code: {props.code}</p>}

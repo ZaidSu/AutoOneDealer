@@ -1,4 +1,5 @@
 import { requirePageStaff } from "@/lib/auth/guard";
+import SourceBadge from "@/components/leads/SourceBadge";
 import type { Metadata } from "next";
 import Link from "next/link";
 import Badge from "@/components/leads/Badge";
@@ -70,7 +71,7 @@ export default async function InboxPage({ searchParams }: { searchParams: Promis
                   <span className="flex flex-wrap items-center gap-2">
                     <span className="font-semibold">{displayName(lead.name)}</span>
                     <Badge tone={lead.kind}>{lead.kind === "application" ? "Credit application" : lead.type}</Badge>
-                    <span className="text-sm text-muted">{lead.provider}</span>
+                    <SourceBadge source={lead.provider} size="sm" />
                   </span>
                   <span className="mt-0.5 block truncate text-sm text-muted">{lead.subject}</span>
                 </span>

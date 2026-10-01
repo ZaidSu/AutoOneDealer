@@ -94,7 +94,8 @@ export default async function AppointmentsPage({ searchParams }: { searchParams:
               ) : (
                 <ul className="divide-y divide-line overflow-hidden rounded-lg border border-line bg-white">
                   {list.map((a) => (
-                    <li key={a.id} className={`grid gap-x-5 gap-y-2 px-4 py-3.5 md:grid-cols-[88px_minmax(0,1fr)_auto] md:items-center ${a.status === "canceled" ? "opacity-60" : ""}`}>
+                    <li key={a.id} className={`grid gap-x-5 gap-y-2 border-l-4 px-4 py-3.5 md:grid-cols-[88px_minmax(0,1fr)_auto] md:items-center ${
+                      a.status === "showed" ? "border-l-go" : a.status === "no_show" ? "border-l-signal" : a.status === "canceled" ? "border-l-line opacity-60" : "border-l-[#1c7ed6]"}`}>
                       <span className="font-semibold tabular-nums">{timeFmt.format(a.startsAt)}</span>
                       <div className="min-w-0">
                         <p className="font-semibold">

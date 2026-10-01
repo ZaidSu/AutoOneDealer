@@ -29,7 +29,6 @@ const NAV: NavEntry[] = [
       { href: "/inbox", label: "Inbox", icon: "inbox" },
     ],
   },
-  { href: "/analytics", label: "Analytics", icon: "analytics" },
   {
     id: "ai", label: "AI assistant", icon: "ai", items: [
       { href: "/ai/emails", label: "Email replies", icon: "mail" },
@@ -40,6 +39,7 @@ const NAV: NavEntry[] = [
       { href: "/ai/automations", label: "Automations", icon: "automations" },
     ],
   },
+  { href: "/analytics", label: "Analytics", icon: "analytics" },
 ];
 const FOOTER: NavItem[] = [
   { href: "/billing", label: "Billing", icon: "credit" },

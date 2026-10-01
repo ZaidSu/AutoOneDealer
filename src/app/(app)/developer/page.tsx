@@ -44,10 +44,22 @@ export default async function DeveloperPage() {
     unreachable: "DATABASE_URL is set, but the database didn't answer. Check the address and password, or whether the Supabase project is paused.",
   };
 
+  // Everything AutoDash reads, grouped by what it turns on. "For" says what stops working without it.
+  const extra: { name: string; for: string }[] = [
+    { name: "DATABASE_URL", for: "Saved leads, customers, appointments" },
+    { name: "ANTHROPIC_API_KEY", for: "AI email and text replies, summaries" },
+    { name: "TWILIO_ACCOUNT_SID", for: "Texting" },
+    { name: "TWILIO_AUTH_TOKEN", for: "Texting" },
+    { name: "TWILIO_PHONE_NUMBER", for: "Texting" },
+    { name: "STRIPE_SECRET_KEY", for: "Card payments on Billing" },
+    { name: "STRIPE_WEBHOOK_SECRET", for: "Card payments confirmed even if the tab closes" },
+    { name: "BILLING_START", for: "Monthly bills (creates them automatically)" },
+    { name: "CRON_SECRET", for: "The timer: night-time lead checks, AI drafts, autopay" },
+  ];
   const rows = [
-    ...REQUIRED_VARS.map((name) => ({ name, required: true, set: Boolean(process.env[name]) })),
-    ...OPTIONAL_VARS.map((name) => ({ name, required: false, set: Boolean(process.env[name]) })),
-    { name: "DATABASE_URL", required: false, set: Boolean(process.env.DATABASE_URL) },
+    ...REQUIRED_VARS.map((name) => ({ name, required: true, set: Boolean(process.env[name]), for: "Sign-in and Gmail" })),
+    ...OPTIONAL_VARS.map((name) => ({ name, required: false, set: Boolean(process.env[name]), for: name === "REQUIRE_GOOGLE_SIGNIN" ? "Locks sign-in to Google accounts" : "Extra staff accounts" })),
+    ...extra.map((e) => ({ name: e.name, required: false, set: Boolean(process.env[e.name]), for: e.for })),
   ];
 
   return (
@@ -64,7 +76,7 @@ export default async function DeveloperPage() {
               <thead className="text-sm text-muted">
                 <tr className="border-b border-line">
                   <th className="py-2 pr-4 font-medium">Name</th>
-                  <th className="py-2 pr-4 font-medium">Needed</th>
+                  <th className="py-2 pr-4 font-medium">Needed for</th>
                   <th className="py-2 font-medium">Status</th>
                 </tr>
               </thead>
@@ -72,9 +84,9 @@ export default async function DeveloperPage() {
                 {rows.map((row) => (
                   <tr key={row.name} className="border-b border-line last:border-0">
                     <td className="py-2 pr-4 font-medium">{row.name}</td>
-                    <td className="py-2 pr-4 text-muted">{row.required ? "Required" : "Optional"}</td>
-                    <td className={`py-2 ${row.set ? "text-go" : row.required ? "text-signal" : "text-muted"}`}>
-                      {row.set ? "Set" : "Missing"}
+                    <td className="py-2 pr-4 text-muted">{row.required ? `Required: ${row.for}` : row.for}</td>
+                    <td className="py-2">
+                      <span className={`rounded-full px-2.5 py-0.5 text-xs font-semibold ${row.set ? "bg-go-soft text-go" : row.required ? "bg-signal text-white" : "bg-[#fff3d6] text-[#8a5300]"}`}>{row.set ? "Set" : "Missing"}</span>
                       {row.name === "SESSION_SECRET" && row.set && secret.length < 32 ? " (too short: needs 32+ characters)" : ""}
                     </td>
                   </tr>

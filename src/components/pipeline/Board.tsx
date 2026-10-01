@@ -1,4 +1,5 @@
 "use client";
+import SourceBadge from "@/components/leads/SourceBadge";
 import { notifyChanged } from "@/lib/client/live";
 // Customers by stage. Drag a card to another column (or use its menu on a phone) to change the stage.
 import Link from "next/link";
@@ -60,7 +61,7 @@ export default function Board({ columns: initial, labels, repId }: Props) {
                   <Link href={`/customers/${card.key}`} className="block font-semibold hover:text-signal">{displayName(card.name)}</Link>
                   <p className="truncate text-sm text-muted">{card.vehicle ?? "No vehicle mentioned"}</p>
                   <p className="mt-1.5 flex flex-wrap items-center gap-x-2 text-xs text-muted">
-                    <span>{card.source ?? "Unknown source"}</span>
+                    <SourceBadge source={card.source} size="sm" />
                     <span>{ago(card.lastSeen)}</span>
                     {card.repName && <span className="font-semibold text-ink">{card.repName}</span>}
                     {card.hasApplication && <span className="font-semibold text-signal">Loan app</span>}

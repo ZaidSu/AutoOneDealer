@@ -1,4 +1,5 @@
 import Link from "next/link";
+import SourceBadge from "./SourceBadge";
 import Badge from "@/components/leads/Badge";
 import { displayName, formatDateTime, formatMoney, formatPhone } from "@/lib/utils/format";
 import type { Lead } from "@/lib/gmail";
@@ -19,7 +20,7 @@ export default function LeadList({ leads }: { leads: Lead[] }) {
                   {displayName(lead.name)}
                 </Link>
                 <Badge tone={lead.kind}>{lead.kind === "application" ? "Credit application" : lead.type}</Badge>
-                <Badge tone="neutral">{lead.provider}</Badge>
+                <SourceBadge source={lead.provider} />
               </div>
               <p className="mt-0.5 truncate text-sm text-muted">{details.filter(Boolean).join(" · ") || lead.subject}</p>
             </div>
