@@ -146,7 +146,8 @@ function toDay(value: unknown): string {
 export async function updateCustomer(key: string, name: string | null, field: CustomerField, value: string | number | null) {
   const sql = await readyDb();
   if (!sql) throw new Error("no_db");
-  await sql`insert into customers (key, name) values (${key}, ${name}) on conflict (key) do nothing`;
+  // A customer who has no row yet gets one dated now, so they appear in lists instead of being invisible.
+  await sql`insert into customers (key, name, first_seen, last_seen) values (${key}, ${name}, now(), now()) on conflict (key) do nothing`;
   switch (field) {
     case "rep":
       await sql`update customers set rep_id = ${value as number | null}, updated_at = now() where key = ${key}`;

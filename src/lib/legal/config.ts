@@ -12,7 +12,7 @@ export const LEGAL = {
   provider: process.env.PROVIDER_NAME || "High Level Technologies",
   providerEmail: process.env.PROVIDER_EMAIL || "",
   /** Bump the version when the Service Agreement changes in a way that needs the owner to accept it again. */
-  agreementVersion: "2026-10-01",
+  agreementVersion: "2026-10-01-2",
   updated: "October 1, 2026",
   state: "Texas",
   county: "Dallas County, Texas",

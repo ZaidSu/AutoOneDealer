@@ -1,9 +1,9 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { DEFAULT_BILLING, totals } from "../../src/lib/billing/types.ts";
+import { DEFAULT_BILLING, partsTotal, totals } from "../../src/lib/billing/types.ts";
 
-test("first bill: plan + $99 connection fee, Texas-style tax on 80%", () => {
-  const t = totals([{ label: "Plan", cents: 36900 }, { label: "Connection", cents: DEFAULT_BILLING.setupFeeCents }], DEFAULT_BILLING);
+test("tax math still works when a rate is set: 8.25% on 80% of the bill", () => {
+  const t = totals([{ label: "Plan", cents: 36900 }, { label: "Connection", cents: DEFAULT_BILLING.setupFeeCents }], { taxRatePercent: 8.25, taxablePercent: 80 });
   assert.equal(DEFAULT_BILLING.setupFeeCents, 9900);
   assert.equal(t.subtotal, 46800);
   assert.equal(t.tax, 3089); // 46800 * 0.8 * 0.0825 = 3088.8
@@ -26,10 +26,9 @@ test("Stripe webhook signatures: right secret passes, wrong or old ones fail", a
   assert.equal(verifyWebhook(body, `t=${t},v1=${sig}`, "whsec_test", (t + 900) * 1000), false);
 });
 
-test("the plan's parts add up to $369 and bills are due on the 9th", async () => {
+test("the plan's parts add up to the monthly price and bills are due on the 9th", async () => {
   const { partsTotal } = await import("../../src/lib/billing/types.ts");
   assert.equal(partsTotal(DEFAULT_BILLING.planParts), DEFAULT_BILLING.monthlyCents);
-  assert.equal(DEFAULT_BILLING.monthlyCents, 36900);
   assert.equal(DEFAULT_BILLING.dueDay, 9);
 });
 
@@ -41,4 +40,11 @@ test("GoCardless webhook signatures: only the right secret and untouched body pa
   assert.equal(validGoCardlessSignature(body + " ", sig, "gc_secret"), false);
   assert.equal(validGoCardlessSignature(body, sig, "other"), false);
   assert.equal(validGoCardlessSignature(body, null, "gc_secret"), false);
+});
+
+test("the standard plan is $379 a month, has no sales tax, and the plan parts add up to it", () => {
+  assert.equal(DEFAULT_BILLING.monthlyCents, 37900);
+  assert.equal(DEFAULT_BILLING.taxRatePercent, 0);
+  assert.equal(partsTotal(DEFAULT_BILLING.planParts), 37900);
+  assert.deepEqual(totals([{ label: "Plan", cents: 37900 }, { label: "Connection", cents: 9900 }], DEFAULT_BILLING), { subtotal: 47800, tax: 0, total: 47800 });
 });

@@ -1,5 +1,9 @@
 // Billing shapes and the plan defaults. No database code, so browser components can import it.
+/** Bump when the standard plan changes, so saved settings from before are brought up to date once. */
+export const PLAN_VERSION = 2;
+
 export type BillingSettings = {
+  planVersion: number;
   monthlyCents: number;
   setupFeeCents: number;
   /** What's included each month before any extra charge. */
@@ -24,13 +28,14 @@ export type BillingSettings = {
 };
 
 export const DEFAULT_BILLING: BillingSettings = {
-  monthlyCents: 36900,
+  planVersion: PLAN_VERSION,
+  monthlyCents: 37900,
   setupFeeCents: 9900,
   includedEmails: 1000,
   includedTexts: 1000,
   extraEmailCents: 10,
   extraTextCents: 5,
-  taxRatePercent: 8.25,
+  taxRatePercent: 0, // Auto One Motors is sales-tax exempt (certificate on file)
   taxablePercent: 80,
   dueDay: 9,
   emailRange: "100 to 400",
@@ -38,7 +43,7 @@ export const DEFAULT_BILLING: BillingSettings = {
   billedBy: "High Level Technologies",
   documents: [],
   planParts: [
-    { label: "Auto One Motors software, updates and support", detail: "The whole AutoDash system, kept up to date, with support and all your connections maintained", cents: 14900 },
+    { label: "Auto One Motors software, updates and support", detail: "The whole AutoDash system, kept up to date, with support and all your connections maintained", cents: 15900 },
     { label: "AI email replies", detail: "The AI reads each new lead and writes a reply", cents: 6900 },
     { label: "AI texting and call forwarding", detail: "The AI answers customer texts, and calls to the texting number ring the dealership", cents: 6900 },
     { label: "AI training", detail: "Keeping the AI up to date with your hours, inventory questions and answers", cents: 2900 },

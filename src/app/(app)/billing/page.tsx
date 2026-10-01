@@ -95,7 +95,7 @@ export default async function BillingPage({ searchParams }: { searchParams: Prom
             {tone && <span className={`rounded-full px-3 py-1 text-sm font-semibold ${TONE[tone.tone].chip}`}>{tone.label}</span>}
           </div>
           {tone && <StatusBox tone={tone} />}
-          <Breakdown items={shown.items} subtotal={shown.subtotal} tax={shown.tax} total={shown.total} taxNote={`Sales tax (${settings.taxRatePercent}% on ${settings.taxablePercent}% of the bill)`} />
+          <Breakdown items={shown.items} subtotal={shown.subtotal} tax={shown.tax} total={shown.total} taxNote={settings.taxRatePercent > 0 ? `Sales tax (${settings.taxRatePercent}% on ${settings.taxablePercent}% of the bill)` : "Sales tax (exempt)"} />
           <div className="border-t border-line p-5">
             <PayArea invoice={current} manage={manage} autopay={autopay} hasMandate={Boolean(mandate)} dueDay={settings.dueDay} />
             {!current && whyNoBill && <p className="mt-2 rounded-lg bg-paper px-3 py-2 text-sm text-muted"><b>Why there&apos;s no bill yet:</b> {whyNoBill}</p>}
@@ -106,7 +106,7 @@ export default async function BillingPage({ searchParams }: { searchParams: Prom
         <div className="grid gap-6">
           <section aria-labelledby="plan" className="panel p-5">
             <h2 id="plan" className="text-[17px] font-semibold">Your plan</h2>
-            <p className="mt-2 font-condensed text-4xl font-semibold">{money(settings.monthlyCents)}<span className="font-sans text-base font-normal text-muted"> a month, plus tax</span></p>
+            <p className="mt-2 font-condensed text-4xl font-semibold">{money(settings.monthlyCents)}<span className="font-sans text-base font-normal text-muted"> a month{settings.taxRatePercent > 0 ? ", plus tax" : ", no sales tax"}</span></p>
             <p className="mt-2 text-sm text-muted">Billed by {settings.billedBy || "AutoDash"}, due on the {ordinal(settings.dueDay)} of each month.</p>
             {settings.planParts.length > 0 && (
               <>

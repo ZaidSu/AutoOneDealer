@@ -3,12 +3,22 @@ import { readyDb } from "@/lib/db";
 import { getSetting, setSetting } from "@/lib/db/data";
 import { dealership } from "@/lib/dealership";
 import { addDays, dayKey, zonedToUtc } from "@/lib/utils/time";
-import { DEFAULT_BILLING, periodLabel, totals, type BillingSettings, type Invoice, type InvoiceItem } from "./types";
+import { DEFAULT_BILLING, PLAN_VERSION, periodLabel, totals, type BillingSettings, type Invoice, type InvoiceItem } from "./types";
 
 export async function getBillingSettings(): Promise<BillingSettings> {
   try {
     const raw = await getSetting("billing");
-    return raw ? { ...DEFAULT_BILLING, ...JSON.parse(raw) } : DEFAULT_BILLING;
+    if (!raw) return DEFAULT_BILLING;
+    const saved = JSON.parse(raw);
+    // Saved settings from before the current plan (v2: $379 a month, no sales tax) are brought up to date once. After
+    // that the developer's own edits in the form are kept.
+    if (Number(saved.planVersion ?? 1) < PLAN_VERSION) {
+      const migrated: BillingSettings = { ...DEFAULT_BILLING, ...saved, monthlyCents: DEFAULT_BILLING.monthlyCents, taxRatePercent: 0,
+        planParts: DEFAULT_BILLING.planParts, planVersion: PLAN_VERSION };
+      await setSetting("billing", JSON.stringify(migrated)).catch(() => undefined);
+      return migrated;
+    }
+    return { ...DEFAULT_BILLING, ...saved };
   } catch {
     return DEFAULT_BILLING;
   }
@@ -26,6 +36,7 @@ const num = (v: unknown, min: number, max: number, fallback: number) => {
 export async function saveBillingSettings(input: BillingSettings) {
   const d = DEFAULT_BILLING;
   const clean: BillingSettings = {
+    planVersion: PLAN_VERSION,
     monthlyCents: int(input.monthlyCents, 0, 10_000_000, d.monthlyCents),
     setupFeeCents: int(input.setupFeeCents, 0, 10_000_000, d.setupFeeCents),
     includedEmails: int(input.includedEmails, 0, 1_000_000, d.includedEmails),

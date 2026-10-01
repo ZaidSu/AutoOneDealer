@@ -58,13 +58,14 @@ export async function listCustomers(f: CustomerFilters, page = 0, perPage = 50):
   const rows = await sql`
     select c.*, r.name as rep_name, count(*) over () as total
     from customers c left join reps r on r.id = c.rep_id
-    where c.last_seen >= ${dataStartDate()}
+    -- Customers marked purchased always show, even if their last lead is from before the data start (Analytics counts them too).
+    where (c.last_seen >= ${dataStartDate()} or c.status = 'purchased')
       ${q ? sql`and (c.search like ${like} or lower(coalesce(c.heard_from, '')) like ${like} ${digits.length >= 3 ? sql`or c.phone like ${`%${digits}%`}` : sql``})` : sql``}
       ${f.rep === "none" ? sql`and c.rep_id is null` : f.rep && /^\d+$/.test(f.rep) ? sql`and c.rep_id = ${Number(f.rep)}` : sql``}
       ${f.status ? sql`and c.status = ${f.status}` : sql``}
       ${f.fin ? sql`and coalesce(c.financing, case when c.app_count > 0 then 'needs_review' end) = ${f.fin}` : sql``}
       ${f.scope ? sql`and coalesce(c.state_scope, c.auto_scope) = ${f.scope}` : sql``}
-    order by c.last_seen desc
+    order by c.last_seen desc nulls last
     limit ${perPage} offset ${page * perPage}`;
   const keys = rows.map((r) => r.key as string);
   const [recent, appointments] = await Promise.all([recentLeads(keys), appointmentsForCustomers(keys)]);
@@ -122,14 +123,15 @@ export async function pipeline(opts: { repId?: number | null; days: number; perC
         count(*) over (partition by c.status) as total,
         row_number() over (partition by c.status order by greatest(c.last_seen, c.updated_at) desc) as n
       from customers c left join reps r on r.id = c.rep_id
-      where c.last_seen is not null
-        -- Only real names: not blank, not just a phone number, not an email address.
-        and nullif(trim(c.name), '') is not null and c.name !~ '^[0-9()+. -]+$' and position('@' in c.name) = 0
-        -- Only customers from the data start on (or that staff worked on since then).
-        -- Only customers active since the data start (a new lead, text or being added by hand). Old customers stay
-        -- hidden even if their row was touched by a rebuild.
-        and c.last_seen >= ${start}
-        and (c.status = 'appointment' or c.last_seen >= ${since})
+      where nullif(trim(c.name), '') is not null and c.name !~ '^[0-9()+. -]+$' and position('@' in c.name) = 0
+        -- Only real names (not blank, not just a phone number, not an email address), and only customers active since
+        -- the data start (a new lead, text, or being added by hand). Old customers stay hidden even if their row was
+        -- touched by a rebuild. The exception: customers marked purchased show for as long as the Pipeline's days
+        -- window reaches back from the day they were marked.
+        and (
+          (c.status = 'purchased' and coalesce(c.purchased_at, c.updated_at) >= ${since})
+          or (c.last_seen >= ${start} and (c.status = 'appointment' or c.last_seen >= ${since}))
+        )
         ${opts.repId ? sql`and c.rep_id = ${opts.repId}` : sql``}) x
     where n <= ${opts.perColumn ?? 40} order by n`;
   const columns = new Map<string, PipelineColumn>();
@@ -158,7 +160,7 @@ export async function searchCustomers(query: string, limit = 8): Promise<SearchH
   const digits = q.replace(/\D/g, "");
   const rows = await sql`
     select key, name, phone, email, last_vehicle, status from customers
-    where last_seen >= ${dataStartDate()} and (search like ${like} ${digits.length >= 3 ? sql`or phone like ${`%${digits}%`}` : sql``})
+    where (last_seen >= ${dataStartDate()} or status = 'purchased') and (search like ${like} ${digits.length >= 3 ? sql`or phone like ${`%${digits}%`}` : sql``})
     order by (lower(coalesce(name, '')) like ${`${q}%`}) desc, last_seen desc limit ${limit}`;
   return rows.map((r) => ({ key: r.key, name: r.name, phone: r.phone, email: r.email, vehicle: r.last_vehicle, status: r.status }));
 }

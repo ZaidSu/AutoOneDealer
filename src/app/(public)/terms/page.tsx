@@ -20,7 +20,7 @@ export default function ServiceAgreementPage() {
       <UL>
         <li><b>Monthly fee:</b> {money(B.monthlyCents)} per month, plus a <b>one-time connection fee of {money(B.setupFeeCents)}</b>.</li>
         <li><b>Included usage:</b> up to {B.includedEmails.toLocaleString("en-US")} AI emails and {B.includedTexts.toLocaleString("en-US")} AI texts each month. Usage above that is billed at {B.extraEmailCents}&cent; per email and {B.extraTextCents}&cent; per text, as shown on the Billing page and on each bill.</li>
-        <li><b>Taxes:</b> plus sales tax where it applies, calculated and shown on each bill.</li>
+        <li><b>Sales tax:</b> Customer has told us it is exempt from sales tax and will give us a copy of its exemption certificate on request. No sales tax is charged while the exemption is valid. If the exemption is not valid or ends, Customer will owe any tax that should have been charged, and we may add it to a bill.</li>
         <li><b>Billed by:</b> {provider}. A bill is created each month and is due on the <b>{B.dueDay}th</b>.</li>
         <li><b>Payment:</b> by credit or debit card through Stripe. Customer authorizes us to charge the card it saves for each bill on its due date (autopay) and to retry a failed payment. Card numbers are handled by Stripe and never stored by AutoDash.</li>
         <li><b>Past due:</b> if a bill is not paid by 3 days after its due date, we may lock or suspend access to the Service until it is paid. Past-due amounts remain owed. You will not be charged a separate late fee.</li>
