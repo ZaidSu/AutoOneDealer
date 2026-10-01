@@ -45,8 +45,11 @@ function openPool(url: string, max: number, connectTimeout: number): Sql {
 function retire(pool: Sql | null, name: string, reason: string) {
   if (!pool) return;
   trace("db", `replacing ${name} connection (${reason})`);
-  // Let anything still running finish (up to 10s), then close. Never waited on by a page.
-  void pool.end({ timeout: 10 }).catch(() => undefined);
+  // New requests get a fresh connection right away, but the old one stays usable for 2 more minutes: a slower task
+  // started earlier (the lead import, the AI writing replies) may still be using it, and closing it under them caused
+  // "write CONNECTION_ENDED" errors. After that it's closed for good. Never waited on by a page.
+  const timer = setTimeout(() => void pool.end({ timeout: 10 }).catch(() => undefined), 120_000);
+  timer.unref?.();
 }
 
 let lastUsed = 0;
@@ -94,6 +97,14 @@ export function resetDb(reason: string) {
  * it's almost certainly stuck on a dead connection: throw that connection away and try once more on a fresh one.
  * Worst case a page waits about 10 seconds and shows an error, instead of hanging until the server gives up.
  */
+/** Errors that mean "the connection went away", not "the query was wrong": safe to retry on a new connection. */
+export function isConnectionError(error: unknown): boolean {
+  const code = String((error as { code?: unknown })?.code ?? "");
+  const message = error instanceof Error ? error.message : String(error);
+  return /^(CONNECTION_(ENDED|CLOSED|DESTROYED)|CONNECT_TIMEOUT|ECONNRESET|EPIPE|ETIMEDOUT|57P01)$/.test(code)
+    || /CONNECTION_(ENDED|CLOSED|DESTROYED)|ECONNRESET|socket hang up|terminating connection/i.test(message);
+}
+
 export async function fresh<T>(label: string, work: () => Promise<T>, firstTryMs = 4000, retryMs = 6000): Promise<T> {
   const started = Date.now();
   try {
@@ -102,9 +113,11 @@ export async function fresh<T>(label: string, work: () => Promise<T>, firstTryMs
     return result;
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
-    if (!message.startsWith("timed out")) throw error; // a real error: don't hide it behind a retry
-    console.warn(`[autodash:step] ${label}: stuck after ${firstTryMs}ms, retrying on a fresh connection`);
-    resetDb(`${label} stuck`);
+    // Stuck, or the connection was dropped (by the network or Supabase): retry once on a fresh one.
+    // Any other error is real, and is shown instead of being hidden behind a retry.
+    if (!message.startsWith("timed out") && !isConnectionError(error)) throw error;
+    console.warn(`[autodash:step] ${label}: ${isConnectionError(error) ? `connection dropped (${message})` : `stuck after ${firstTryMs}ms`}, retrying on a fresh connection`);
+    resetDb(`${label} ${isConnectionError(error) ? "lost its connection" : "stuck"}`);
     const result = await withTimeout(work(), retryMs).catch((e) => {
       console.error(`[autodash:step] ${label}: FAILED again after retry (${Date.now() - started}ms total)`);
       throw e;
