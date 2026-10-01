@@ -136,7 +136,7 @@ export async function allCustomerRecords(): Promise<CustomerRecord[]> {
   return (await sql`select * from customers`).map(toRecord);
 }
 
-export type CustomerField = "rep" | "status" | "financing" | "heard_from" | "state_scope" | "notes" | "follow_up";
+export type CustomerField = "rep" | "status" | "financing" | "heard_from" | "state_scope" | "notes" | "follow_up" | "purchased_vehicle" | "purchase_followup";
 
 /** Postgres dates come back as Date objects at UTC midnight; turn them back into "YYYY-MM-DD". */
 function toDay(value: unknown): string {
@@ -155,6 +155,7 @@ export async function updateCustomer(key: string, name: string | null, field: Cu
       await sql`update customers set status = ${value as string},
         contacted_at = case when ${value as string} <> 'new' then coalesce(contacted_at, now()) else contacted_at end,
         purchased_at = case when ${value as string} = 'purchased' then coalesce(purchased_at, now()) else purchased_at end,
+        purchased_vehicle = case when ${value as string} = 'purchased' then coalesce(purchased_vehicle, last_vehicle) else purchased_vehicle end,
         updated_at = now() where key = ${key}`;
       break;
     case "financing":
@@ -171,6 +172,13 @@ export async function updateCustomer(key: string, name: string | null, field: Cu
       break;
     case "follow_up":
       await sql`update customers set follow_up_at = ${value as string | null}, updated_at = now() where key = ${key}`;
+      break;
+    case "purchased_vehicle":
+      await sql`update customers set purchased_vehicle = ${value as string | null}, updated_at = now() where key = ${key}`;
+      break;
+    case "purchase_followup":
+      // "on" (or empty) sends the follow-up text; "off" never does.
+      await sql`update customers set purchase_followup_off = ${value === "off"}, updated_at = now() where key = ${key}`;
       break;
   }
   if (name) await sql`update customers set name = ${name} where key = ${key} and name is distinct from ${name}`;

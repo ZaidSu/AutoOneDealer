@@ -9,6 +9,7 @@ import { setSetting } from "@/lib/db/data";
 import { chargeDueBillsByCard, collectOpenBills, ensureInvoice } from "@/lib/billing";
 import { withGmail } from "@/lib/gmail";
 import { syncLeads } from "@/lib/leads/sync";
+import { sendPurchaseFollowups } from "@/lib/sms";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 60;
@@ -45,6 +46,11 @@ export async function GET(req: NextRequest) {
     report.ai = await draftNewReplies({ max: 4 });
   } catch (error) {
     report.ai = `failed: ${error instanceof Error ? error.message : "unknown"}`;
+  }
+  try {
+    report.purchaseFollowups = await sendPurchaseFollowups({ max: 3 });
+  } catch (error) {
+    report.purchaseFollowups = `failed: ${error instanceof Error ? error.message : "unknown"}`;
   }
   try {
     const bill = await ensureInvoice(undefined, { onlyIfStarted: true });

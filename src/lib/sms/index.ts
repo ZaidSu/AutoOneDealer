@@ -8,6 +8,7 @@ import { readyDb, trace } from "@/lib/db";
 import { getSetting, setSetting } from "@/lib/db/data";
 import { dealership, inAiHours } from "@/lib/dealership";
 import { availabilityNote } from "@/lib/inventory";
+import { cleanDays, FOLLOWUP_WINDOW_DAYS, followupState, type FollowupState } from "./followup-rules";
 import { sendSms, tenDigits, toE164, twilioConfigured } from "./twilio";
 
 export type TextMessage = {
@@ -73,8 +74,8 @@ export async function listConversations(limit = 100): Promise<Conversation[]> {
     select distinct on (m.phone) m.*, c.name as customer_name,
       exists (select 1 from sms_messages d where d.phone = m.phone and d.status = 'draft') as has_draft
     from sms_messages m left join customers c on c.key = m.customer_key
-    where m.status not in ('discarded', 'draft')
-    order by m.phone, coalesce(m.sent_at, m.created_at) desc`;
+    where m.status <> 'discarded'
+    order by m.phone, (m.status = 'draft') asc, coalesce(m.sent_at, m.created_at) desc`;
   return rows
     .map((r) => ({ customerKey: r.customer_key, phone: r.phone, name: r.customer_name ?? null, last: toMessage(r), waiting: Boolean(r.has_draft), unread: r.direction === "in" }))
     .sort((a, b) => b.last.at - a.last.at).slice(0, limit);
@@ -224,4 +225,96 @@ Write the dealership's next text.`;
     return sent.ok ? "sent" : "drafted";
   }
   return "drafted";
+}
+
+// ---- after-purchase follow-ups ----
+export async function getPurchaseFollowup(): Promise<{ on: boolean; days: number }> {
+  const [on, days] = await Promise.all([getSetting("purchase_followup").catch(() => null), getSetting("purchase_followup_days").catch(() => null)]);
+  return { on: on !== "off", days: cleanDays(days) };
+}
+export async function setPurchaseFollowup(on: boolean, days: number) {
+  await setSetting("purchase_followup", on ? "on" : "off");
+  await setSetting("purchase_followup_days", String(cleanDays(days)));
+}
+
+/** A few days after a customer is marked purchased, the AI texts them to ask how the car is doing. Each customer gets
+ *  one. Goes out by itself if automatic texting is on (during AI hours), otherwise it waits as a draft for a person to
+ *  send. Does nothing until Twilio is connected, so purchases made before texting works are caught up afterwards. */
+export async function sendPurchaseFollowups({ max = 3 } = {}): Promise<{ drafted: number; sent: number; skipped: number; waiting: string | null }> {
+  const none = { drafted: 0, sent: 0, skipped: 0 };
+  if (!twilioConfigured()) return { ...none, waiting: "Twilio isn't connected yet." };
+  if (!aiConfigured()) return { ...none, waiting: "The AI key isn't set up." };
+  if (!inAiHours()) return { ...none, waiting: "Outside AI hours." };
+  const settings = await getPurchaseFollowup();
+  if (!settings.on) return { ...none, waiting: "Purchase follow-ups are switched off." };
+  const sql = await readyDb();
+  if (!sql) return { ...none, waiting: "The database isn't connected." };
+
+  const rows = await sql`
+    select * from customers
+    where status = 'purchased' and purchased_at is not null and phone is not null
+      and purchase_followup_at is null and not purchase_followup_off
+      and purchased_at <= now() - make_interval(days => ${settings.days})
+      and purchased_at > now() - make_interval(days => ${settings.days + FOLLOWUP_WINDOW_DAYS})
+    order by purchased_at asc limit ${max}`;
+  if (!rows.length) return { ...none, waiting: null };
+
+  const [info, training, autoText] = await Promise.all([getDealershipInfo(), getAiTraining(), getAutoText()]);
+  const out = { ...none };
+  for (const customer of rows) {
+    const e164 = toE164(customer.phone);
+    const claim = async (note: string) => {
+      await sql`update customers set purchase_followup_at = now() where key = ${customer.key}`;
+      await logActivity(customer.key, "text", note, null).catch(() => undefined);
+    };
+    if (!e164 || (await isOptedOut(e164))) {
+      await claim(e164 ? "Purchase follow-up skipped: they replied STOP" : "Purchase follow-up skipped: no valid phone number");
+      out.skipped++;
+      continue;
+    }
+    const firstName = String(customer.name ?? "").trim().split(/\s+/)[0] || null;
+    const car = String(customer.purchased_vehicle ?? "").trim() || null;
+    const boughtOn = new Date(customer.purchased_at).toLocaleDateString("en-US", { month: "long", day: "numeric", timeZone: dealership.timeZone });
+    const system = `You text a customer who bought a car from ${dealership.name}, a used car dealership in the Dallas area, about a week ago. Write one friendly check-in text, the way a real salesperson would:
+- Short: 1 to 3 sentences, under 280 characters. No lists, markdown or emojis.
+- Ask how they're liking the car and whether everything is going well. Invite them to text or call if anything comes up.
+- Use their first name if you have it. Name the car only if you were given it. Don't claim to be a person: you're writing for the dealership team.
+- Never promise repairs, refunds, warranty coverage, prices or anything not in the facts. Don't ask for a review and don't try to sell anything.
+- Follow the dealership's instructions below. Reply with only the text message itself.`;
+    const prompt = `DEALERSHIP: ${dealership.name}. Phone: ${info.phone || "not given"}. Address: ${info.address || "not given"}.
+INSTRUCTIONS FROM THE DEALERSHIP: ${training.instructions || "none"}
+CUSTOMER: ${firstName ?? "name unknown"}. Bought: ${car ?? "a car (model not recorded)"} on ${boughtOn}.
+
+Write the check-in text.`;
+    let reply = "";
+    try {
+      reply = (await askClaude({ system, prompt, maxTokens: 250 })).replace(/^["']|["']$/g, "").trim().slice(0, 500);
+    } catch (error) {
+      console.error("[autodash:sms] couldn't write a purchase follow-up:", error instanceof Error ? error.message : error);
+      break; // tried again on the next check; the customer isn't marked
+    }
+    if (reply.length < 2) { out.skipped++; continue; }
+    const [draft] = await sql`insert into sms_messages (customer_key, phone, direction, body, status, ai) values (${customer.key}, ${e164}, 'out', ${reply}, 'draft', true) returning id`;
+    await claim("AI wrote a purchase follow-up text");
+    if (autoText) {
+      const sent = await sendText({ customerKey: customer.key, phone: e164, body: reply, sentBy: "AI (automatic)", ai: true, draftId: Number(draft.id) });
+      trace("sms", `purchase follow-up ${sent.ok ? "sent" : `left as draft: ${sent.error}`}`);
+      if (sent.ok) out.sent++; else out.drafted++;
+    } else out.drafted++;
+  }
+  return { ...out, waiting: null };
+}
+
+export type PurchaseRow = { key: string; name: string | null; phone: string | null; vehicle: string | null; purchasedAt: number; state: FollowupState; dueOn: number | null };
+/** Recent purchases and where each one's follow-up text stands, for the Automations page. */
+export async function listPurchases(days: number, limit = 30): Promise<PurchaseRow[]> {
+  const sql = await readyDb();
+  if (!sql) return [];
+  const rows = await sql`select key, name, phone, purchased_vehicle, last_vehicle, purchased_at, purchase_followup_at, purchase_followup_off from customers
+    where status = 'purchased' and purchased_at is not null order by purchased_at desc limit ${limit}`;
+  return rows.map((r) => {
+    const { state, dueOn } = followupState({ status: "purchased", purchasedAt: new Date(r.purchased_at), followupAt: r.purchase_followup_at ? new Date(r.purchase_followup_at) : null,
+      off: Boolean(r.purchase_followup_off), phone: r.phone ?? null }, days);
+    return { key: r.key, name: r.name ?? null, phone: r.phone ?? null, vehicle: r.purchased_vehicle ?? r.last_vehicle ?? null, purchasedAt: new Date(r.purchased_at).getTime(), state, dueOn: dueOn ? dueOn.getTime() : null };
+  });
 }

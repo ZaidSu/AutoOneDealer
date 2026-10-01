@@ -4,7 +4,7 @@ import { useRouter } from "next/navigation";
 import { useState, useTransition } from "react";
 import { addCustomerAction } from "@/app/actions";
 
-const EMPTY = { name: "", phone: "", email: "", vehicle: "", heardFrom: "", notes: "" };
+const EMPTY = { name: "", phone: "", email: "", vehicle: "", heardFrom: "", notes: "", purchased: false, purchasedOn: "" };
 
 export default function AddCustomer({ sources = [] }: { sources?: string[] }) {
   const [open, setOpen] = useState(false);
@@ -12,7 +12,7 @@ export default function AddCustomer({ sources = [] }: { sources?: string[] }) {
   const [error, setError] = useState("");
   const [pending, start] = useTransition();
   const router = useRouter();
-  const set = (k: keyof typeof EMPTY) => (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>) => { setForm({ ...form, [k]: e.target.value }); setError(""); };
+  const set = (k: Exclude<keyof typeof EMPTY, "purchased">) => (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>) => { setForm({ ...form, [k]: e.target.value }); setError(""); };
   const save = () => start(async () => {
     const r = await addCustomerAction(form);
     if (!r.ok) return setError(r.error);
@@ -37,12 +37,21 @@ export default function AddCustomer({ sources = [] }: { sources?: string[] }) {
         <label className="field">Name <span className="text-signal">*</span><input className="input" value={form.name} onChange={set("name")} placeholder="Marcus Hill" autoFocus /></label>
         <label className="field">Phone<input className="input" value={form.phone} onChange={set("phone")} inputMode="tel" placeholder="(214) 555-0123" /></label>
         <label className="field">Email<input className="input" value={form.email} onChange={set("email")} inputMode="email" placeholder="name@example.com" /></label>
-        <label className="field">Car they're interested in<input className="input" value={form.vehicle} onChange={set("vehicle")} placeholder="2019 Toyota Camry" /></label>
+        <label className="field">{form.purchased ? "Car they bought" : "Car they're interested in"}<input className="input" value={form.vehicle} onChange={set("vehicle")} placeholder="2019 Toyota Camry" /></label>
         <label className="field">Heard about us
           {sources.length ? (
             <select className="input" value={form.heardFrom} onChange={set("heardFrom")}><option value="">Not known</option>{sources.map((s) => <option key={s}>{s}</option>)}</select>
           ) : <input className="input" value={form.heardFrom} onChange={set("heardFrom")} placeholder="Drive-by" />}
         </label>
+        <label className="flex items-center gap-2 text-[15px] sm:col-span-2">
+          <input type="checkbox" checked={form.purchased} onChange={(e) => { setForm({ ...form, purchased: e.target.checked }); setError(""); }} />
+          They already bought a car (the AI will text them a follow-up a week later)
+        </label>
+        {form.purchased && (
+          <label className="field sm:col-span-2">Day they bought it (leave blank for today)
+            <input type="date" className="input" value={form.purchasedOn} max={new Date().toISOString().slice(0, 10)} onChange={set("purchasedOn")} />
+          </label>
+        )}
         <label className="field sm:col-span-2">Notes<input className="input" value={form.notes} onChange={set("notes")} placeholder="Wants to trade in a 2012 Accord" /></label>
       </div>
       <div className="mt-4 flex flex-wrap items-center gap-3">

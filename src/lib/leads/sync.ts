@@ -6,7 +6,7 @@
 import { bgDb, readyDb } from "@/lib/db";
 import { dataStartDate } from "@/lib/dealership";
 import { LEAD_QUERIES, mapLimit, readLead, type GmailClient } from "@/lib/gmail";
-import { ensureCustomersBuilt, knownMessageIds, markIgnored, saveLead } from "./store";
+import { ensureCustomersBuilt, knownMessageIds, markIgnored, rebuildCustomers, saveLead } from "./store";
 
 export const HISTORY = "newer_than:365d";
 const STATE_KEY = "lead_sync_v2";
@@ -106,6 +106,50 @@ export async function syncLeads(gmail: GmailClient, { timeLimitMs = 20_000 } = {
       const result = await gmail.listPage(`(subject:"pre-qualification" OR subject:prequalification) -in:sent -in:drafts after:${since}`, PAGE);
       if (await importIds(result.ids)) {
         await sql`insert into app_settings (key, value) values ('catchup_prequal', 'done') on conflict (key) do update set value = 'done'`;
+      }
+    }
+
+    // 1c. Repairs for leads saved before the parser learned CarsForSale's newer email layout: loan applications with a
+    //     missing or wrong applicant name, and website leads with no car. Re-reads those emails and fixes the rows.
+    //     Only touches bad rows, so once they're fixed it costs one small query.
+    if (Date.now() < deadline - 3000) {
+      const bad = await sql`select message_id, kind from leads
+        where not ignored and received_at >= now() - interval '120 days'
+          and ((kind = 'application' and (name is null or name = '' or name ~* '^(vehicle information|finance application|you have a new|year\\s*:|make\\s*:)'))
+            or (provider ilike '%carsforsale%' and vehicle is null))
+        order by received_at desc limit 80`;
+      // Emails that can't be fixed (no name or car in them) are remembered, so they aren't re-read every 5 minutes.
+      const [gaveUpRow] = await sql`select value from app_settings where key = 'lead_repair_gave_up'`;
+      let gaveUp: string[] = [];
+      try { gaveUp = gaveUpRow ? JSON.parse(gaveUpRow.value) : []; } catch { /* start over */ }
+      let gaveUpChanged = false;
+      let fixed = 0;
+      for (const row of bad.filter((r) => !gaveUp.includes(r.message_id)).slice(0, 30)) {
+        if (Date.now() >= deadline - 2000) break;
+        try {
+          const lead = await readLead(gmail, row.message_id);
+          const goodName = Boolean(lead?.name) && !/^(vehicle information|finance application)/i.test(lead!.name!);
+          const useful = row.kind === "application" ? goodName : Boolean(lead?.vehicle);
+          if (lead && useful) {
+            await sql`update leads set name = ${goodName ? lead.name : null}, phone = coalesce(${lead.phone}, phone), email = coalesce(${lead.email}, email),
+              location = coalesce(${lead.location}, location), vehicle = coalesce(${lead.vehicle}, vehicle), stock = coalesce(${lead.stock}, stock)
+              where message_id = ${row.message_id}`;
+            fixed++;
+          } else {
+            gaveUp = [...gaveUp, row.message_id].slice(-400);
+            gaveUpChanged = true;
+          }
+        } catch (error) {
+          console.error("Couldn't re-read a lead email to repair it:", error instanceof Error ? error.message : "unknown");
+        }
+      }
+      if (gaveUpChanged) {
+        await sql`insert into app_settings (key, value) values ('lead_repair_gave_up', ${JSON.stringify(gaveUp)})
+          on conflict (key) do update set value = excluded.value, updated_at = now()`.catch(() => undefined);
+      }
+      if (fixed) {
+        await rebuildCustomers(sql).catch((e) => console.error("Customer rebuild after lead repair failed:", e instanceof Error ? e.message : e));
+        console.log(`Repaired ${fixed} lead(s) (applicant name or car).`);
       }
     }
 

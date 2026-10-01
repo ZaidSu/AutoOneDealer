@@ -101,6 +101,12 @@ export async function updateCustomerAction(
     case "follow_up":
       if (clean !== null && !/^\d{4}-\d{2}-\d{2}$/.test(String(clean))) return fail("Pick a follow-up date.");
       break;
+    case "purchased_vehicle":
+      clean = clean === null ? null : cleanName(String(clean), 80) || null;
+      break;
+    case "purchase_followup":
+      if (clean !== "on" && clean !== "off" && clean !== null) return fail("Unknown follow-up setting.");
+      break;
     default:
       return fail("Unknown field.");
   }
@@ -455,6 +461,18 @@ export async function setAutoTextAction(on: boolean): Promise<ActionResult> {
   return { ok: true, message: on ? "Automatic texting is on." : "Automatic texting is off. The AI writes drafts; your team clicks Send." };
 }
 
+export async function savePurchaseFollowupAction(on: boolean, days: number): Promise<ActionResult> {
+  const staff = await requireStaff();
+  if (!staff) return fail("Your session ended. Sign in again.");
+  if (!can.editAiSettings(staff.role)) return fail(AI_EDIT_DENIED);
+  const d = Math.round(Number(days));
+  if (!Number.isFinite(d) || d < 1 || d > 60) return fail("Pick a number of days from 1 to 60.");
+  const { setPurchaseFollowup } = await import("@/lib/sms");
+  try { await setPurchaseFollowup(Boolean(on), d); } catch { return NO_DB; }
+  revalidatePath("/ai/automations");
+  return { ok: true, message: on ? `Saved. Customers get a follow-up text ${d} day${d === 1 ? "" : "s"} after they're marked purchased.` : "Saved. Purchase follow-up texts are off." };
+}
+
 export async function disconnectBankAction(): Promise<ActionResult> {
   const staff = await requireStaff();
   if (!staff || !can.viewBilling(staff.role)) return fail("Only the owner can change how bills are paid.");
@@ -490,7 +508,7 @@ export async function turnOffCardAutopayAction(): Promise<ActionResult> {
 
 // ---- Adding a customer by hand (walk-ins, phone calls, referrals) ----
 
-export async function addCustomerAction(input: { name: string; phone: string; email: string; vehicle: string; heardFrom: string; notes: string }):
+export async function addCustomerAction(input: { name: string; phone: string; email: string; vehicle: string; heardFrom: string; notes: string; purchased?: boolean; purchasedOn?: string }):
   Promise<ActionResult & { key?: string }> {
   const staff = await requireStaff();
   if (!staff) return fail("Your session ended. Sign in again.");
@@ -507,13 +525,23 @@ export async function addCustomerAction(input: { name: string; phone: string; em
   const sql = await (await import("@/lib/db")).readyDb();
   if (!sql) return NO_DB;
   const search = [name, phone, email, vehicle].filter(Boolean).join(" ").toLowerCase();
+  // "They already bought": saved as purchased, on the day they bought (today if not given), so the follow-up text is timed from then.
+  const bought = Boolean(input.purchased);
+  const boughtOn = bought && /^\d{4}-\d{2}-\d{2}$/.test(String(input.purchasedOn ?? "")) && new Date(`${input.purchasedOn}T12:00:00Z`) <= new Date()
+    ? new Date(`${input.purchasedOn}T12:00:00-05:00`) : bought ? new Date() : null;
+  if (bought && !vehicle) return fail("Enter the car they bought, so the follow-up text can ask about it.");
+  if (bought && !phone) return fail("Enter their phone number so the follow-up text has somewhere to go.");
   // If they already exist (e.g. an old lead), bring them back with the new details instead of making a duplicate.
   await sql`
-    insert into customers (key, name, phone, email, status, first_seen, last_seen, vehicles, last_vehicle, heard_from, notes, search, updated_at)
-    values (${key}, ${name}, ${phone || null}, ${email || null}, 'new', now(), now(), ${vehicle ? [vehicle] : []}, ${vehicle || null},
+    insert into customers (key, name, phone, email, status, purchased_at, purchased_vehicle, first_seen, last_seen, vehicles, last_vehicle, heard_from, notes, search, updated_at)
+    values (${key}, ${name}, ${phone || null}, ${email || null}, ${bought ? "purchased" : "new"}, ${boughtOn}, ${bought ? vehicle : null}, now(), now(), ${vehicle ? [vehicle] : []}, ${vehicle || null},
             ${cleanName(input.heardFrom, 60) || null}, ${String(input.notes ?? "").slice(0, 2000)}, ${search}, now())
     on conflict (key) do update set
       name = excluded.name, last_seen = now(), updated_at = now(),
+      status = case when ${bought} then 'purchased' else customers.status end,
+      purchased_at = case when ${bought} then coalesce(${boughtOn}, now()) else customers.purchased_at end,
+      purchased_vehicle = case when ${bought} then ${vehicle || null} else customers.purchased_vehicle end,
+      purchase_followup_at = case when ${bought} then null else customers.purchase_followup_at end,
       phone = coalesce(excluded.phone, customers.phone), email = coalesce(excluded.email, customers.email),
       last_vehicle = coalesce(excluded.last_vehicle, customers.last_vehicle),
       vehicles = case when excluded.last_vehicle is null or excluded.last_vehicle = any(customers.vehicles) then customers.vehicles else customers.vehicles || excluded.vehicles end,
@@ -521,7 +549,7 @@ export async function addCustomerAction(input: { name: string; phone: string; em
       notes = case when excluded.notes = '' then customers.notes else trim(both from customers.notes || E'\n' || excluded.notes) end,
       search = customers.search || ' ' || excluded.search`;
   const { logActivity } = await import("@/lib/crm/queries");
-  await logActivity(key, "note", `Added by hand${vehicle ? `, interested in ${vehicle}` : ""}`, staff.name).catch(() => undefined);
+  await logActivity(key, bought ? "status" : "note", bought ? `Purchased: ${vehicle}` : `Added by hand${vehicle ? `, interested in ${vehicle}` : ""}`, staff.name).catch(() => undefined);
   revalidatePath("/customers");
   revalidatePath("/pipeline");
   return { ok: true, message: "Customer added.", key };

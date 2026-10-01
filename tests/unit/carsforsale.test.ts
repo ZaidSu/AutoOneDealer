@@ -25,6 +25,8 @@ test("parses a finance application", () => {
     downPayment: 1500,
     source: "secure.carsforsale.com",
     viewUrl: "http://reply.example.com/view?a=1&b=2",
+    vehicle: null,
+    stock: null,
   });
 });
 
@@ -48,4 +50,27 @@ test("missing fields stay empty instead of being guessed", () => {
 
 test("html is reduced to text without styles or scripts", () => {
   assert.deepEqual(htmlToLines("<style>x{}</style><script>alert(1)</script><p>Hi &amp; bye</p>"), ["Hi & bye"]);
+});
+
+const financeWithVehicle = readFileSync(new URL("../fixtures/cfs-finance-vehicle.html", import.meta.url), "utf8");
+test("finance application with a Vehicle Information block still finds the applicant's name", () => {
+  const app = parseFinanceApplication(financeWithVehicle);
+  assert.equal(app.name, "Sam Samplename");
+  assert.equal(app.phone, "2145550123");
+  assert.equal(app.location, "Lewisville, TX");
+  assert.equal(app.applicationId, "11890000");
+  assert.equal(app.loanAmount, 23000);
+  assert.equal(app.downPayment, 0);
+  assert.equal(app.vehicle, "2022 Dodge Charger");
+  assert.equal(app.stock, null); // the email leaves Stock # blank
+});
+
+const leadWithVehicle = readFileSync(new URL("../fixtures/cfs-lead-vehicle.html", import.meta.url), "utf8");
+test("website lead reads the car from its Vehicle Information block", () => {
+  const web = parseWebsiteLead(leadWithVehicle);
+  assert.equal(web.vehicle, "2017 Toyota Corolla");
+  assert.equal(web.stock, null);
+  assert.equal(web.name, "Pat Example");
+  assert.equal(web.phone, "2145550188");
+  assert.equal(web.comments, "Hi. Is this still available? Interested in coming to take a look at it.");
 });

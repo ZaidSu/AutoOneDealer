@@ -36,6 +36,10 @@ alter table customers add column if not exists search text not null default '';
 create index if not exists customers_last_seen on customers (last_seen desc nulls last);
 create index if not exists customers_phone on customers (phone);
 create index if not exists customers_email on customers (email);
+-- v11: after-purchase follow-up texts
+alter table customers add column if not exists purchased_vehicle text;
+alter table customers add column if not exists purchase_followup_at timestamptz;
+alter table customers add column if not exists purchase_followup_off boolean not null default false;
 create index if not exists customers_follow_up on customers (follow_up_at) where follow_up_at is not null;
 create index if not exists leads_kind_received on leads (kind, received_at desc) where not ignored;
 create table if not exists activities (

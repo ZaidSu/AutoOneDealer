@@ -22,6 +22,11 @@ export type CustomerView = {
   financingIsAuto: boolean;
   notes: string;
   followUpAt: string | null;
+  /** When they were marked purchased, what they bought, and the after-purchase follow-up text. */
+  purchasedAt: number | null;
+  purchasedVehicle: string | null;
+  followupSentAt: number | null;
+  followupOff: boolean;
   returning: boolean;
   hasApplication: boolean;
   leadsCount: number;

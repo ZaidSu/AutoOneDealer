@@ -97,3 +97,18 @@ test("Westlake pre-qualification", () => {
   assert.match(lead.comments!, /\$235\/mo/);
   assert.match(lead.comments!, /Proof of Income/);
 });
+
+test("CarsForSale lead and loan application both carry the car", () => {
+  const lead = parseLead({ from: "comm+x@carsforsalemail.com", subject: "New Lead – 2017 Toyota Corolla – Carsforsale.com", text: "", html: fixture("cfs-lead-vehicle.html") })!;
+  assert.equal(lead.vehicle, "2017 Toyota Corolla");
+  assert.equal(lead.name, "Pat Example");
+  const app = parseLead({ from: "comm+x@carsforsalemail.com", subject: "New Loan App Submitted – Carsforsale.com", text: "", html: fixture("cfs-finance-vehicle.html") })!;
+  assert.equal(app.kind, "application");
+  assert.equal(app.name, "Sam Samplename");
+  assert.equal(app.vehicle, "2022 Dodge Charger");
+});
+
+test("the car falls back to the subject line when the email has no vehicle block", () => {
+  const lead = parseLead({ from: "comm+x@carsforsalemail.com", subject: "New Lead – 2014 Cadillac CTS – Carsforsale.com", text: "", html: fixture("cfs-lead.html") })!;
+  assert.equal(lead.vehicle, "2014 Cadillac CTS");
+});

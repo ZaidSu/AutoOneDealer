@@ -67,7 +67,8 @@ function typeFromSubject(subject: string, kind: LeadKind): string {
 }
 
 /** "Cars.com Phone Lead Notice for Auto One Motors - 2014 Cadillac Cts" → "2014 Cadillac Cts" */
-function vehicleFromSubject(subject: string): string | null {
+function vehicleFromSubject(rawSubject: string): string | null {
+  const subject = rawSubject.replace(/\s*[–—-]\s*Carsforsale\.com\s*$/i, ""); // "New Lead – 2017 Toyota Corolla – Carsforsale.com"
   const match = subject.match(/\b((19|20)\d{2}\s+[A-Za-z][\w-]*(\s+[\w-]+){0,2})\s*$/);
   return match ? match[1].trim() : null;
 }
@@ -114,10 +115,12 @@ export function parseLead(email: LeadEmail): ParsedLead | null {
       return {
         ...lead, name: app.name, phone: app.phone, email: app.email, location: app.location,
         applicationId: app.applicationId, loanAmount: app.loanAmount, downPayment: app.downPayment, viewUrl: app.viewUrl,
+        vehicle: app.vehicle, stock: app.stock,
       };
     }
     const web = parseWebsiteLead(email.html);
-    return { ...lead, name: web.name, phone: web.phone, email: web.email, location: web.location, comments: web.comments, viewUrl: web.replyUrl, type: "Website inquiry" };
+    return { ...lead, name: web.name, phone: web.phone, email: web.email, location: web.location, comments: web.comments, viewUrl: web.replyUrl, type: "Website inquiry",
+      vehicle: web.vehicle ?? vehicleFromSubject(email.subject), stock: web.stock };
   }
 
   // 2. Westlake Financial pre-qualifications: each label on its own line, the value on the next.

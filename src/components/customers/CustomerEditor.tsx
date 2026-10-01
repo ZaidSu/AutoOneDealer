@@ -90,6 +90,29 @@ export default function CustomerEditor({ view, setView, reps, sources, statuses,
                 <p className="pb-2 text-sm text-muted">Shows on the Dashboard on that day.</p>
               </div>
 
+              {view.status === "purchased" && (
+                <div className="mt-4 rounded-lg border border-line bg-paper/50 p-3">
+                  <div className="flex flex-wrap items-end gap-3">
+                    <label className="text-sm text-muted">Car they bought
+                      <input defaultValue={view.purchasedVehicle ?? ""} placeholder="2019 Toyota Camry" disabled={saving}
+                        onBlur={(e) => e.target.value.trim() !== (view.purchasedVehicle ?? "") && save("purchased_vehicle", e.target.value.trim(), { purchasedVehicle: e.target.value.trim() || null })}
+                        className="mt-1 block h-10 w-64 rounded-md border border-line bg-white px-2.5 text-[15px] text-ink" />
+                    </label>
+                    <label className="flex h-10 items-center gap-2 text-sm text-ink">
+                      <input type="checkbox" checked={!view.followupOff} disabled={saving || view.followupSentAt !== null}
+                        onChange={(e) => save("purchase_followup", e.target.checked ? "on" : "off", { followupOff: !e.target.checked })} />
+                      Send the follow-up text
+                    </label>
+                  </div>
+                  <p className="mt-1.5 text-sm text-muted">
+                    {view.followupSentAt ? `Follow-up text written ${formatDateTime(view.followupSentAt)}.`
+                      : view.followupOff ? "No follow-up text will be sent to this customer."
+                      : !view.phone ? "Add a phone number so the follow-up text can go out."
+                      : "A few days after the purchase, the AI texts them to ask how the car is doing (see Automations)."}
+                  </p>
+                </div>
+              )}
+
               <label className="mt-4 block text-sm text-muted">Notes
                 <textarea defaultValue={view.notes} rows={2} placeholder="Called, wants to trade in a 2012 Accord"
                   onBlur={(e) => e.target.value !== view.notes && save("notes", e.target.value, { notes: e.target.value })}
