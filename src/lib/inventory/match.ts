@@ -100,3 +100,21 @@ export function pageShowsVin(html: string, vin: string): "yes" | "no" | "cannot 
 export function describeListing(l: Listing): string {
   return `${l.title || `${l.year ?? ""} ${l.slug.replace(/-/g, " ")}`.trim()}${l.price ? `, $${l.price.toLocaleString("en-US")}` : ""}${l.mileage ? `, ${l.mileage.toLocaleString("en-US")} miles` : ""} (${l.url})`;
 }
+
+const MULTI_WORD_MAKES = ["Land Rover", "Alfa Romeo", "Aston Martin", "Rolls Royce", "Mercedes Benz"];
+const ACRONYM = /^(cts|tlx|rdx|mdx|ilx|rlx|ats|srx|gt|gx|gs|is|es|ls|lx|nx|rx|ux|rc|lc|hr|cr|br|wr|fr|ev|xl|se|le|xle|sr|rs|sl|slt|ltz|rst|ss|zr|srt|tdi|gti|suv)$/i;
+
+const cap = (t: string) => (/\d/.test(t) || ACRONYM.test(t) ? t.toUpperCase() : t.charAt(0).toUpperCase() + t.slice(1).toLowerCase());
+
+/** "2023 Acura Integra w/A-SPEC" + slug "acura-integra" -> { make: "Acura", model: "Integra" }. */
+export function makeAndModel(listing: { title: string; slug: string; year: number | null }): { make: string; model: string } {
+  const bare = listing.title.replace(/^\s*(?:19|20)\d{2}\s+/, "").trim();
+  const multi = MULTI_WORD_MAKES.find((m) => bare.toLowerCase().startsWith(m.toLowerCase()));
+  const slugTokens = tokens(listing.slug);
+  const make = multi ?? (bare.split(/\s+/)[0] || (slugTokens[0] ? cap(slugTokens[0]) : "Unknown"));
+  const makeTokens = new Set(tokens(make));
+  const rest = slugTokens.filter((t, i) => !(i < makeTokens.size && makeTokens.has(t)));
+  let model = rest.map(cap).join(" ");
+  model = model.replace(/\b([A-Za-z]{1,2}) ([A-Za-z]{1,2})\b/, "$1-$2").replace(/^([A-Za-z]) (\d)/, "$1-$2"); // "Hr V" -> "HR-V", "F 150" -> "F-150"
+  return { make, model };
+}

@@ -41,6 +41,31 @@ alter table customers add column if not exists purchased_vehicle text;
 alter table customers add column if not exists purchase_followup_at timestamptz;
 alter table customers add column if not exists purchase_followup_off boolean not null default false;
 alter table customers add column if not exists email_optout boolean not null default false;
+-- v13: inventory copied from the dealership website, with what sold
+create table if not exists inventory (
+  id text primary key,
+  finance_id text,
+  url text,
+  year integer,
+  make text,
+  model text,
+  slug text,
+  title text,
+  price integer,
+  mileage integer,
+  status text not null default 'available',
+  missed integer not null default 0,
+  first_seen timestamptz not null default now(),
+  last_seen timestamptz not null default now(),
+  sold_at timestamptz,
+  sold_price integer,
+  sold_by text,
+  sold_note text,
+  updated_at timestamptz not null default now()
+);
+create index if not exists inventory_status on inventory (status, last_seen desc);
+create index if not exists inventory_sold_at on inventory (sold_at desc) where status = 'sold';
+alter table inventory enable row level security;
 create index if not exists customers_follow_up on customers (follow_up_at) where follow_up_at is not null;
 create index if not exists leads_kind_received on leads (kind, received_at desc) where not ignored;
 create table if not exists activities (

@@ -10,6 +10,7 @@ import { getSetting, setSetting } from "@/lib/db/data";
 import { aiStartDate, dataStartDate, dealership, inAiHours } from "@/lib/dealership";
 import { withGmail } from "@/lib/gmail";
 import { loadGmailConnection } from "@/lib/gmail/connection";
+import { channelOn } from "@/lib/ai/switches";
 import { availabilityNote } from "@/lib/inventory";
 import { EMAIL_FOOTER } from "@/lib/legal/config";
 
@@ -48,6 +49,7 @@ export async function setAutoSend(on: boolean) {
 export async function draftNewReplies({ max = 4, force = false } = {}): Promise<{ drafted: number; sent: number; skipped: number; waiting: string | null }> {
   if (!aiConfigured()) return { drafted: 0, sent: 0, skipped: 0, waiting: "The AI key isn't set up in Vercel yet." };
   if (!force && !inAiHours()) return { drafted: 0, sent: 0, skipped: 0, waiting: "Outside AI hours (Mon to Sat, 9 AM to 7 PM). New leads get replies at 9 AM." };
+  if (!force && !(await channelOn("email"))) return { drafted: 0, sent: 0, skipped: 0, waiting: "AI emails are switched off (turn them on at the top of this page)." };
   const sql = await readyDb();
   if (!sql) return { drafted: 0, sent: 0, skipped: 0, waiting: "The database isn't connected." };
 
@@ -247,4 +249,29 @@ export async function recentLeadOutcomes(): Promise<LeadOutcome[]> {
     if (!hours) return { ...base, outcome: "waiting" as const, reason: "Arrived outside AI hours (Mon to Sat, 9 AM to 7 PM); the reply is written at 9 AM" };
     return { ...base, outcome: "waiting" as const, reason: "Will be written on the next check (every 5 minutes)" };
   });
+}
+
+
+export type ReplyStats = {
+  days: number; sent: number; sentLeads: number; sentReplies: number; waiting: number; discarded: number; skipped: number; failed: number;
+  reasons: { reason: string; n: number }[];
+};
+/** What the AI did with emails over the last `days` days, counted by what happened to each. */
+export async function replyStats(days = 30): Promise<ReplyStats> {
+  const empty: ReplyStats = { days, sent: 0, sentLeads: 0, sentReplies: 0, waiting: 0, discarded: 0, skipped: 0, failed: 0, reasons: [] };
+  const sql = await readyDb();
+  if (!sql) return empty;
+  const since = new Date(Math.max(Date.now() - days * 86400_000, dataStartDate().getTime()));
+  const [[c], reasons] = await Promise.all([
+    sql`select count(*) filter (where status in ('sent', 'sending'))::int as sent,
+        count(*) filter (where status in ('sent', 'sending') and kind = 'lead')::int as sent_leads,
+        count(*) filter (where status in ('sent', 'sending') and kind = 'reply')::int as sent_replies,
+        count(*) filter (where status = 'draft')::int as waiting, count(*) filter (where status = 'discarded')::int as discarded,
+        count(*) filter (where status = 'skipped')::int as skipped, count(*) filter (where status = 'failed')::int as failed
+        from ai_replies where created_at >= ${since}`,
+    sql`select coalesce(nullif(error, ''), 'No reason recorded') as reason, count(*)::int as n from ai_replies
+        where status in ('skipped', 'discarded') and created_at >= ${since} group by 1 order by n desc limit 6`,
+  ]);
+  return { days, sent: c.sent, sentLeads: c.sent_leads, sentReplies: c.sent_replies, waiting: c.waiting, discarded: c.discarded, skipped: c.skipped, failed: c.failed,
+    reasons: reasons.map((r) => ({ reason: r.reason as string, n: r.n as number })) };
 }

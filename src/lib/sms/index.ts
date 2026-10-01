@@ -7,6 +7,7 @@ import { logActivity } from "@/lib/crm/queries";
 import { readyDb, trace } from "@/lib/db";
 import { getSetting, setSetting } from "@/lib/db/data";
 import { dealership, inAiHours } from "@/lib/dealership";
+import { channelOn } from "@/lib/ai/switches";
 import { availabilityNote } from "@/lib/inventory";
 import { keywordFor } from "./keywords";
 import { cleanDays, FOLLOWUP_WINDOW_DAYS, followupState, type FollowupState } from "./followup-rules";
@@ -174,6 +175,7 @@ export async function aiReplyToText(customerKey: string | null, phone: string, {
   const sql = await readyDb();
   const e164 = toE164(phone);
   if (!sql || !e164 || !aiConfigured()) return "skipped";
+  if (!force && !(await channelOn("text"))) return "skipped"; // AI texts switched off: staff handle texts by hand
   if (await isOptedOut(e164)) return "skipped";
   const thread = (await sql`select * from sms_messages where phone = ${e164} and status not in ('discarded', 'draft', 'failed') order by coalesce(sent_at, created_at) desc limit 20`).map(toMessage).reverse();
   const last = thread.at(-1);
@@ -243,6 +245,7 @@ export async function sendPurchaseFollowups({ max = 3 } = {}): Promise<{ drafted
   if (!twilioConfigured()) return { ...none, waiting: "Twilio isn't connected yet." };
   if (!aiConfigured()) return { ...none, waiting: "The AI key isn't set up." };
   if (!inAiHours()) return { ...none, waiting: "Outside AI hours." };
+  if (!(await channelOn("text"))) return { ...none, waiting: "AI texts are switched off." };
   const settings = await getPurchaseFollowup();
   if (!settings.on) return { ...none, waiting: "Purchase follow-ups are switched off." };
   const sql = await readyDb();
@@ -315,4 +318,33 @@ export async function listPurchases(days: number, limit = 30): Promise<PurchaseR
       off: Boolean(r.purchase_followup_off), phone: r.phone ?? null }, days);
     return { key: r.key, name: r.name ?? null, phone: r.phone ?? null, vehicle: r.purchased_vehicle ?? r.last_vehicle ?? null, purchasedAt: new Date(r.purchased_at).getTime(), state, dueOn: dueOn ? dueOn.getTime() : null };
   });
+}
+
+
+export type TextStats = { days: number; received: number; aiSent: number; staffSent: number; waiting: number; discarded: number; failed: number; optedOut: number };
+export async function textStats(days = 30): Promise<TextStats> {
+  const empty: TextStats = { days, received: 0, aiSent: 0, staffSent: 0, waiting: 0, discarded: 0, failed: 0, optedOut: 0 };
+  const sql = await readyDb();
+  if (!sql) return empty;
+  const since = new Date(Date.now() - days * 86400_000);
+  const [[c], [o]] = await Promise.all([
+    sql`select count(*) filter (where direction = 'in')::int as received,
+        count(*) filter (where direction = 'out' and ai and status in ('sent', 'delivered', 'queued'))::int as ai_sent,
+        count(*) filter (where direction = 'out' and not ai and status in ('sent', 'delivered', 'queued'))::int as staff_sent,
+        count(*) filter (where status = 'draft')::int as waiting, count(*) filter (where direction = 'out' and status = 'discarded')::int as discarded,
+        count(*) filter (where direction = 'out' and status = 'failed')::int as failed from sms_messages where created_at >= ${since}`,
+    sql`select count(*)::int as n from sms_optouts`.catch(() => [{ n: 0 }]),
+  ]);
+  return { days, received: c.received, aiSent: c.ai_sent, staffSent: c.staff_sent, waiting: c.waiting, discarded: c.discarded, failed: c.failed, optedOut: o.n };
+}
+
+export type AiTextRow = { id: number; customerKey: string | null; name: string | null; phone: string; body: string; status: TextMessage["status"]; error: string | null; at: number };
+/** The texts the AI wrote, newest first, with what happened to each (sent, waiting, discarded, failed). */
+export async function aiTextHistory(limit = 40): Promise<AiTextRow[]> {
+  const sql = await readyDb();
+  if (!sql) return [];
+  const rows = await sql`select m.*, c.name as customer_name from sms_messages m left join customers c on c.key = m.customer_key
+    where m.ai and m.direction = 'out' order by coalesce(m.sent_at, m.created_at) desc limit ${limit}`;
+  return rows.map((r) => ({ id: Number(r.id), customerKey: r.customer_key ?? null, name: r.customer_name ?? null, phone: r.phone, body: r.body, status: r.status, error: r.error ?? null,
+    at: new Date(r.sent_at ?? r.created_at).getTime() }));
 }

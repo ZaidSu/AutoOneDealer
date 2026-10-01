@@ -11,6 +11,7 @@ import { aiStartDate, dealership, inAiHours } from "@/lib/dealership";
 import { mapLimit, withGmail, type GmailClient } from "@/lib/gmail";
 import { loadGmailConnection } from "@/lib/gmail/connection";
 import { newPartOnly } from "@/lib/gmail/email";
+import { channelOn } from "@/lib/ai/switches";
 import { wantsNoMoreEmail } from "@/lib/ai/unsubscribe";
 import { availabilityNote } from "@/lib/inventory";
 export { newPartOnly };
@@ -60,6 +61,7 @@ export async function checkCustomerReplies(gmail: GmailClient): Promise<number> 
 export async function draftFollowups({ max = 3, force = false } = {}): Promise<{ drafted: number; sent: number; skipped: number }> {
   const none = { drafted: 0, sent: 0, skipped: 0 };
   if (!aiConfigured() || (!force && !inAiHours())) return none;
+  if (!force && !(await channelOn("email"))) return none;
   const sql = await readyDb();
   if (!sql) return none;
   const pending = await sql`

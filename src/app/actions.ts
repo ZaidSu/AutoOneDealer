@@ -484,6 +484,72 @@ export async function acceptAgreementAction(): Promise<ActionResult> {
   return { ok: true, message: "Thank you. The agreement is accepted." };
 }
 
+export async function setAiChannelAction(channel: "email" | "text", on: boolean): Promise<ActionResult> {
+  const staff = await requireStaff();
+  if (!staff) return fail("Your session ended. Sign in again.");
+  if (!can.editAiSettings(staff.role)) return fail(AI_EDIT_DENIED);
+  if (channel !== "email" && channel !== "text") return fail("Unknown channel.");
+  const { setChannel } = await import("@/lib/ai/switches");
+  try { await setChannel(channel, Boolean(on)); } catch { return NO_DB; }
+  revalidatePath(channel === "email" ? "/ai/emails" : "/ai/texts");
+  const what = channel === "email" ? "emails" : "texts";
+  return { ok: true, message: on ? `The AI is on for ${what}.` : `The AI is off for ${what}. It won't write or send anything by itself.` };
+}
+
+// ---- Inventory ----
+
+export async function syncInventoryNowAction(): Promise<ActionResult> {
+  const staff = await requireStaff();
+  if (!staff) return fail("Your session ended. Sign in again.");
+  const { syncInventory } = await import("@/lib/inventory/store");
+  const r = await syncInventory();
+  revalidatePath("/inventory");
+  return r.ok
+    ? { ok: true, message: `Read ${r.count} cars from the website${r.added ? `, ${r.added} new` : ""}${r.sold ? `, ${r.sold} newly sold` : ""}${r.complete ? "." : ". Only part of the website could be read, so nothing was marked sold."}` }
+    : fail(`Couldn't read the website: ${r.error}`);
+}
+
+export async function markSoldAction(id: string, price: string, date: string): Promise<ActionResult> {
+  const staff = await requireStaff();
+  if (!staff) return fail("Your session ended. Sign in again.");
+  if (!/^[\w-]{1,60}$/.test(id)) return fail("Unknown car.");
+  const dollars = String(price ?? "").replace(/[^\d]/g, "");
+  const amount = dollars ? Number(dollars) : null;
+  if (amount !== null && amount > 10_000_000) return fail("That price looks too high.");
+  const when = /^\d{4}-\d{2}-\d{2}$/.test(String(date)) ? new Date(`${date}T12:00:00-05:00`) : new Date();
+  if (when.getTime() > Date.now() + 86400_000) return fail("The sale date can't be in the future.");
+  const { markSold } = await import("@/lib/inventory/store");
+  try { await markSold(id, amount, when, staff.name); } catch { return NO_DB; }
+  revalidatePath("/inventory");
+  return { ok: true, message: "Marked sold." };
+}
+
+export async function markAvailableAction(id: string): Promise<ActionResult> {
+  const staff = await requireStaff();
+  if (!staff) return fail("Your session ended. Sign in again.");
+  if (!/^[\w-]{1,60}$/.test(id)) return fail("Unknown car.");
+  const { markAvailable } = await import("@/lib/inventory/store");
+  try { await markAvailable(id); } catch { return NO_DB; }
+  revalidatePath("/inventory");
+  return { ok: true, message: "Back on the lot." };
+}
+
+export async function addSaleAction(input: { title: string; price: string; date: string }): Promise<ActionResult> {
+  const staff = await requireStaff();
+  if (!staff) return fail("Your session ended. Sign in again.");
+  const title = cleanName(input.title, 100);
+  const price = Number(String(input.price ?? "").replace(/[^\d]/g, ""));
+  if (title.length < 4) return fail("Enter the car, like 2019 Toyota Camry SE.");
+  if (!price || price > 10_000_000) return fail("Enter what it sold for.");
+  const when = /^\d{4}-\d{2}-\d{2}$/.test(String(input.date)) ? new Date(`${input.date}T12:00:00-05:00`) : new Date();
+  if (when.getTime() > Date.now() + 86400_000) return fail("The sale date can't be in the future.");
+  const year = Number(/\b((?:19|20)\d{2})\b/.exec(title)?.[1]) || null;
+  const { addSale } = await import("@/lib/inventory/store");
+  try { await addSale({ title, year, price, soldOn: when }, staff.name); } catch { return NO_DB; }
+  revalidatePath("/inventory");
+  return { ok: true, message: "Sale added." };
+}
+
 export async function disconnectBankAction(): Promise<ActionResult> {
   const staff = await requireStaff();
   if (!staff || !can.viewBilling(staff.role)) return fail("Only the owner can change how bills are paid.");

@@ -1,13 +1,16 @@
 import type { Metadata } from "next";
 import Link from "next/link";
+import AiChannelSwitch from "@/components/ai/AiChannelSwitch";
 import AutoTextToggle from "@/components/ai/AutoTextToggle";
+import ChannelSummary from "@/components/ai/ChannelSummary";
 import DbNotice from "@/components/ui/DbNotice";
 import PageHeader from "@/components/ui/PageHeader";
 import { aiConfigured } from "@/lib/ai/claude";
 import { can } from "@/lib/auth/access";
 import { requirePageStaff } from "@/lib/auth/guard";
 import { dbState, fresh } from "@/lib/db";
-import { getAutoText, listConversations } from "@/lib/sms";
+import { channelOn } from "@/lib/ai/switches";
+import { aiTextHistory, getAutoText, listConversations, textStats } from "@/lib/sms";
 import { twilioConfigured } from "@/lib/sms/twilio";
 
 export const metadata: Metadata = { title: "AI text messages" };
@@ -18,10 +21,10 @@ const pretty = (e164: string) => e164.replace(/^\+1(\d{3})(\d{3})(\d{4})$/, "($1
 
 export default async function AiTextsPage() {
   const staff = await requirePageStaff();
-  const header = <PageHeader title="Text messages" description="Every text conversation with customers. The AI answers customer texts; open a conversation to see it all, send a reply, or approve the AI's draft." />;
+  const header = <PageHeader title="Text messages" description="Everything about the AI and texting: turn it on or off, see what it sent, and open any conversation to reply or approve its draft." />;
   const state = await dbState();
   if (state !== "ready") return <>{header}<DbNotice state={state} what="Text messages" /></>;
-  const [conversations, autoText] = await fresh("Texts", () => Promise.all([listConversations(), getAutoText()]));
+  const [conversations, autoText, enabled, stats, history] = await fresh("Texts", () => Promise.all([listConversations(), getAutoText(), channelOn("text"), textStats(30), aiTextHistory(40)]));
   const base = process.env.APP_URL || (process.env.VERCEL_PROJECT_PRODUCTION_URL ? `https://${process.env.VERCEL_PROJECT_PRODUCTION_URL}` : "https://auto-one-dealer.vercel.app");
   const webhook = `${base.replace(/\/$/, "")}/api/sms/incoming`;
   const ok = twilioConfigured();
@@ -30,6 +33,20 @@ export default async function AiTextsPage() {
   return (
     <div className="max-w-5xl">
       {header}
+      <section aria-label="Text settings" className="panel mb-8 p-5">
+        <AiChannelSwitch channel="text" initial={enabled} canChange={can.editAiSettings(staff.role)} />
+      </section>
+      <div className="mb-8">
+        <ChannelSummary title="Text summary" note="The last 30 days."
+          stats={[
+            { label: "Texts received", value: stats.received },
+            { label: "AI texts sent", value: stats.aiSent, color: "#1f7a4d" },
+            { label: "Sent by your team", value: stats.staffSent },
+            { label: "AI drafts waiting", value: stats.waiting, color: "#e0a100" },
+            { label: "Discarded", value: stats.discarded },
+            { label: "Failed", value: stats.failed, color: stats.failed ? "#c8102e" : undefined, sub: stats.optedOut ? `${stats.optedOut} replied STOP` : undefined },
+          ]} />
+      </div>
       <section aria-label="Setup" className="panel p-5">
         <ul className="grid gap-2 text-[15px]">
           <Check ok={aiConfigured()} text={aiConfigured() ? "AI is connected" : "AI key missing: add ANTHROPIC_API_KEY in Vercel"} />
@@ -69,9 +86,35 @@ export default async function AiTextsPage() {
           </ul>
         )}
       </section>
+
+      <section aria-labelledby="ai-history" className="mt-8">
+        <h2 id="ai-history" className="mb-1 text-lg font-semibold">What the AI texted</h2>
+        <p className="mb-3 text-sm text-muted">The texts the AI wrote, with what happened to each.</p>
+        {history.length === 0 ? <p className="panel p-5 text-muted">The AI hasn&apos;t written any texts yet.</p> : (
+          <ul className="panel divide-y divide-line">
+            {history.map((m) => (
+              <li key={m.id} className="flex flex-wrap items-start gap-x-3 gap-y-1 px-5 py-3">
+                <span className={`mt-0.5 rounded-full px-2.5 py-0.5 text-xs font-semibold ${TEXT_STATUS[m.status]?.cls ?? ""}`}>{TEXT_STATUS[m.status]?.label ?? m.status}</span>
+                <div className="min-w-0 flex-1">
+                  <p className="font-semibold">{m.name || pretty(m.phone)}</p>
+                  <p className="text-[15px]">{m.body}</p>
+                  {m.error && <p className="text-sm text-signal">{m.error}</p>}
+                </div>
+                <span className="text-sm text-muted">{when(m.at)}</span>
+              </li>
+            ))}
+          </ul>
+        )}
+      </section>
     </div>
   );
 }
+
+const TEXT_STATUS: Record<string, { label: string; cls: string }> = {
+  sent: { label: "Sent", cls: "bg-go-soft text-go" }, delivered: { label: "Delivered", cls: "bg-go-soft text-go" }, queued: { label: "Sending", cls: "bg-paper text-muted ring-1 ring-line" },
+  sending: { label: "Sending", cls: "bg-paper text-muted ring-1 ring-line" }, draft: { label: "Waiting for you", cls: "bg-[#fff3d6] text-[#8a5300]" },
+  discarded: { label: "Discarded", cls: "bg-paper text-muted ring-1 ring-line" }, failed: { label: "Failed", cls: "bg-warn-soft text-signal" },
+};
 
 function Check({ ok, text }: { ok: boolean; text: string }) {
   return (

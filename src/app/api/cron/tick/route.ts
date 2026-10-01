@@ -2,13 +2,14 @@
 // open. It pulls new lead emails into the database, then (during AI hours) has the AI write draft replies.
 // Protected by CRON_SECRET: the caller must send it as ?key=... or "Authorization: Bearer ...".
 import { timingSafeEqual } from "node:crypto";
-import { NextResponse, type NextRequest } from "next/server";
+import { after, NextResponse, type NextRequest } from "next/server";
 import { checkCustomerReplies, draftFollowups } from "@/lib/ai/followups";
 import { draftNewReplies } from "@/lib/ai/replies";
 import { setSetting } from "@/lib/db/data";
 import { chargeDueBillsByCard, collectOpenBills, ensureInvoice } from "@/lib/billing";
 import { withGmail } from "@/lib/gmail";
 import { syncLeads } from "@/lib/leads/sync";
+import { syncInventory } from "@/lib/inventory/store";
 import { sendPurchaseFollowups } from "@/lib/sms";
 
 export const dynamic = "force-dynamic";
@@ -34,6 +35,11 @@ export async function GET(req: NextRequest) {
   } catch (error) {
     report.leads = `failed: ${error instanceof Error ? error.message : "unknown"}`;
   }
+  // Copy the website's inventory into the database. Runs after the timer has answered, so a slow website can't hold up
+  // or break the rest of the timer. The result shows on the Inventory page.
+  after(async () => {
+    try { await syncInventory(); } catch (error) { console.error("[autodash:inventory] sync failed:", error instanceof Error ? error.message : error); }
+  });
   try {
     // Customers who wrote back by email (answered in the same thread).
     const replies = await withGmail((gmail) => checkCustomerReplies(gmail), undefined, "background");

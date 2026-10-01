@@ -86,15 +86,42 @@ export default function AiRepliesView({ drafts: initialDrafts, history, setup, c
 
       <section aria-labelledby="history">
         <h2 id="history" className="mb-3 text-lg font-semibold">History</h2>
-        {[...done, ...history].length === 0 ? (
-          <p className="panel p-5 text-muted">Nothing sent yet.</p>
-        ) : (
-          <ul className="panel divide-y divide-line">
-            {[...done, ...history].map((r) => <HistoryRow key={r.id} reply={r} />)}
-          </ul>
-        )}
+        <HistoryList rows={[...done, ...history]} />
       </section>
     </div>
+  );
+}
+
+const TABS: { id: string; label: string; match: (s: string) => boolean }[] = [
+  { id: "all", label: "All", match: () => true },
+  { id: "sent", label: "Replied", match: (s) => s === "sent" || s === "sending" },
+  { id: "discarded", label: "Discarded", match: (s) => s === "discarded" },
+  { id: "skipped", label: "Skipped", match: (s) => s === "skipped" },
+  { id: "failed", label: "Failed", match: (s) => s === "failed" },
+];
+
+/** Everything the AI did with emails, with tabs to see just the replied, discarded, skipped or failed ones. */
+function HistoryList({ rows }: { rows: AiReply[] }) {
+  const [tab, setTab] = useState("all");
+  const current = TABS.find((t) => t.id === tab) ?? TABS[0];
+  const shown = rows.filter((r) => current.match(r.status));
+  return (
+    <>
+      <div role="tablist" aria-label="Filter history" className="mb-3 flex flex-wrap gap-2">
+        {TABS.map((t) => {
+          const n = rows.filter((r) => t.match(r.status)).length;
+          return (
+            <button key={t.id} role="tab" type="button" aria-selected={tab === t.id} onClick={() => setTab(t.id)}
+              className={`rounded-full px-3.5 py-1.5 text-sm font-semibold ring-1 ${tab === t.id ? "bg-ink text-white ring-ink" : "bg-white text-muted ring-line hover:text-ink"}`}>
+              {t.label} <span className="tabular-nums opacity-70">{n}</span>
+            </button>
+          );
+        })}
+      </div>
+      {shown.length === 0 ? <p className="panel p-5 text-muted">Nothing here.</p> : (
+        <ul className="panel divide-y divide-line">{shown.map((r) => <HistoryRow key={r.id} reply={r} />)}</ul>
+      )}
+    </>
   );
 }
 
@@ -171,7 +198,7 @@ function HistoryRow({ reply }: { reply: AiReply }) {
         <summary className="flex list-none flex-wrap items-center gap-x-3 gap-y-1">
           <span className={`rounded-full px-2.5 py-0.5 text-xs font-semibold ${s.cls}`}>{s.label}</span>
           <span className="font-semibold">{reply.customerName || reply.toEmail}</span>
-          <span className="min-w-0 flex-1 truncate text-muted">{reply.status === "skipped" ? reply.error : reply.subject}</span>
+          <span className="min-w-0 flex-1 truncate text-muted">{reply.status === "skipped" || (reply.status === "discarded" && !reply.subject) ? reply.error : reply.subject}</span>
           <span className="text-sm text-muted">{when(reply.sentAt ?? reply.createdAt)}{reply.sentBy ? `, by ${reply.sentBy}` : ""}</span>
         </summary>
         {reply.status !== "skipped" && (

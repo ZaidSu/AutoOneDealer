@@ -64,3 +64,13 @@ test("VIN check on a car's own page", () => {
   assert.equal(pageShowsVin(withVin, "1G6AR5SX0E0999999"), "no");
   assert.equal(pageShowsVin("<div>No VIN printed here</div>", "123456"), "cannot tell");
 });
+
+import { makeAndModel } from "../../src/lib/inventory/match.ts";
+test("make and model are split out of the title and link", () => {
+  assert.deepEqual(makeAndModel({ title: "2023 Acura Integra w/A-SPEC", slug: "acura-integra", year: 2023 }), { make: "Acura", model: "Integra" });
+  assert.deepEqual(makeAndModel({ title: "2021 Chevrolet Silverado 1500 LTZ", slug: "chevrolet-silverado-1500", year: 2021 }), { make: "Chevrolet", model: "Silverado 1500" });
+  assert.deepEqual(makeAndModel({ title: "2023 Ford F-150 Lariat", slug: "ford-f-150", year: 2023 }), { make: "Ford", model: "F-150" });
+  assert.deepEqual(makeAndModel({ title: "2021 Genesis G70 2.0T", slug: "genesis-g70", year: 2021 }), { make: "Genesis", model: "G70" });
+  assert.deepEqual(makeAndModel({ title: "2020 BMW 3 Series M340i", slug: "bmw-3-series", year: 2020 }), { make: "BMW", model: "3 Series" });
+  assert.equal(makeAndModel({ title: "2019 Land Rover Range Rover Sport", slug: "land-rover-range-rover-sport", year: 2019 }).make, "Land Rover");
+});

@@ -19,6 +19,7 @@ const NAV: NavEntry[] = [
     id: "sales", label: "Sales", icon: "sales", items: [
       { href: "/pipeline", label: "Pipeline", icon: "pipeline" },
       { href: "/customers", label: "Customers", icon: "customers" },
+      { href: "/inventory", label: "Inventory", icon: "store" },
       { href: "/appointments", label: "Appointments", icon: "appointments" },
     ],
   },
@@ -31,8 +32,8 @@ const NAV: NavEntry[] = [
   },
   {
     id: "ai", label: "AI assistant", icon: "ai", items: [
-      { href: "/ai/emails", label: "Email replies", icon: "mail" },
-      { href: "/ai/texts", label: "Text messages", icon: "chat" },
+      { href: "/ai/emails", label: "Emails", icon: "mail" },
+      { href: "/ai/texts", label: "Texts", icon: "chat" },
       { href: "/ai/train", label: "Train your AI", icon: "ai" },
       { href: "/ai/dealership", label: "Dealership info", icon: "store" },
       { href: "/ai/phone-numbers", label: "Phone numbers", icon: "phone" },
