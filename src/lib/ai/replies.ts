@@ -10,6 +10,7 @@ import { getSetting, setSetting } from "@/lib/db/data";
 import { aiStartDate, dataStartDate, dealership, inAiHours } from "@/lib/dealership";
 import { withGmail } from "@/lib/gmail";
 import { loadGmailConnection } from "@/lib/gmail/connection";
+import { availabilityNote } from "@/lib/inventory";
 
 export type ReplyStatus = "draft" | "sent" | "discarded" | "skipped" | "failed";
 export type AiReply = {
@@ -128,16 +129,18 @@ async function writeReply(lead: Record<string, unknown>, info: Awaited<ReturnTyp
 Write like a friendly, professional salesperson at the dealership. Rules:
 - Plain text only. No markdown, no bullet symbols, no emojis. 60 to 130 words.
 - Thank them by first name if you have it, mention the exact car they asked about, and answer their question if you can from the facts below.
-- Never make up prices, availability, financing approvals, interest rates, trade-in values, or anything not in the facts. If you don't know, say a salesperson will confirm.
+- Never make up prices, financing approvals, interest rates, trade-in values, or anything not in the facts. If you don't know, say a salesperson will confirm.
+- Availability: only say a car is available, or may be sold, as the LIVE INVENTORY CHECK below tells you. If there is no check, say a salesperson will confirm it.
 - End by inviting them to come see the car, with a clear next step (reply with a time that works, or call).
 - Sign off as "The team at ${dealership.name}" with the dealership phone number if you have it.
 - If the customer wrote in Spanish, reply in Spanish.
-- If the lead is a financing pre-qualification (for example from Westlake Financial): congratulate them on being pre-qualified for that car, invite them to come in to finish the deal and see the car, and list what to bring if it's given. You may mention the down payment and monthly payment it shows, but always as pre-qualified estimates, never as a final approval, and don't mention the APR. Don't promise the car is still available; say the team will confirm.
+- If the lead is a financing pre-qualification (for example from Westlake Financial): congratulate them on being pre-qualified for that car, invite them to come in to finish the deal and see the car, and list what to bring if it's given. You may mention the down payment and monthly payment it shows, but always as pre-qualified estimates, never as a final approval, and don't mention the APR. For availability, follow the LIVE INVENTORY CHECK; if there is none, say the team will confirm.
 - Follow the dealership's own instructions below over these defaults when they conflict, except never invent facts.
 Reply with only JSON: {"subject": "...", "body": "..."}`;
+  const stillForSale = await availabilityNote(lead.vehicle as string | null, { vin: lead.vin as string | null, stock: lead.stock as string | null, phone: info.phone });
   const prompt = `${dealershipFacts(info, training)}
 
-THE LEAD
+${stillForSale ? `${stillForSale}\n\n` : ""}THE LEAD
 Type: ${lead.kind === "application" ? "Credit application" : `${lead.type ?? "Inquiry"}`}
 From: ${lead.provider ?? "a listing site"}
 Customer name: ${lead.name ?? "not given"}

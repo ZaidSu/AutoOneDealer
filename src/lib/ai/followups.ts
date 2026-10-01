@@ -11,6 +11,7 @@ import { aiStartDate, dealership, inAiHours } from "@/lib/dealership";
 import { mapLimit, withGmail, type GmailClient } from "@/lib/gmail";
 import { loadGmailConnection } from "@/lib/gmail/connection";
 import { newPartOnly } from "@/lib/gmail/email";
+import { availabilityNote } from "@/lib/inventory";
 export { newPartOnly };
 
 const emailOf = (from: string) => (/<([^>]+)>/.exec(from)?.[1] ?? from).trim().toLowerCase();
@@ -88,7 +89,7 @@ export async function draftFollowups({ max = 3, force = false } = {}): Promise<{
     const system = `You answer customer emails for ${dealership.name}, a used car dealership in the Dallas area. The customer is replying to an earlier email from the dealership.
 Write like a friendly, professional salesperson continuing the conversation:
 - Plain text only, no markdown. 40 to 120 words. Don't repeat what was already said; answer what they just wrote.
-- Use the facts below and what was said earlier in the conversation. Never make up prices, availability, financing approvals, rates, payments, trade-in values or delivery; if you don't know, say a salesperson will confirm.
+- Use the facts below and what was said earlier in the conversation. Never make up prices, financing approvals, rates, payments, trade-in values or delivery; if you don't know, say a salesperson will confirm. For availability, only say what the LIVE INVENTORY CHECK says (if there is none, a salesperson will confirm).
 - If they mention where they live or how far away they are, be helpful about it (for example offer to hold the car, set a time, or talk by phone) without promising anything not in the facts.
 - End with one clear next step. Sign off as "The team at ${dealership.name}" with the dealership phone number if you have it.
 - If they wrote in Spanish, reply in Spanish.
@@ -96,9 +97,10 @@ Reply with only the email body.`;
     const conversation = messages.length
       ? messages.map((m) => `${emailOf(m.from) === reply.from_email ? "CUSTOMER" : "DEALERSHIP"} (${new Date(m.receivedAt).toLocaleString("en-US", { timeZone: dealership.timeZone })}): ${newPartOnly(m.text || m.snippet).slice(0, 1500)}`).join("\n\n")
       : `CUSTOMER: ${reply.body}`;
+    const stillForSale = await availabilityNote(vehicleRow?.last_vehicle, { phone: info.phone });
     const prompt = `${dealershipFacts(info, training)}
 
-CUSTOMER: ${vehicleRow?.name ?? reply.from_name ?? "name unknown"}${vehicleRow?.last_vehicle ? `, interested in ${vehicleRow.last_vehicle}` : ""}
+${stillForSale ? `${stillForSale}\n\n` : ""}CUSTOMER: ${vehicleRow?.name ?? reply.from_name ?? "name unknown"}${vehicleRow?.last_vehicle ? `, interested in ${vehicleRow.last_vehicle}` : ""}
 
 EMAIL CONVERSATION (oldest first):
 ${conversation}

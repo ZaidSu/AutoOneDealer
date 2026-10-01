@@ -7,6 +7,7 @@ import { logActivity } from "@/lib/crm/queries";
 import { readyDb, trace } from "@/lib/db";
 import { getSetting, setSetting } from "@/lib/db/data";
 import { dealership, inAiHours } from "@/lib/dealership";
+import { availabilityNote } from "@/lib/inventory";
 import { sendSms, tenDigits, toE164, twilioConfigured } from "./twilio";
 
 export type TextMessage = {
@@ -105,6 +106,8 @@ export async function sendText(opts: { customerKey: string | null; phone: string
   let body = opts.body.trim().slice(0, 1200);
   if (body.length < 2) return { ok: false, error: "Write a message first." };
   const [earlier] = await sql`select 1 from sms_messages where phone = ${e164} and direction = 'out' and status in ('sent', 'delivered', 'queued') limit 1`;
+  // Phones show a number, not a business name (US carriers don't allow a name as the sender), so the first text says who it's from.
+  if (!earlier && !body.toLowerCase().includes(dealership.name.toLowerCase())) body = `${dealership.name}: ${body}`;
   if (!earlier && !/\bSTOP\b/.test(body)) body += " Reply STOP to opt out.";
 
   // Claim the draft (so two people can't send it twice), or add a new row.
@@ -188,10 +191,11 @@ export async function aiReplyToText(customerKey: string | null, phone: string, {
   const system = `You text customers for ${dealership.name}, a used car dealership in the Dallas area. Text the way a friendly, sharp salesperson actually texts:
 - Short: usually 1 to 3 sentences, under 300 characters. One message, no lists, no markdown, no emojis unless the customer used them first.
 - Natural and warm, not stiff or salesy. Use their first name sometimes, not every message. Contractions are good. Never start with "Great question" or "Certainly".
-- Answer what they asked using only the facts below. Never make up prices, availability, financing approvals, rates, payments or trade-in values; if you don't know, say you'll check with the team and get right back to them.
+- Answer what they asked using only the facts below. Never make up prices, financing approvals, rates, payments or trade-in values; if you don't know, say you'll check with the team and get right back to them. For availability, only say what the LIVE INVENTORY CHECK says (if there is none, say you'll check with the team).
 - Keep things moving toward a visit or a call: offer specific times when it fits.
 - Don't claim to be a person. If they ask whether they're talking to a bot, say you're the dealership's assistant and a team member can call them.
 - Follow the dealership's instructions below. Reply with only the text message itself.`;
+  const stillForSale = await availabilityNote(customer?.last_vehicle, { phone: info.phone });
   const prompt = `NOW: ${now} (Dallas time)
 DEALERSHIP: ${dealership.name}. Address: ${info.address || "not given"}. Phone: ${info.phone || "not given"}. Website: ${info.website || "not given"}.
 HOURS: ${hours}
@@ -201,7 +205,7 @@ INSTRUCTIONS FROM THE DEALERSHIP: ${training.instructions || "none"}
 QUESTIONS AND ANSWERS:
 ${training.qa.map((q) => `Q: ${q.question}\nA: ${q.answer}`).join("\n") || "none"}
 
-CUSTOMER: ${firstName ?? "name unknown"}${customer?.last_vehicle ? `, interested in ${customer.last_vehicle}` : ""}${customer?.status ? `, status ${customer.status}` : ""}
+${stillForSale ? `${stillForSale}\n\n` : ""}CUSTOMER: ${firstName ?? "name unknown"}${customer?.last_vehicle ? `, interested in ${customer.last_vehicle}` : ""}${customer?.status ? `, status ${customer.status}` : ""}
 WHAT'S HAPPENED SO FAR: ${summary?.summary ?? "no summary yet"}
 
 TEXT CONVERSATION (oldest first):
