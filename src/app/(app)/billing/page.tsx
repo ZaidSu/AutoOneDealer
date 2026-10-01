@@ -92,7 +92,7 @@ export default async function BillingPage({ searchParams }: { searchParams: Prom
           <section aria-labelledby="usage" className="panel p-5">
             <h2 id="usage" className="text-[17px] font-semibold">Used this month</h2>
             <Usage label="AI emails sent" used={usage.emails} included={settings.includedEmails} range={settings.emailRange} extra={settings.extraEmailCents} />
-            <Usage label="AI texts sent" used={usage.texts} included={settings.includedTexts} range={settings.textRange} extra={settings.extraTextCents} note="Texting isn't turned on yet." />
+            <Usage label="AI texts sent" used={usage.texts} included={settings.includedTexts} range={settings.textRange} extra={settings.extraTextCents} />
           </section>
         </div>
       </div>

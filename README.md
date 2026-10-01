@@ -103,6 +103,19 @@ AutoDash sends it from the dealership Gmail to the customer (never back to the l
 when nobody has AutoDash open. Set `CRON_SECRET` in Vercel to a long random string, then create a cron job for
 `https://auto-one-dealer.vercel.app/api/cron/tick?key=<CRON_SECRET>` every 5 minutes.
 
+## AI texting (Twilio)
+
+Customers text the dealership number; the text shows on their customer page (live) and on **AI assistant → Text
+messages**. During AI hours the AI writes a short, friendly reply; with **Automatic texting** off (default) staff
+approve it, on = it sends itself. Staff can also text from the customer page. The first text to a number adds
+"Reply STOP to opt out"; STOP blocks texting until START. Texts are part of each customer's **AI summary**, which
+refreshes itself after new texts.
+
+- Env: `TWILIO_ACCOUNT_SID`, `TWILIO_AUTH_TOKEN`, `TWILIO_PHONE_NUMBER` (optional `TWILIO_MESSAGING_SERVICE_SID`, `APP_URL`).
+- In Twilio, "A message comes in" -> Webhook, HTTP POST -> `https://auto-one-dealer.vercel.app/api/sms/incoming`.
+- Delivery reports arrive at `/api/sms/status`. Both check Twilio's signature.
+- Code: `src/lib/sms/`, table `sms_messages` and `sms_optouts`. Texts deliver only after A2P 10DLC approval.
+
 ## Billing
 
 **Billing** (sidebar, owner and developer only) shows this month's bill line by line (plan, one-time setup fee on the

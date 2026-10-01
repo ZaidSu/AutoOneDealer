@@ -66,8 +66,11 @@ export async function usageFor(period: string): Promise<{ emails: number; texts:
   const sql = await readyDb();
   if (!sql) return { emails: 0, texts: 0 };
   const { start, end } = periodRange(period);
-  const [row] = await sql`select count(*)::int as n from ai_replies where status = 'sent' and sent_at >= ${start} and sent_at < ${end}`;
-  return { emails: row.n, texts: 0 };
+  const [[row], [texts]] = await Promise.all([
+    sql`select count(*)::int as n from ai_replies where status = 'sent' and sent_at >= ${start} and sent_at < ${end}`,
+    sql`select count(*)::int as n from sms_messages where ai and direction = 'out' and status in ('sent', 'delivered', 'queued') and sent_at >= ${start} and sent_at < ${end}`,
+  ]);
+  return { emails: row.n, texts: texts.n };
 }
 
 const toInvoice = (r: Record<string, unknown>): Invoice => ({

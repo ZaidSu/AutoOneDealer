@@ -27,9 +27,10 @@ export async function summarizeCustomer(key: string): Promise<CustomerSummary> {
   const customer = await getCustomer(key);
   if (!customer) throw new Error("Customer not found.");
 
-  const [leads, appts, notes, aiEmails] = await Promise.all([
+  const [leads, appts, notes, aiEmails, texts] = await Promise.all([
     leadsForCustomer(key), appointmentsForCustomer(key), activitiesFor(key, 40),
     sql`select * from ai_replies where customer_key = ${key} and status = 'sent' order by sent_at`,
+    sql`select * from sms_messages where customer_key = ${key} and status not in ('draft', 'discarded', 'failed') order by coalesce(sent_at, created_at) desc limit 60`,
   ]);
   // The actual email back-and-forth in Gmail, both directions (most recent 12).
   let emails: { at: number; from: string; subject: string; text: string }[] = [];
@@ -51,13 +52,14 @@ export async function summarizeCustomer(key: string): Promise<CustomerSummary> {
     `AI EMAILS SENT:\n${aiEmails.map((r) => `- ${day(new Date(r.sent_at).getTime())} "${r.subject}": ${String(r.body).slice(0, 800)}`).join("\n") || "none"}`,
     `APPOINTMENTS:\n${appts.map((a) => `- ${day(a.startsAt.getTime())} ${a.status}${a.vehicle ? `, ${a.vehicle}` : ""}${a.repName ? ` with ${a.repName}` : ""}`).join("\n") || "none"}`,
     `TEAM NOTES AND ACTIVITY:\n${notes.slice().reverse().map((n) => `- ${day(n.at)} ${ACTIVITY_KINDS[n.kind] ?? n.kind}${n.body ? `: ${n.body.slice(0, 300)}` : ""}${n.staff ? ` (${n.staff})` : ""}`).join("\n") || "none"}`,
-    "TEXTS: texting isn't turned on yet.",
+    `TEXT MESSAGES (oldest first; "AI" means the dealership's AI assistant wrote it):\n${texts.slice().reverse().map((t) => `- ${day(new Date(t.sent_at ?? t.created_at).getTime())} ${t.direction === "in" ? "Customer" : t.ai ? "Dealership (AI)" : `Dealership${t.sent_by ? ` (${t.sent_by})` : ""}`}: ${String(t.body).slice(0, 400)}`).join("\n") || "none"}`,
   ].join("\n\n");
 
   const text = await askClaude({
     maxTokens: 600,
     system: `You summarize a car dealership customer's history for the sales team at ${dealership.name}.
 Write plain text, no markdown. Use only the facts given; never guess. Be specific: cars, dates, what the customer asked, what was promised.
+When the AI assistant talked with the customer (by email or text), say what the customer wanted, what the AI told them, and anything the team needs to follow up on.
 Reply with only JSON: {"summary": "3 to 6 short sentences: who they are, what they want, what's been said and done so far, where things stand", "next_step": "one short sentence: the most useful next thing for the salesperson to do"}`,
     prompt: parts.slice(0, 24000),
   });
@@ -66,8 +68,20 @@ Reply with only JSON: {"summary": "3 to 6 short sentences: who they are, what th
   const summary = String(parsed.summary ?? "").trim();
   if (summary.length < 20) throw new Error("The AI's summary came back empty. Try again.");
   const nextStep = String(parsed.next_step ?? "").trim() || null;
-  const sources = [`${leads.length} lead${leads.length === 1 ? "" : "s"}`, `${emails.length} email${emails.length === 1 ? "" : "s"}`, aiEmails.length ? `${aiEmails.length} AI email${aiEmails.length === 1 ? "" : "s"}` : "", appts.length ? `${appts.length} appointment${appts.length === 1 ? "" : "s"}` : "", notes.length ? `${notes.length} note${notes.length === 1 ? "" : "s"}` : ""].filter(Boolean).join(", ");
+  const sources = [`${leads.length} lead${leads.length === 1 ? "" : "s"}`, `${emails.length} email${emails.length === 1 ? "" : "s"}`, texts.length ? `${texts.length} text${texts.length === 1 ? "" : "s"}` : "", aiEmails.length ? `${aiEmails.length} AI email${aiEmails.length === 1 ? "" : "s"}` : "", appts.length ? `${appts.length} appointment${appts.length === 1 ? "" : "s"}` : "", notes.length ? `${notes.length} note${notes.length === 1 ? "" : "s"}` : ""].filter(Boolean).join(", ");
   await sql`insert into customer_summaries (customer_key, summary, next_step, sources, updated_at) values (${key}, ${summary}, ${nextStep}, ${sources}, now())
     on conflict (customer_key) do update set summary = excluded.summary, next_step = excluded.next_step, sources = excluded.sources, updated_at = now()`;
   return { summary, nextStep, sources, updatedAt: Date.now() };
+}
+
+/** Rewrites the summary in the background after new texts or AI emails, at most every few minutes per customer. */
+export async function refreshSummarySoon(key: string | null, minAgeMs = 5 * 60_000) {
+  if (!key || !aiConfigured()) return;
+  try {
+    const current = await getSummary(key);
+    if (current && Date.now() - current.updatedAt < minAgeMs) return;
+    await summarizeCustomer(key);
+  } catch (error) {
+    console.error("[autodash:ai] background summary failed:", error instanceof Error ? error.message : error);
+  }
 }

@@ -1,5 +1,6 @@
 import { requirePageStaff } from "@/lib/auth/guard";
 import AiSummary from "@/components/customers/AiSummary";
+import TextThread from "@/components/customers/TextThread";
 import { aiConfigured } from "@/lib/ai/claude";
 import { getSummary } from "@/lib/ai/summary";
 import type { Metadata } from "next";
@@ -91,6 +92,7 @@ export default async function CustomerPage({ params }: { params: Promise<{ key: 
       />
 
       <AiSummary customerKey={customer.key} initial={summary} aiReady={aiConfigured()} />
+      <TextThread customerKey={customer.key} firstName={customer.name ? customer.name.trim().split(/\s+/)[0] : null} />
 
       <div className="mt-8 grid gap-8 lg:grid-cols-[minmax(0,1fr)_320px]">
         <section aria-labelledby="timeline">

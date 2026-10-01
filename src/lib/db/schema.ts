@@ -95,6 +95,30 @@ create table if not exists customer_summaries (
   updated_at timestamptz not null default now()
 );
 alter table customer_summaries enable row level security;
+-- v8: text messages (both directions, plus AI drafts waiting for approval) and people who replied STOP.
+create table if not exists sms_messages (
+  id bigserial primary key,
+  customer_key text,
+  phone text not null,
+  direction text not null,
+  body text not null,
+  status text not null,
+  ai boolean not null default false,
+  sent_by text,
+  error text,
+  twilio_sid text unique,
+  created_at timestamptz not null default now(),
+  sent_at timestamptz
+);
+create index if not exists sms_messages_phone on sms_messages (phone, created_at);
+create index if not exists sms_messages_customer on sms_messages (customer_key, created_at);
+create index if not exists sms_messages_status on sms_messages (status, created_at desc);
+alter table sms_messages enable row level security;
+create table if not exists sms_optouts (
+  phone text primary key,
+  opted_out_at timestamptz not null default now()
+);
+alter table sms_optouts enable row level security;
 `;
 
 export async function setupDatabase(): Promise<void> {

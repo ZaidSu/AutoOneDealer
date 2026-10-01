@@ -386,3 +386,64 @@ export async function summarizeCustomerAction(key: string): Promise<ActionResult
     return fail(error instanceof Error ? error.message : "The AI couldn't summarize right now.");
   }
 }
+
+// ---- Texting ----
+
+export async function sendTextAction(customerKey: string, body: string): Promise<ActionResult> {
+  const staff = await requireStaff();
+  if (!staff) return fail("Your session ended. Sign in again.");
+  const { getCustomer } = await import("@/lib/crm/queries");
+  const { sendText } = await import("@/lib/sms");
+  const customer = await getCustomer(String(customerKey));
+  if (!customer?.phone) return fail("This customer has no phone number.");
+  const r = await sendText({ customerKey: customer.key, phone: customer.phone, body: String(body ?? ""), sentBy: staff.name });
+  return r.ok ? { ok: true, message: "Sent." } : fail(r.error);
+}
+
+export async function sendTextDraftAction(id: number, customerKey: string, body: string): Promise<ActionResult> {
+  const staff = await requireStaff();
+  if (!staff) return fail("Your session ended. Sign in again.");
+  const { getCustomer } = await import("@/lib/crm/queries");
+  const { sendText } = await import("@/lib/sms");
+  const customer = await getCustomer(String(customerKey));
+  if (!customer?.phone) return fail("This customer has no phone number.");
+  const r = await sendText({ customerKey: customer.key, phone: customer.phone, body: String(body ?? ""), sentBy: staff.name, ai: true, draftId: Number(id) });
+  if (r.ok) {
+    const { after } = await import("next/server");
+    const { refreshSummarySoon } = await import("@/lib/ai/summary");
+    after(() => refreshSummarySoon(customer.key));
+  }
+  return r.ok ? { ok: true, message: "Sent." } : fail(r.error);
+}
+
+export async function discardTextDraftAction(id: number): Promise<ActionResult> {
+  const staff = await requireStaff();
+  if (!staff) return fail("Your session ended. Sign in again.");
+  const { discardDraft } = await import("@/lib/sms");
+  return (await discardDraft(Number(id))) ? { ok: true, message: "Discarded." } : fail("This draft was already sent or discarded.");
+}
+
+export async function aiDraftTextAction(customerKey: string): Promise<ActionResult> {
+  const staff = await requireStaff();
+  if (!staff) return fail("Your session ended. Sign in again.");
+  const { getCustomer } = await import("@/lib/crm/queries");
+  const { aiReplyToText } = await import("@/lib/sms");
+  const customer = await getCustomer(String(customerKey));
+  if (!customer?.phone) return fail("This customer has no phone number.");
+  try {
+    const r = await aiReplyToText(customer.key, customer.phone, { force: true });
+    return r === "skipped" ? fail("Nothing for the AI to answer yet (or this customer replied STOP).") : { ok: true, message: r === "sent" ? "The AI replied." : "The AI wrote a draft below." };
+  } catch (error) {
+    return fail(error instanceof Error ? error.message : "The AI couldn't write a reply right now.");
+  }
+}
+
+export async function setAutoTextAction(on: boolean): Promise<ActionResult> {
+  const staff = await requireStaff();
+  if (!staff) return fail("Your session ended. Sign in again.");
+  if (!can.editAiSettings(staff.role)) return fail(AI_EDIT_DENIED);
+  const { setAutoText } = await import("@/lib/sms");
+  try { await setAutoText(Boolean(on)); } catch { return NO_DB; }
+  revalidatePath("/ai/texts");
+  return { ok: true, message: on ? "Automatic texting is on." : "Automatic texting is off. The AI writes drafts; your team clicks Send." };
+}

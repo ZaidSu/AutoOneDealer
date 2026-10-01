@@ -40,7 +40,7 @@ export const DEFAULT_BILLING: BillingSettings = {
   planParts: [
     { label: "AutoDash software, updates and support", detail: "Dashboard, leads, customers, pipeline, appointments, analytics, fixes and new features", cents: 14900 },
     { label: "AI email replies", detail: "The AI reads each new lead and writes a reply for your team to approve", cents: 7900 },
-    { label: "AI texting", detail: "The AI texts customers and answers their texts (turning on soon)", cents: 5300 },
+    { label: "AI texting", detail: "The AI answers customer texts in a friendly, human way, for your team to approve or send automatically", cents: 5300 },
     { label: "Hosting", detail: "Keeping AutoDash online, fast and secure around the clock", cents: 4900 },
     { label: "Database and backups", detail: "Storing your leads, customers and appointments safely", cents: 3900 },
   ],

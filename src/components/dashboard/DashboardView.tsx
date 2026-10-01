@@ -55,7 +55,7 @@ export default function DashboardView() {
             <p className="pt-1.5 font-condensed text-[1.6rem] font-semibold leading-tight text-faint">Not on yet</p>
           )}
           <p className="stat-label">
-            {!ai.enabled ? "AI email replies" : ai.waiting ? `AI replies waiting for you (${ai.emails} sent since last night)` : `AI emails sent since last night`}
+            {!ai.enabled ? "AI email and text replies" : ai.waiting ? `AI replies waiting for you (${ai.emails} emails, ${ai.texts} texts sent since last night)` : `AI emails sent since last night${ai.texts ? `, plus ${ai.texts} texts` : ""}`}
           </p>
         </Link>
       </section>

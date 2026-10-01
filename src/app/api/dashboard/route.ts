@@ -8,6 +8,7 @@ import { dealership, greeting } from "@/lib/dealership";
 import { queryLeads } from "@/lib/leads/store";
 import { aiConfigured } from "@/lib/ai/claude";
 import { replyCounts } from "@/lib/ai/replies";
+import { textCounts } from "@/lib/sms";
 import { attempt } from "@/lib/utils/safe";
 import { addDays, dayKey, zonedToUtc } from "@/lib/utils/time";
 
@@ -32,7 +33,10 @@ export async function GET(req: NextRequest) {
         attempt("Today's appointments", () => appointmentsBetween(dayStart, dayEnd, null), null),
         attempt("Counts", () => leadCounts(since, since), null),
         attempt("Latest leads", async () => (await queryLeads({ since, limit: 30 })).leads, []),
-        attempt("AI replies", () => replyCounts(since), { waiting: 0, sent: 0 }),
+        attempt("AI replies", async () => {
+          const [e, t] = await Promise.all([replyCounts(since), textCounts(since)]);
+          return { waiting: e.waiting + t.waiting, sent: e.sent, texts: t.sent };
+        }, { waiting: 0, sent: 0, texts: 0 }),
       ])
     : [];
   const problems = [apptsR, countsR, latestR].map((r) => r?.error).filter(Boolean) as string[];
@@ -45,6 +49,6 @@ export async function GET(req: NextRequest) {
     latest: latestR?.data ?? [],
     appointmentsToday: apptsR?.data?.filter((a) => a.status !== "canceled").map((a) => ({ ...a, startsAt: a.startsAt.getTime(), endsAt: undefined })) ?? null,
     // Texts come later; emails are real once the AI key is set.
-    ai: { enabled: aiConfigured(), emails: aiR?.data?.sent ?? 0, waiting: aiR?.data?.waiting ?? 0, texts: 0 },
+    ai: { enabled: aiConfigured(), emails: aiR?.data?.sent ?? 0, waiting: aiR?.data?.waiting ?? 0, texts: aiR?.data?.texts ?? 0 },
   });
 }
