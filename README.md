@@ -153,7 +153,8 @@ included, past bills, and documents. The owner pays by card on Stripe's own page
 - **Customers**: leads grouped into people by phone (then email), with every inquiry, application, source,
   vehicle asked about, and their email conversations with the dealership.
 - **Dashboard**: today's date, today's appointments, and every lead and credit application since 6 PM the night before.
-- **Data start**: pages only show customers, leads and emails from `DATA_START` (default 2026-09-22) on. Older data stays in the database.
+- **Data start**: pages only show customers, leads and emails from `DATA_START` (default 2026-09-30) on. Older data stays in the database. The Pipeline only shows customers active since then (new lead, text, or added by hand).
+- **Add customer** (Customers and Pipeline pages): walk-ins, calls and referrals. Merges into an existing customer with the same phone/email.
 - **AI assistant** (sidebar group): Dealership info and Train your AI save for real; Email replies, Text messages, Phone numbers and Automations are placeholders until AI replies are built.
 - **Analytics**: lead sources, in state vs out of state, top out-of-state states, leads over time, credit
   applications; with the database, purchases by source and salesperson results.

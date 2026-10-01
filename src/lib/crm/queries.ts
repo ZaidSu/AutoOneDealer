@@ -122,8 +122,10 @@ export async function pipeline(opts: { repId?: number | null; days: number; perC
         -- Only real names: not blank, not just a phone number, not an email address.
         and nullif(trim(c.name), '') is not null and c.name !~ '^[0-9()+. -]+$' and position('@' in c.name) = 0
         -- Only customers from the data start on (or that staff worked on since then).
-        and (c.last_seen >= ${start} or c.updated_at >= ${start})
-        and (c.status = 'appointment' or c.last_seen >= ${since} or c.updated_at >= ${since})
+        -- Only customers active since the data start (a new lead, text or being added by hand). Old customers stay
+        -- hidden even if their row was touched by a rebuild.
+        and c.last_seen >= ${start}
+        and (c.status = 'appointment' or c.last_seen >= ${since})
         ${opts.repId ? sql`and c.rep_id = ${opts.repId}` : sql``}) x
     where n <= ${opts.perColumn ?? 40} order by n`;
   const columns = new Map<string, PipelineColumn>();

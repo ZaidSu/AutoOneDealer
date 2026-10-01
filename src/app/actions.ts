@@ -482,3 +482,42 @@ export async function turnOffCardAutopayAction(): Promise<ActionResult> {
   revalidatePath("/billing");
   return { ok: true, message: "Autopay is off. Pay each bill with the Pay button." };
 }
+
+// ---- Adding a customer by hand (walk-ins, phone calls, referrals) ----
+
+export async function addCustomerAction(input: { name: string; phone: string; email: string; vehicle: string; heardFrom: string; notes: string }):
+  Promise<ActionResult & { key?: string }> {
+  const staff = await requireStaff();
+  if (!staff) return fail("Your session ended. Sign in again.");
+  const name = cleanName(input.name, 80);
+  const phone = String(input.phone ?? "").replace(/\D/g, "").replace(/^1(\d{10})$/, "$1");
+  const email = String(input.email ?? "").trim().toLowerCase().slice(0, 120);
+  const vehicle = cleanName(input.vehicle, 80);
+  if (!name) return fail("Enter the customer's name.");
+  if (phone && phone.length !== 10) return fail("Enter a 10-digit phone number.");
+  if (email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) return fail("That email address doesn't look right.");
+  if (!phone && !email) return fail("Enter a phone number or an email, so you can reach them.");
+  const { customerKey } = await import("@/lib/customers");
+  const key = customerKey({ phone: phone || null, email: email || null } as never)!;
+  const sql = await (await import("@/lib/db")).readyDb();
+  if (!sql) return NO_DB;
+  const search = [name, phone, email, vehicle].filter(Boolean).join(" ").toLowerCase();
+  // If they already exist (e.g. an old lead), bring them back with the new details instead of making a duplicate.
+  await sql`
+    insert into customers (key, name, phone, email, status, first_seen, last_seen, vehicles, last_vehicle, heard_from, notes, search, updated_at)
+    values (${key}, ${name}, ${phone || null}, ${email || null}, 'new', now(), now(), ${vehicle ? [vehicle] : []}, ${vehicle || null},
+            ${cleanName(input.heardFrom, 60) || null}, ${String(input.notes ?? "").slice(0, 2000)}, ${search}, now())
+    on conflict (key) do update set
+      name = excluded.name, last_seen = now(), updated_at = now(),
+      phone = coalesce(excluded.phone, customers.phone), email = coalesce(excluded.email, customers.email),
+      last_vehicle = coalesce(excluded.last_vehicle, customers.last_vehicle),
+      vehicles = case when excluded.last_vehicle is null or excluded.last_vehicle = any(customers.vehicles) then customers.vehicles else customers.vehicles || excluded.vehicles end,
+      heard_from = coalesce(excluded.heard_from, customers.heard_from),
+      notes = case when excluded.notes = '' then customers.notes else trim(both from customers.notes || E'\n' || excluded.notes) end,
+      search = customers.search || ' ' || excluded.search`;
+  const { logActivity } = await import("@/lib/crm/queries");
+  await logActivity(key, "note", `Added by hand${vehicle ? `, interested in ${vehicle}` : ""}`, staff.name).catch(() => undefined);
+  revalidatePath("/customers");
+  revalidatePath("/pipeline");
+  return { ok: true, message: "Customer added.", key };
+}

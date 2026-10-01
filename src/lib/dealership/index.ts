@@ -6,7 +6,7 @@ export const dealership = {
   timeZone: "America/Chicago",
   // AutoDash only shows customers, leads and emails from this day on (Dallas time), so the pages stay about
   // current business instead of months of old leads. Older data is kept in the database, just not shown.
-  dataStart: process.env.DATA_START || "2026-09-22",
+  dataStart: process.env.DATA_START || "2026-09-30",
   // The Dashboard counts "since last night" from this time the day before (the store closes at 7 PM).
   overnightFrom: "18:00",
   // When the AI writes email replies: Monday to Saturday, 9 AM to 7 PM Dallas time (1 = Monday ... 7 = Sunday).

@@ -6,6 +6,7 @@ import CustomerRows from "@/components/customers/CustomerRows";
 import SyncBar from "@/components/leads/SyncBar";
 import DbNotice from "@/components/ui/DbNotice";
 import PageHeader from "@/components/ui/PageHeader";
+import AddCustomer from "./AddCustomer";
 import PageLoading from "@/components/ui/PageLoading";
 import type { CustomerView } from "@/lib/customers/view";
 import type { SyncInfo } from "@/lib/leads/source";
@@ -38,7 +39,8 @@ export default function CustomersView() {
 
   return (
     <>
-      <PageHeader title="Customers" description={`Everyone who sent a lead or credit application since ${data.since ?? "Sep 22"}, one row per person. Click a row to see and change their details.`} />
+      <PageHeader title="Customers" description={`Everyone who reached out since ${data.since ?? "Sep 30"}, or was added by hand. One row per person; click a row to see and change their details.`}
+        action={<AddCustomer sources={data.sources ?? []} />} />
 
       <form action="/customers" className="mb-3 flex flex-wrap items-end gap-2">
         <label className="min-w-0 flex-1 sm:max-w-xs">
