@@ -1,7 +1,7 @@
 import { requirePageStaff } from "@/lib/auth/guard";
 import type { Metadata } from "next";
 import Link from "next/link";
-import { BarList, Columns, Panel, Stat } from "@/components/analytics/Charts";
+import { BarList, Columns, Panel, SplitBar, Stat, stateColor } from "@/components/analytics/Charts";
 import DbNotice from "@/components/ui/DbNotice";
 import PageHeader from "@/components/ui/PageHeader";
 import { analytics, type AnalyticsData } from "@/lib/crm/analytics";
@@ -11,6 +11,8 @@ import { dataStartLabel, dealership, notBeforeStart } from "@/lib/dealership";
 import { stateName } from "@/lib/utils/geo";
 import { sourceColor } from "@/lib/utils/sourceColors";
 import { addDays, dayKey, zonedToUtc } from "@/lib/utils/time";
+
+const REP_COLORS = ["#1c7ed6", "#7048e8", "#0ca678", "#f08c00", "#e64980", "#15aabf"];
 
 export const metadata: Metadata = { title: "Analytics" };
 export const dynamic = "force-dynamic";
@@ -108,11 +110,11 @@ export default async function AnalyticsPage({ searchParams }: { searchParams: Pr
     <>
       {header}
 
-      <section aria-label="Totals" className="mb-6 grid max-w-5xl grid-cols-2 gap-px overflow-hidden rounded-lg border border-line bg-line lg:grid-cols-4">
-        <Stat value={people} label="Customers who reached out" />
-        <Stat value={emails} label="Lead emails received" />
-        <Stat value={applications} label="People who applied for credit" />
-        <Stat value={purchased} label="Marked purchased" />
+      <section aria-label="Totals" className="mb-6 grid max-w-5xl grid-cols-2 gap-4 lg:grid-cols-4">
+        <Stat value={people} label="Customers" sub="reached out" color="#1c7ed6" />
+        <Stat value={emails} label="Lead emails" sub={people ? `about ${(emails / people).toFixed(1)} per customer` : "received"} color="#7048e8" />
+        <Stat value={applications} label="Applied for credit" sub={people ? `${Math.round((applications / people) * 100)}% of customers` : "people"} color="#f08c00" />
+        <Stat value={purchased} label="Purchased" sub={people ? `${Math.round((purchased / Math.max(people, 1)) * 100)}% of customers` : "marked by your team"} color="#0ca678" />
       </section>
 
       <div className="grid max-w-5xl gap-5 lg:grid-cols-2">
@@ -121,27 +123,27 @@ export default async function AnalyticsPage({ searchParams }: { searchParams: Pr
         </Panel>
 
         <Panel title="In state vs out of state" note="From the city and state in each lead, or the label your team set.">
-          <BarList highlightFirst={false} items={[
-            { label: "In state (Texas)", value: inState },
-            { label: "Out of state", value: outState },
-            { label: "Not known", value: people - inState - outState },
+          <SplitBar parts={[
+            { label: "Texas", value: inState, color: "#1c7ed6" },
+            { label: "Out of state", value: outState, color: "#f08c00" },
+            { label: "Not known", value: people - inState - outState, color: "#ced4da" },
           ]} emptyText="No leads in this range." />
         </Panel>
 
         <Panel title="Out-of-state customers by state" note="Only customers marked out of state.">
-          <BarList items={topStates} emptyText="No out-of-state customers in this range." />
+          <BarList items={topStates} colorFor={stateColor} emptyText="No out-of-state customers in this range." />
         </Panel>
 
-        <Panel title={days <= 45 ? "Leads per day" : days <= 120 ? "Leads per week" : "Leads per month"} note="Every lead and credit application email, by the day it arrived (Dallas time)." wide>
-          <Columns items={buckets} emptyText="No leads in this range." />
+        <Panel title={days <= 45 ? "Leads per day" : days <= 120 ? "Leads per week" : "Leads per month"} note={`Every lead and credit application email, by the day it arrived (Dallas time).${days <= 45 ? " Today is in red." : ""} About ${Math.round(emails / Math.max(days, 1))} a day on average.`} wide>
+          <Columns items={buckets} color="#4c6ef5" highlightLast={days <= 45} emptyText="No leads in this range." />
         </Panel>
 
         <Panel title="Credit applications" note="Received means the application arrived; it isn't an approval. Approved and denied come from the Financing label.">
-          <BarList highlightFirst={false} items={[
-            { label: "Received", value: applications },
-            { label: "Approved", value: approved },
-            { label: "Denied", value: denied },
-            { label: "Still needs review", value: applications - approved - denied },
+          <p className="mb-3 text-[15px]"><span className="font-condensed text-3xl font-semibold" style={{ color: "#f08c00" }}>{applications}</span> <span className="text-muted">received</span></p>
+          <SplitBar parts={[
+            { label: "Approved", value: approved, color: "#0ca678" },
+            { label: "Denied", value: denied, color: "#e03131" },
+            { label: "Still needs review", value: applications - approved - denied, color: "#fab005" },
           ]} emptyText="No credit applications in this range." />
         </Panel>
 
@@ -159,11 +161,19 @@ export default async function AnalyticsPage({ searchParams }: { searchParams: Pr
                     <th className="py-2 pr-4 font-medium">Appointments</th><th className="py-2 pr-4 font-medium">Showed up</th>
                     <th className="py-2 pr-4 font-medium">No-shows</th><th className="py-2 font-medium">Purchased</th>
                   </tr></thead>
-                  <tbody>{repRows.map((r) => (
+                  <tbody>{repRows.map((r, i) => (
                     <tr key={r.name} className="border-b border-line tabular-nums last:border-0">
-                      <td className="py-2 pr-4 font-semibold">{r.name}</td><td className="py-2 pr-4">{r.customers}</td>
-                      <td className="py-2 pr-4">{r.booked}</td><td className="py-2 pr-4">{r.showed}</td>
-                      <td className="py-2 pr-4">{r.noShow}</td><td className="py-2">{r.purchased}</td>
+                      <td className="py-2.5 pr-4">
+                        <span className="flex items-center gap-2.5 font-semibold">
+                          <span aria-hidden className="grid size-8 place-items-center rounded-full text-sm font-semibold text-white" style={{ background: REP_COLORS[i % REP_COLORS.length] }}>{r.name.slice(0, 1).toUpperCase()}</span>
+                          {r.name}
+                        </span>
+                      </td>
+                      <td className="py-2.5 pr-4">{r.customers}</td>
+                      <td className="py-2.5 pr-4">{r.booked}</td>
+                      <td className="py-2.5 pr-4"><span className="text-go">{r.showed}</span>{r.booked ? <span className="ml-1.5 text-sm text-muted">{Math.round((r.showed / r.booked) * 100)}%</span> : null}</td>
+                      <td className="py-2.5 pr-4"><span className={r.noShow ? "text-signal" : ""}>{r.noShow}</span></td>
+                      <td className="py-2.5 font-semibold">{r.purchased}</td>
                     </tr>
                   ))}</tbody>
                 </table>
