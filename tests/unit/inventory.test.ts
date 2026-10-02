@@ -147,3 +147,33 @@ test("each run reads the pages that most need it, a couple at a time", () => {
   // a one-page website needs nothing beyond page 1
   assert.deepEqual(pagesToRead(1, {}, T, 25 * MIN, 2), []);
 });
+
+import { readFileSync } from "node:fs";
+import { describeListing, parsePastedInventory } from "../../src/lib/inventory/match.ts";
+test("text copied from the website's pages is read into cars", () => {
+  const { cars, total } = parsePastedInventory(readFileSync(new URL("../fixtures/pasted-inventory.txt", import.meta.url), "utf8"));
+  assert.equal(total, 82);
+  assert.equal(cars.length, 7);
+  const [integra, bmw, silverado, hrv, corolla, malibu, corollaSold] = cars;
+  assert.deepEqual([integra.title, integra.year, integra.make, integra.model, integra.price, integra.mileage, integra.sold], ["2023 Acura Integra w/A-SPEC", 2023, "Acura", "Integra", 18995, 53827, false]);
+  assert.deepEqual([bmw.make, bmw.model, bmw.slug, bmw.price], ["BMW", "3 Series", "bmw-3-series", 4995]);
+  assert.equal(silverado.model, "Silverado 1500");
+  assert.equal(hrv.model, "HR-V");
+  assert.equal(corolla.sold, false);
+  assert.deepEqual([malibu.sold, malibu.price, malibu.mileage], [true, null, 78925]);
+  assert.equal(corollaSold.sold, true);                     // the same car name as the one above, told apart by mileage and Sold
+  assert.equal(corolla.mileage === corollaSold.mileage, false);
+});
+test("the same page pasted twice doesn't double the cars", () => {
+  const text = readFileSync(new URL("../fixtures/pasted-inventory.txt", import.meta.url), "utf8");
+  assert.equal(parsePastedInventory(text + "\n" + text).cars.length, 7);
+});
+test("a lead's short name finds the website's car: '2011 Bmw 328' is the '2011 BMW 3 Series 328i'", () => {
+  const { cars } = parsePastedInventory(readFileSync(new URL("../fixtures/pasted-inventory.txt", import.meta.url), "utf8"));
+  const lots = cars.filter((c) => !c.sold).map((c, i) => ({ id: String(i), financeId: null, url: "", year: c.year, slug: c.slug, title: c.title, price: c.price, mileage: c.mileage, sold: false }));
+  assert.deepEqual(sameModel("2011 Bmw 328", lots).map((l) => l.title), ["2011 BMW 3 Series 328i"]);
+  assert.deepEqual(sameModel("2017 Honda HR-V", lots).map((l) => l.title), ["2017 Honda HR-V LX"]);
+  assert.deepEqual(sameModel("2011 Bmw 335", lots), []);         // a different model of the same make is not a match
+  assert.deepEqual(sameModel("2012 Bmw 328", lots), []);         // wrong year
+  assert.match(describeListing(lots[0]), /autoonemotorstx\.com\/cars-for-sale/); // a car with no page of its own links to the inventory
+});

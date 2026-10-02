@@ -74,9 +74,21 @@ export function sameModel(vehicle: string | null | undefined, listings: Listing[
   const { year, words } = readVehicle(vehicle);
   if (!year || words.length < 2) return [];
   const have = new Set(words);
-  const fits = listings.filter((l) => l.year === year && tokens(l.slug).every((t) => have.has(t)));
-  const best = Math.max(0, ...fits.map((l) => tokens(l.slug).length));
-  return fits.filter((l) => tokens(l.slug).length === best);
+  const sameYear = listings.filter((l) => l.year === year);
+  const fits = sameYear.filter((l) => tokens(l.slug).every((t) => have.has(t)));
+  if (fits.length) {
+    const best = Math.max(0, ...fits.map((l) => tokens(l.slug).length));
+    return fits.filter((l) => tokens(l.slug).length === best);
+  }
+  // Leads often name a car differently from the website ("BMW 328" vs "BMW 3 Series 328i"). Same year and make, and every
+  // other word either matches a word in the car's name or starts one (328 -> 328i).
+  const make = words[0];
+  const rest = words.slice(1);
+  return sameYear.filter((l) => {
+    if (tokens(l.slug)[0] !== make) return false;
+    const name = tokens(l.title.replace(/^\s*(?:19|20)\d{2}\s+/, ""));
+    return rest.every((w) => name.some((t) => t === w || (w.length >= 3 && t.startsWith(w))));
+  });
 }
 
 /** Cars of the same make (and model if possible), for "here's something similar". */
@@ -100,8 +112,10 @@ export function pageShowsVin(html: string, vin: string): "yes" | "no" | "cannot 
   return "cannot tell";
 }
 
+export const SITE_PAGE = "https://www.autoonemotorstx.com/cars-for-sale";
+
 export function describeListing(l: Listing): string {
-  return `${l.title || `${l.year ?? ""} ${l.slug.replace(/-/g, " ")}`.trim()}${l.price ? `, $${l.price.toLocaleString("en-US")}` : ""}${l.mileage ? `, ${l.mileage.toLocaleString("en-US")} miles` : ""} (${l.url})`;
+  return `${l.title || `${l.year ?? ""} ${l.slug.replace(/-/g, " ")}`.trim()}${l.price ? `, $${l.price.toLocaleString("en-US")}` : ""}${l.mileage ? `, ${l.mileage.toLocaleString("en-US")} miles` : ""} (${l.url || SITE_PAGE})`;
 }
 
 const MULTI_WORD_MAKES = ["Land Rover", "Alfa Romeo", "Aston Martin", "Rolls Royce", "Mercedes Benz"];
@@ -161,4 +175,37 @@ export function pagesToRead(expected: number, saved: PageStore, now: number, max
     candidates.push({ n, at: entry && now - entry.at < maxAgeMs ? entry.at : -Infinity });
   }
   return candidates.sort((a, b) => a.at - b.at || a.n - b.n).slice(0, max).map((c) => c.n);
+}
+
+export type PastedCar = { year: number; title: string; header: string; slug: string; make: string; model: string; price: number | null; mileage: number | null; sold: boolean };
+
+/** Reads cars out of text copied from the website's inventory pages (select all, copy, paste). Several pages can be pasted
+ *  one after another. `total` is the "of 82" the website prints, so a partial paste can be told from a whole one. */
+export function parsePastedInventory(text: string): { cars: PastedCar[]; total: number | null } {
+  const lines = text.replace(/\r/g, "").split("\n").map((l) => l.replace(/\u200c|\u200b/g, "").trim()).filter(Boolean);
+  let total: number | null = null;
+  for (const l of lines) { const m = /Results\s+\d+\s*-\s*\d+\s+of\s+(\d+)/i.exec(l); if (m) total = Math.max(total ?? 0, Number(m[1])); }
+  const cars: PastedCar[] = [];
+  const seen = new Set<string>();
+  for (let i = 0; i < lines.length; i++) {
+    const head = /^((?:19|20)\d{2})\s+(.+?)\s+for sale at\b/i.exec(lines[i]);
+    if (!head) continue;
+    const year = Number(head[1]);
+    const header = `${head[1]} ${head[2]}`;
+    const block: string[] = [];
+    for (let j = i + 1; j < lines.length && !/\bfor sale at\b/i.test(lines[j]) && !/^Page\s+\d+\s+of\s+\d+/i.test(lines[j]) && !/^Popular Body Styles/i.test(lines[j]); j++) block.push(lines[j]);
+    const after = (label: string) => { const k = block.findIndex((l) => l.toLowerCase() === label); return k >= 0 ? block[k + 1] : undefined; };
+    const priceText = after("price") ?? "";
+    const sold = /^sold$/i.test(priceText);
+    const digits = (t: string | undefined) => { const n = Number((t ?? "").replace(/[^\d]/g, "")); return n > 0 ? n : null; };
+    const title = block[0] && /^(?:19|20)\d{2}\s/.test(block[0]) ? block[0] : header;
+    const slug = header.replace(/^\s*(?:19|20)\d{2}\s+/, "").toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "");
+    const { make, model } = makeAndModel({ title: header, slug, year });
+    const mileage = digits(after("mileage"));
+    const key = `${title.toLowerCase()}|${mileage}|${sold}`;
+    if (seen.has(key)) continue; // the same page pasted twice
+    seen.add(key);
+    cars.push({ year, title, header, slug, make, model, price: sold ? null : digits(priceText), mileage, sold });
+  }
+  return { cars, total };
 }

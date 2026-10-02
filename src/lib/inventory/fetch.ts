@@ -24,7 +24,7 @@ const HEADERS = {
 const pageUrl = (n: number) => n <= 1 ? SITE
   : `${SITE}?PageNumber=${n}&Sort=MakeAsc&StockNumber=&Condition=&BodyStyle=&Make=&MaxPrice=&Mileage=&SoldStatus=AllVehicles&StockNumber=`;
 
-export type Via = "direct" | "helper" | "pushed";
+export type Via = "direct" | "helper" | "pushed" | "pasted";
 
 const why = (error: unknown, ms: number) => {
   const name = (error as { name?: string })?.name;

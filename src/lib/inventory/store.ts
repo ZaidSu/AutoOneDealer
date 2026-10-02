@@ -4,9 +4,9 @@
 import { readyDb } from "@/lib/db";
 import { getSetting, setSetting } from "@/lib/db/data";
 import { fetchInventory, type Inventory } from "./fetch";
-import { makeAndModel, mergePageStore, pagesToRead, type Listing, type PageStore } from "./match";
+import { makeAndModel, mergePageStore, pagesToRead, parsePastedInventory, SITE_PAGE, type Listing, type PageStore } from "./match";
 
-export type SyncState = { at: number; ok: boolean; count: number; complete: boolean; added: number; sold: number; error: string | null; via?: "direct" | "helper" | "pushed"; pagesRead?: number; pagesExpected?: number | null };
+export type SyncState = { at: number; ok: boolean; count: number; complete: boolean; added: number; sold: number; error: string | null; via?: "direct" | "helper" | "pushed" | "pasted"; pagesRead?: number; pagesExpected?: number | null };
 const SYNC_KEY = "inventory_sync";
 
 export async function getSyncState(): Promise<SyncState | null> {
@@ -14,12 +14,15 @@ export async function getSyncState(): Promise<SyncState | null> {
 }
 
 const FRESH_MS = 30 * 60_000;
+/** A pasted copy stays trusted for a day (like a daily feed would). The website's own reads are only trusted for 30 minutes. */
+const PASTED_FRESH_MS = 24 * 3600_000;
 
 /** Reads the website from the server (the timer does this every 5 minutes). If the dealership computer has sent the
  *  inventory recently, that is used instead and the website isn't read from here. */
 export async function syncInventory(opts: { force?: boolean } = {}): Promise<SyncState> {
   const prev = await getSyncState();
-  if (!opts.force && prev?.ok && prev.via === "pushed" && Date.now() - prev.at < 40 * 60_000) return prev;
+  // A copy sent from the dealership computer, or pasted by hand, is used instead of reading the website from here.
+  if (!opts.force && prev?.ok && ((prev.via === "pushed" && Date.now() - prev.at < 40 * 60_000) || (prev.via === "pasted" && Date.now() - prev.at < PASTED_FRESH_MS))) return prev;
   let inv: Inventory;
   const saved = await loadPageStore();
   // The timer reads page 1 plus the two pages most in need of a fresh copy. A manual "Check website now" reads everything.
@@ -43,7 +46,7 @@ async function mergeWithRecent(inv: Inventory): Promise<Inventory> {
 
 /** A failed read is saved so the Inventory page can say why, unless a good copy from the last 30 minutes exists (then that one stays). */
 async function recordFailure(error: string, prev: SyncState | null): Promise<SyncState> {
-  if (prev?.ok && Date.now() - prev.at < FRESH_MS) return { ...prev, ok: false, error };
+  if (prev?.ok && Date.now() - prev.at < (prev.via === "pasted" ? PASTED_FRESH_MS : FRESH_MS)) return { ...prev, ok: false, error };
   const state: SyncState = { at: Date.now(), ok: false, count: prev?.count ?? 0, complete: false, added: 0, sold: 0, error };
   await setSetting(SYNC_KEY, JSON.stringify(state)).catch(() => undefined);
   return state;
@@ -88,6 +91,11 @@ export async function applyInventory(inv: Inventory): Promise<SyncState> {
       where inventory.status <> 'sold' returning id`;
     soldNow += rows.length;
   }
+  // Cars added from pasted text have made-up ids. Once the website itself has been read in full, the real listing replaces them.
+  if (inv.complete && inv.via !== "pasted") {
+    await sql`delete from inventory t where t.id like 'txt-%' and exists (
+      select 1 from inventory r where r.id not like 'txt-%' and lower(r.title) = lower(t.title) and r.mileage is not distinct from t.mileage and r.status = t.status)`;
+  }
   // Cars that weren't on the website this time. Only counted when every page was read, so a half-loaded website
   // can't make cars look sold; and only after 3 checks in a row.
   if (inv.complete) {
@@ -129,7 +137,7 @@ export async function readSnapshot(): Promise<{ listings: Listing[]; sold: Listi
   const sql = await readyDb();
   if (!sql) return null;
   const state = await getSyncState();
-  if (!state?.ok || Date.now() - state.at > SNAPSHOT_MAX_AGE_MS) return null;
+  if (!state?.ok || Date.now() - state.at > (state.via === "pasted" ? PASTED_FRESH_MS : SNAPSHOT_MAX_AGE_MS)) return null;
   const [avail, sold] = await Promise.all([
     sql`select * from inventory where status = 'available'`,
     sql`select * from inventory where status = 'sold' and sold_at > now() - interval '90 days' and slug is not null`,
@@ -196,4 +204,30 @@ export async function inventoryStats(timeZone: string): Promise<InventoryStats> 
     byPrice: ORDER.map((label) => ({ label, n: (prices.find((r) => r.label === label)?.n as number) ?? 0 })).filter((p) => p.n > 0),
     lotByMake: lot.map((r) => ({ make: r.make as string, n: r.n as number })),
   };
+}
+
+// ---- pasted from the website ----
+export type PasteResult = { state: SyncState; cars: number; available: number; soldOnSite: number; total: number | null };
+
+/** Cars from text copied off the website's inventory pages. A car already in the table (matched by its name and mileage) is
+ *  updated in place; new ones get a made-up id until the website itself can be read. */
+export async function importPasted(text: string): Promise<PasteResult> {
+  const sql = await readyDb();
+  if (!sql) throw new Error("no_db");
+  const { cars, total } = parsePastedInventory(text);
+  if (cars.length === 0) throw new Error("no_cars");
+  const existing = await sql`select id, title, mileage, url, finance_id from inventory order by (id like 'txt-%') asc`;
+  const byKey = new Map<string, Record<string, unknown>>();
+  for (const r of existing) { const k = `${String(r.title ?? "").toLowerCase()}|${r.mileage ?? ""}`; if (!byKey.has(k)) byKey.set(k, r); }
+  const used = new Set<string>();
+  const listings: Listing[] = cars.map((c) => {
+    const hit = byKey.get(`${c.title.toLowerCase()}|${c.mileage ?? ""}`);
+    let id = hit ? String(hit.id) : `txt-${c.slug}-${c.year}-${c.mileage ?? "x"}`;
+    for (let n = 2; used.has(id); n++) id = `${id.replace(/-\d+$/, "")}-${n}`;
+    used.add(id);
+    return { id, financeId: (hit?.finance_id as string) ?? null, url: (hit?.url as string) ?? "", year: c.year, slug: c.slug, title: c.title, price: c.price, mileage: c.mileage, sold: c.sold };
+  });
+  const complete = total != null && cars.length >= total;
+  const state = await applyInventory({ listings, complete, fetchedAt: Date.now(), via: "pasted" });
+  return { state, cars: cars.length, available: cars.filter((c) => !c.sold).length, soldOnSite: cars.filter((c) => c.sold).length, total };
 }

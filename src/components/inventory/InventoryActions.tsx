@@ -1,7 +1,7 @@
 "use client";
 import { useRouter } from "next/navigation";
 import { useState, useTransition } from "react";
-import { addSaleAction, markAvailableAction, markSoldAction, syncInventoryNowAction } from "@/app/actions";
+import { addSaleAction, importInventoryTextAction, markAvailableAction, markSoldAction, syncInventoryNowAction } from "@/app/actions";
 
 type Msg = { ok: boolean; text: string } | null;
 const today = () => new Date().toLocaleDateString("en-CA", { timeZone: "America/Chicago" });
@@ -78,6 +78,38 @@ export function AddSale() {
           setForm({ title: "", price: "", date: today() }); setMsg({ ok: true, text: "Added." }); router.refresh();
         })}>{pending ? "Adding…" : "Add"}</button>
         <button type="button" className="btn" onClick={() => setOpen(false)}>Close</button>
+      </div>
+      {msg && <p role={msg.ok ? "status" : "alert"} className={`mt-2 text-sm ${msg.ok ? "text-go" : "text-signal"}`}>{msg.text}</p>}
+    </div>
+  );
+}
+
+/** Paste the text of the website's inventory pages: the way to get the cars in when AutoDash can't read the website itself. */
+export function ImportText() {
+  const [open, setOpen] = useState(false);
+  const [text, setText] = useState("");
+  const [msg, setMsg] = useState<Msg>(null);
+  const [pending, start] = useTransition();
+  const router = useRouter();
+  if (!open) return <button type="button" className="btn" onClick={() => setOpen(true)}>Paste inventory text</button>;
+  return (
+    <div className="panel mb-6 p-4">
+      <p className="font-semibold">Paste the website&apos;s inventory</p>
+      <ol className="mt-1 list-decimal pl-5 text-sm text-muted">
+        <li>Open each page of your website&apos;s Cars For Sale (page 1, 2, 3, 4…).</li>
+        <li>On each page press <b>Ctrl+A</b>, then <b>Ctrl+C</b>, and paste it into the box below, one page after another.</li>
+        <li>Click Import. Cars already here are updated; cars shown as Sold are marked sold.</li>
+      </ol>
+      <textarea value={text} onChange={(e) => { setText(e.target.value); setMsg(null); }} rows={8} placeholder="Paste here…"
+        className="mt-3 w-full rounded-md border border-line bg-white p-3 font-mono text-sm" />
+      <div className="mt-3 flex flex-wrap items-center gap-3">
+        <button type="button" className="btn btn-red" disabled={pending || text.length < 200} onClick={() => start(async () => {
+          const r = await importInventoryTextAction(text);
+          if (!r.ok) return setMsg({ ok: false, text: r.error });
+          setMsg({ ok: true, text: r.message ?? "Imported." }); setText(""); router.refresh();
+        })}>{pending ? "Importing…" : "Import"}</button>
+        <button type="button" className="btn" onClick={() => setOpen(false)}>Close</button>
+        {text.length > 0 && <span className="text-sm text-muted">{Math.round(text.length / 1000)}K characters pasted</span>}
       </div>
       {msg && <p role={msg.ok ? "status" : "alert"} className={`mt-2 text-sm ${msg.ok ? "text-go" : "text-signal"}`}>{msg.text}</p>}
     </div>

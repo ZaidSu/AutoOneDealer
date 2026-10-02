@@ -509,6 +509,24 @@ export async function syncInventoryNowAction(): Promise<ActionResult> {
     : fail(/^couldn't/i.test(r.error ?? "") ? (r.error as string) : `Couldn't read the website: ${r.error}`);
 }
 
+export async function importInventoryTextAction(text: string): Promise<ActionResult> {
+  const staff = await requireStaff();
+  if (!staff) return fail("Your session ended. Sign in again.");
+  const t = String(text ?? "");
+  if (t.length < 200) return fail("Paste the website's inventory text first.");
+  if (t.length > 600_000) return fail("That's too much text. Paste just the pages of cars.");
+  const { importPasted } = await import("@/lib/inventory/store");
+  try {
+    const r = await importPasted(t);
+    revalidatePath("/inventory");
+    const whole = r.state.complete;
+    return { ok: true, message: `Imported ${r.cars} cars (${r.available} available, ${r.soldOnSite} shown as sold on the website).${whole ? "" : ` The website says it has ${r.total ?? "more"}, so some pages are missing: nothing was marked sold. Paste every page.`}` };
+  } catch (error) {
+    if (error instanceof Error && error.message === "no_cars") return fail("Couldn't find any cars in that text. On each page of the website's cars for sale, press Ctrl+A, Ctrl+C, and paste it all here.");
+    return NO_DB;
+  }
+}
+
 export async function markSoldAction(id: string, price: string, date: string): Promise<ActionResult> {
   const staff = await requireStaff();
   if (!staff) return fail("Your session ended. Sign in again.");
