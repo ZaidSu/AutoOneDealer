@@ -4,7 +4,7 @@
 import { readyDb } from "@/lib/db";
 import { getSetting, setSetting } from "@/lib/db/data";
 import { fetchInventory, type Inventory } from "./fetch";
-import { makeAndModel, mergePageStore, type Listing, type PageStore } from "./match";
+import { makeAndModel, mergePageStore, pagesToRead, type Listing, type PageStore } from "./match";
 
 export type SyncState = { at: number; ok: boolean; count: number; complete: boolean; added: number; sold: number; error: string | null; via?: "direct" | "helper" | "pushed"; pagesRead?: number; pagesExpected?: number | null };
 const SYNC_KEY = "inventory_sync";
@@ -21,17 +21,22 @@ export async function syncInventory(opts: { force?: boolean } = {}): Promise<Syn
   const prev = await getSyncState();
   if (!opts.force && prev?.ok && prev.via === "pushed" && Date.now() - prev.at < 40 * 60_000) return prev;
   let inv: Inventory;
-  try { inv = await fetchInventory(); } catch (e) { return recordFailure(e instanceof Error ? e.message : "Couldn't read the website", prev); }
+  const saved = await loadPageStore();
+  // The timer reads page 1 plus the two pages most in need of a fresh copy. A manual "Check website now" reads everything.
+  const pick = opts.force ? undefined : (expected: number) => pagesToRead(expected, saved, Date.now(), PAGE_MAX_AGE_MS, 2);
+  try { inv = await fetchInventory({ pick }); } catch (e) { return recordFailure(e instanceof Error ? e.message : "Couldn't read the website", prev); }
   return applyInventory(await mergeWithRecent(inv));
 }
 
 const PAGES_KEY = "inventory_pages";
-/** Adds pages read in the last 25 minutes to this read, so a read that gets some pages now and the rest next time still adds up. */
+const PAGE_MAX_AGE_MS = 25 * 60_000;
+async function loadPageStore(): Promise<PageStore> {
+  try { const raw = await getSetting(PAGES_KEY); return raw ? (JSON.parse(raw) as PageStore) : {}; } catch { return {}; }
+}
+/** Adds pages read in the last 25 minutes to this read, so pages read on different runs still add up to the whole website. */
 async function mergeWithRecent(inv: Inventory): Promise<Inventory> {
   if (!inv.parts) return inv;
-  let saved: PageStore = {};
-  try { const raw = await getSetting(PAGES_KEY); if (raw) saved = JSON.parse(raw); } catch { /* start fresh */ }
-  const m = mergePageStore(saved, inv.parts, Date.now(), 25 * 60_000);
+  const m = mergePageStore(await loadPageStore(), inv.parts, Date.now(), PAGE_MAX_AGE_MS);
   await setSetting(PAGES_KEY, JSON.stringify(m.store)).catch(() => undefined);
   return { ...inv, listings: m.listings, complete: m.complete, pagesRead: m.read, pagesExpected: m.expected };
 }

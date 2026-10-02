@@ -151,3 +151,14 @@ export function mergePageStore(saved: PageStore, parts: { n: number; page: Page 
   const { listings, complete } = combinePages(ordered, expected - ordered.length);
   return { store, listings, complete, read: ordered.length, expected };
 }
+
+/** Which pages (2 and up) to read this run: the ones with no recent copy first, then the oldest copies. Reading only a couple per
+ *  run is gentler on the website, and over a few runs every page gets a fresh copy. Page 1 is always read separately. */
+export function pagesToRead(expected: number, saved: PageStore, now: number, maxAgeMs: number, max: number): number[] {
+  const candidates: { n: number; at: number }[] = [];
+  for (let n = 2; n <= expected; n++) {
+    const entry = saved[String(n)];
+    candidates.push({ n, at: entry && now - entry.at < maxAgeMs ? entry.at : -Infinity });
+  }
+  return candidates.sort((a, b) => a.at - b.at || a.n - b.n).slice(0, max).map((c) => c.n);
+}

@@ -129,3 +129,21 @@ test("pages read in different runs add up to the whole website", () => {
   assert.equal(r4.complete, false);
   assert.equal(r4.read, 1);
 });
+
+import { pagesToRead } from "../../src/lib/inventory/match.ts";
+test("each run reads the pages that most need it, a couple at a time", () => {
+  const T = 1_000_000_000_000, MIN = 60_000;
+  const pg = { listings: [], total: 8, pages: 4 };
+  // nothing saved: pages 2 and 3 first
+  assert.deepEqual(pagesToRead(4, {}, T, 25 * MIN, 2), [2, 3]);
+  // 2 and 3 were just read: 4 is the one missing, then the oldest of the rest
+  const store = { "2": { at: T - MIN, page: pg }, "3": { at: T - 2 * MIN, page: pg } };
+  assert.deepEqual(pagesToRead(4, store, T, 25 * MIN, 2), [4, 3]);
+  // all three are fresh: refresh the oldest two
+  const full = { ...store, "4": { at: T, page: pg } };
+  assert.deepEqual(pagesToRead(4, full, T, 25 * MIN, 2), [3, 2]);
+  // an expired copy counts as missing
+  assert.deepEqual(pagesToRead(4, { "2": { at: T - 40 * MIN, page: pg }, "3": { at: T, page: pg }, "4": { at: T, page: pg } }, T, 25 * MIN, 2), [2, 3]);
+  // a one-page website needs nothing beyond page 1
+  assert.deepEqual(pagesToRead(1, {}, T, 25 * MIN, 2), []);
+});

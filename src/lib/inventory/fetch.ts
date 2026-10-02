@@ -61,7 +61,7 @@ export type Inventory = {
 };
 
 /** Every car on the website, read fresh. `complete` is true only if every page was read and the count matches what the site says. */
-export async function fetchInventory(): Promise<Inventory> {
+export async function fetchInventory(opts: { pick?: (expected: number) => number[] } = {}): Promise<Inventory> {
   const deadline = Date.now() + BUDGET_MS;
   let via: Via = "direct";
   let firstHtml: string;
@@ -75,20 +75,22 @@ export async function fetchInventory(): Promise<Inventory> {
   const parts: { n: number; page: Page }[] = [{ n: 1, page: first }];
   const pages = [first];
   let missing = 0;
-  // One page at a time with a short pause (asking for all of them at once can look like an attack to the website). Each page
-  // is tried the usual way, then the other way (directly / through the helper), with a retry, until time runs out.
+  // One page at a time with a pause between (asking for many at once can look like an attack to the website). `pick` can limit
+  // this run to a few pages; the rest are read on later runs. Each page is tried the usual way, then the other way.
   const routes: Via[] = via === "direct" ? (PROXY ? ["direct", "helper"] : ["direct"]) : ["helper", "direct"];
-  for (let n = 2; n <= Math.min(first.pages ?? 1, MAX_PAGES); n++) {
+  const expected = Math.min(first.pages ?? 1, MAX_PAGES);
+  const wanted = opts.pick ? opts.pick(expected).filter((n) => n >= 2 && n <= expected) : Array.from({ length: Math.max(0, expected - 1) }, (_, i) => i + 2);
+  for (const n of wanted) {
     let got: Page | null = null;
     for (const route of routes) {
-      for (let attempt = 0; attempt < 2 && !got && Date.now() < deadline - 4_000; attempt++) {
-        try { got = parseInventoryPage(await request(pageUrl(n), route)); } catch { await new Promise((r) => setTimeout(r, 1_200)); }
-        if (got && got.listings.length === 0 && n <= (first.pages ?? 1)) got = null; // a page inside the range with no cars is a bad read, try again
-      }
+      if (Date.now() > deadline - 4_000) break;
+      try { got = parseInventoryPage(await request(pageUrl(n), route)); } catch { /* try the other way */ }
+      if (got && got.listings.length === 0) got = null; // a page inside the range with no cars is a bad read
       if (got) break;
+      await new Promise((r) => setTimeout(r, 1_200));
     }
     if (got) { pages.push(got); parts.push({ n, page: got }); } else missing++;
-    await new Promise((r) => setTimeout(r, 600));
+    await new Promise((r) => setTimeout(r, 2_000));
   }
   const { listings, complete } = combinePages(pages, missing);
   if (listings.length === 0) throw new Error("No cars found on the page (the website layout may have changed)");
