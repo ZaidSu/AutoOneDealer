@@ -2,12 +2,14 @@ import { requirePageStaff } from "@/lib/auth/guard";
 import type { Metadata } from "next";
 import Link from "next/link";
 import { BarList, Columns, Panel, SplitBar, Stat, stateColor } from "@/components/analytics/Charts";
+import ReviewsSection from "@/components/analytics/ReviewsSection";
 import DbNotice from "@/components/ui/DbNotice";
 import PageHeader from "@/components/ui/PageHeader";
 import { analytics, type AnalyticsData } from "@/lib/crm/analytics";
 import { dbState, fresh } from "@/lib/db";
 import { listReps } from "@/lib/db/data";
 import { dataStartLabel, dealership, notBeforeStart } from "@/lib/dealership";
+import { reviewStats, syncReviews } from "@/lib/reviews/store";
 import { stateName } from "@/lib/utils/geo";
 import { sourceColor } from "@/lib/utils/sourceColors";
 import { addDays, dayKey, zonedToUtc } from "@/lib/utils/time";
@@ -45,6 +47,9 @@ export default async function AnalyticsPage({ searchParams }: { searchParams: Pr
     </>
   );
   if (!dbReady) return <>{header}<DbNotice state={state} what="Analytics" /></>;
+  // Pick up any new review emails (at most every 30 minutes; the first time it reads them all). Never holds the page up for long.
+  await Promise.race([syncReviews().catch(() => undefined), new Promise((r) => setTimeout(r, 9000))]);
+  const reviews = await reviewStats(tz).catch(() => null);
   const [data, reps] = await fresh("Analytics", () => Promise.all([analytics(since, tz), listReps(true)]));
   if (!data) return <>{header}<DbNotice state={state} what="Analytics" /></>;
 
@@ -116,6 +121,8 @@ export default async function AnalyticsPage({ searchParams }: { searchParams: Pr
         <Stat value={applications} label="Applied for credit" sub={people ? `${Math.round((applications / people) * 100)}% of customers` : "people"} color="#f08c00" />
         <Stat value={purchased} label="Purchased" sub={people ? `${Math.round((purchased / Math.max(people, 1)) * 100)}% of customers` : "marked by your team"} color="#0ca678" />
       </section>
+
+      <ReviewsSection stats={reviews} />
 
       <div className="grid max-w-5xl gap-5 lg:grid-cols-2">
         <Panel title="Where customers came from" note="People, not emails. Uses the “Heard about us” label, which lead emails fill in automatically. The gray number is how many emails that source sent." wide>

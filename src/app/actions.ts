@@ -562,6 +562,30 @@ export async function removeCarAction(id: string): Promise<ActionResult> {
   return { ok: true, message: "Removed." };
 }
 
+export async function addReviewAction(input: { source: string; reviewer: string; rating: number; text: string; date: string }): Promise<ActionResult> {
+  const staff = await requireStaff();
+  if (!staff) return fail("Your session ended. Sign in again.");
+  const rating = Math.round(Number(input.rating));
+  if (!(rating >= 1 && rating <= 5)) return fail("Pick 1 to 5 stars.");
+  const source = cleanName(input.source, 30) || "Other";
+  const when = /^\d{4}-\d{2}-\d{2}$/.test(String(input.date)) ? new Date(`${input.date}T12:00:00-05:00`) : new Date();
+  if (when.getTime() > Date.now() + 86400_000) return fail("The review date can't be in the future.");
+  const { addReview } = await import("@/lib/reviews/store");
+  try { await addReview({ source, reviewer: cleanName(input.reviewer, 60), rating, text: String(input.text ?? "").replace(/\s+/g, " ").trim().slice(0, 1000), reviewedOn: when }, staff.name); } catch { return NO_DB; }
+  revalidatePath("/analytics");
+  return { ok: true, message: "Review added." };
+}
+
+export async function removeReviewAction(id: string): Promise<ActionResult> {
+  const staff = await requireStaff();
+  if (!staff) return fail("Your session ended. Sign in again.");
+  if (!/^[\w-]{1,200}$/.test(id)) return fail("Unknown review.");
+  const { removeReview } = await import("@/lib/reviews/store");
+  try { await removeReview(id); } catch { return NO_DB; }
+  revalidatePath("/analytics");
+  return { ok: true, message: "Removed." };
+}
+
 export async function addSaleAction(input: { title: string; price: string; date: string }): Promise<ActionResult> {
   const staff = await requireStaff();
   if (!staff) return fail("Your session ended. Sign in again.");

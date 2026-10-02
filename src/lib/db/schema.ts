@@ -95,6 +95,23 @@ update inventory set sold_at = null, sold_note = 'Shown as Sold on the website (
   where status = 'sold' and sold_by is null and sold_note = 'Marked sold on the website' and sold_price is null and sold_at <= first_seen + interval '2 minutes';
 -- v17: cars the website already showed as Sold when AutoDash first saw them (no known sale) are hidden, not counted as sales
 update inventory set status = 'ignored' where status = 'sold' and sold_at is null and sold_by is null;
+-- v18: customer reviews (read from Google's review emails, or added by hand)
+create table if not exists reviews (
+  id text primary key,
+  source text not null default 'Google',
+  reviewer text,
+  rating integer,
+  body text,
+  link text,
+  reviewed_at timestamptz not null,
+  status text not null default 'active',
+  gmail_id text,
+  added_by text,
+  created_at timestamptz not null default now()
+);
+create index if not exists reviews_when on reviews (reviewed_at desc);
+create index if not exists reviews_gmail on reviews (gmail_id);
+alter table reviews enable row level security;
 create index if not exists customers_follow_up on customers (follow_up_at) where follow_up_at is not null;
 create index if not exists leads_kind_received on leads (kind, received_at desc) where not ignored;
 create table if not exists activities (
