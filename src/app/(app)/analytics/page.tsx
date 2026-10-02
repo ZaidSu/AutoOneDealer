@@ -2,14 +2,18 @@ import { requirePageStaff } from "@/lib/auth/guard";
 import type { Metadata } from "next";
 import Link from "next/link";
 import { BarList, Columns, Panel, SplitBar, Stat, stateColor } from "@/components/analytics/Charts";
+import ChannelSummary from "@/components/ai/ChannelSummary";
 import ReviewsSection from "@/components/analytics/ReviewsSection";
 import DbNotice from "@/components/ui/DbNotice";
 import PageHeader from "@/components/ui/PageHeader";
+import { replyStats } from "@/lib/ai/replies";
 import { analytics, type AnalyticsData } from "@/lib/crm/analytics";
 import { dbState, fresh } from "@/lib/db";
 import { listReps } from "@/lib/db/data";
 import { dataStartLabel, dealership, notBeforeStart } from "@/lib/dealership";
+import { inventoryStats } from "@/lib/inventory/store";
 import { reviewStats, syncReviews } from "@/lib/reviews/store";
+import { textStats } from "@/lib/sms";
 import { stateName } from "@/lib/utils/geo";
 import { sourceColor } from "@/lib/utils/sourceColors";
 import { addDays, dayKey, zonedToUtc } from "@/lib/utils/time";
@@ -22,12 +26,23 @@ export const maxDuration = 45;
 
 const RANGES = { "1": "Today", "7": "Last 7 days", "30": "Last 30 days", all: "Everything" } as const;
 type Range = keyof typeof RANGES;
+const TABS = { overview: "Overview", leads: "Leads", sales: "Sales", reviews: "Reviews", team: "Team", ai: "AI" } as const;
+type Tab = keyof typeof TABS;
+const TAB_NOTE: Record<Tab, string> = {
+  overview: "The big numbers, all in one place.",
+  leads: "Where customers come from and when.",
+  sales: "Credit applications, purchases, and the cars that sold.",
+  reviews: "Customer reviews. Not affected by the date range.",
+  team: "How each salesperson is doing.",
+  ai: "What the AI did with emails and texts.",
+};
 const tz = dealership.timeZone;
 
 export default async function AnalyticsPage({ searchParams }: { searchParams: Promise<Record<string, string | undefined>> }) {
   await requirePageStaff();
   const params = await searchParams;
   const range: Range = params.range && params.range in RANGES ? (params.range as Range) : "all";
+  const tab: Tab = params.tab && params.tab in TABS ? (params.tab as Tab) : "overview";
   const state = await dbState();
   const dbReady = state === "ready";
   // Whole days in Dallas time (not "the last 168 hours"), and never before the data start.
@@ -39,17 +54,53 @@ export default async function AnalyticsPage({ searchParams }: { searchParams: Pr
   const header = (
     <>
       <PageHeader title="Analytics" description={`Where customers come from and what happens next, counted from lead emails since ${dataStartLabel()} and what your team has recorded.`} />
-      <nav aria-label="Date range" className="segmented mb-6">
-        {(Object.keys(RANGES) as Range[]).map((r) => (
-          <Link key={r} href={`/analytics?range=${r}`} aria-current={range === r ? "page" : undefined}>{RANGES[r]}</Link>
+      <nav aria-label="Analytics section" className="segmented mb-3">
+        {(Object.keys(TABS) as Tab[]).map((t) => (
+          <Link key={t} href={`/analytics?tab=${t}&range=${range}`} aria-current={tab === t ? "page" : undefined}>{TABS[t]}</Link>
         ))}
       </nav>
+      <p className="mb-4 text-sm text-muted">{TAB_NOTE[tab]}</p>
+      {tab !== "reviews" && (
+        <nav aria-label="Date range" className="segmented mb-6">
+          {(Object.keys(RANGES) as Range[]).map((r) => (
+            <Link key={r} href={`/analytics?tab=${tab}&range=${r}`} aria-current={range === r ? "page" : undefined}>{RANGES[r]}</Link>
+          ))}
+        </nav>
+      )}
     </>
   );
   if (!dbReady) return <>{header}<DbNotice state={state} what="Analytics" /></>;
-  // Pick up any new review emails (at most every 30 minutes; the first time it reads them all). Never holds the page up for long.
-  await Promise.race([syncReviews().catch(() => undefined), new Promise((r) => setTimeout(r, 9000))]);
-  const reviews = await reviewStats(tz).catch(() => null);
+  if (tab === "reviews") {
+    // Pick up any new review emails (at most every 30 minutes; the first time it reads them all). Never holds the page up for long.
+    await Promise.race([syncReviews().catch(() => undefined), new Promise((r) => setTimeout(r, 9000))]);
+    return <>{header}<ReviewsSection stats={await reviewStats(tz).catch(() => null)} /></>;
+  }
+  if (tab === "ai") {
+    const aiDays = range === "all" ? 365 : Number(range);
+    const [em, tx] = await fresh("AI numbers", () => Promise.all([replyStats(aiDays), textStats(aiDays)]));
+    return (
+      <>
+        {header}
+        <div className="grid max-w-5xl gap-8">
+          <ChannelSummary title="AI emails" note={`${RANGES[range]}. Details are under AI emails → History.`}
+            stats={[
+              { label: "Replied", value: em.sent, color: "#1f7a4d", sub: `${em.sentLeads} to new leads, ${em.sentReplies} to replies` },
+              { label: "Waiting for you", value: em.waiting, color: "#e0a100" }, { label: "Discarded", value: em.discarded },
+              { label: "Skipped", value: em.skipped }, { label: "Failed", value: em.failed, color: em.failed ? "#c8102e" : undefined },
+            ]} reasons={em.reasons} />
+          <ChannelSummary title="AI texts" note={`${RANGES[range]}. Details are under AI texts → History.`}
+            stats={[
+              { label: "Texts received", value: tx.received }, { label: "AI texts sent", value: tx.aiSent, color: "#1f7a4d" }, { label: "Sent by your team", value: tx.staffSent },
+              { label: "AI drafts waiting", value: tx.waiting, color: "#e0a100" }, { label: "Discarded", value: tx.discarded },
+              { label: "Failed", value: tx.failed, color: tx.failed ? "#c8102e" : undefined, sub: tx.optedOut ? `${tx.optedOut} replied STOP` : undefined },
+            ]} />
+        </div>
+      </>
+    );
+  }
+  const [inv, reviews] = tab === "overview" || tab === "sales"
+    ? await Promise.all([inventoryStats(tz).catch(() => null), tab === "overview" ? reviewStats(tz).catch(() => null) : Promise.resolve(null)])
+    : [null, null];
   const [data, reps] = await fresh("Analytics", () => Promise.all([analytics(since, tz), listReps(true)]));
   if (!data) return <>{header}<DbNotice state={state} what="Analytics" /></>;
 
@@ -111,41 +162,71 @@ export default async function AnalyticsPage({ searchParams }: { searchParams: Pr
     purchased: data.purchases.reduce((n, p) => n + (p.repId === r.id ? p.n : 0), 0),
   }));
 
+  const money = (n: number | null | undefined) => (n == null ? "n/a" : n.toLocaleString("en-US", { style: "currency", currency: "USD", maximumFractionDigits: 0 }));
+  const monthLabel = (m: string) => new Date(`${m}-15T12:00:00Z`).toLocaleDateString("en-US", { month: "short", year: "2-digit", timeZone: "UTC" });
+
   return (
     <>
       {header}
 
-      <section aria-label="Totals" className="mb-6 grid max-w-5xl grid-cols-2 gap-4 lg:grid-cols-4">
+      {tab === "overview" && (
+        <>
+          <section aria-label="Totals" className="mb-6 grid max-w-5xl grid-cols-2 gap-4 lg:grid-cols-4">
         <Stat value={people} label="Customers" sub="reached out" color="#1c7ed6" />
         <Stat value={emails} label="Lead emails" sub={people ? `about ${(emails / people).toFixed(1)} per customer` : "received"} color="#7048e8" />
         <Stat value={applications} label="Applied for credit" sub={people ? `${Math.round((applications / people) * 100)}% of customers` : "people"} color="#f08c00" />
         <Stat value={purchased} label="Purchased" sub={people ? `${Math.round((purchased / Math.max(people, 1)) * 100)}% of customers` : "marked by your team"} color="#0ca678" />
       </section>
 
-      <ReviewsSection stats={reviews} />
+          <section aria-label="Cars and reviews" className="mb-6 grid max-w-5xl grid-cols-2 gap-4 lg:grid-cols-4">
+            <Stat value={inv?.available ?? 0} label="Cars for sale" sub="on your website" color="#1f7a4d" />
+            <Stat value={inv?.sold ?? 0} label="Cars sold" sub="since AutoDash started tracking" color="#c8102e" />
+            <Stat value={reviews?.thisMonth.n ?? 0} label="Reviews this month" sub={reviews ? `${reviews.lastMonth.n} last month` : "none yet"} color="#f08c00" />
+            <Stat value={reviews?.google?.rating ? reviews.google.rating.toFixed(1) : reviews?.avg ? reviews.avg.toFixed(1) : "n/a"} label="Average rating" sub={reviews?.google ? `${reviews.google.total} reviews on Google` : reviews ? `${reviews.total} reviews` : "no reviews yet"} color="#f59f00" />
+          </section>
 
-      <div className="grid max-w-5xl gap-5 lg:grid-cols-2">
-        <Panel title="Where customers came from" note="People, not emails. Uses the “Heard about us” label, which lead emails fill in automatically. The gray number is how many emails that source sent." wide>
+          <div className="grid max-w-5xl gap-5 lg:grid-cols-2">
+            <Panel title={days <= 45 ? "Leads per day" : days <= 120 ? "Leads per week" : "Leads per month"} note={`Every lead and credit application email, by the day it arrived (Dallas time).${days <= 45 ? " Today is in red." : ""} About ${Math.round(emails / Math.max(days, 1))} a day on average.`} wide>
+          <Columns items={buckets} color="#4c6ef5" highlightLast={days <= 45} emptyText="No leads in this range." />
+        </Panel>
+            <Panel title="Where customers came from" note="People, not emails. Uses the “Heard about us” label, which lead emails fill in automatically. The gray number is how many emails that source sent." wide>
           <BarList items={bySource} colorFor={sourceColor} emptyText="No leads in this range." />
         </Panel>
+          </div>
+        </>
+      )}
 
-        <Panel title="In state vs out of state" note="From the city and state in each lead, or the label your team set.">
+      {tab === "leads" && (
+        <div className="grid max-w-5xl gap-5 lg:grid-cols-2">
+          <Panel title="Where customers came from" note="People, not emails. Uses the “Heard about us” label, which lead emails fill in automatically. The gray number is how many emails that source sent." wide>
+          <BarList items={bySource} colorFor={sourceColor} emptyText="No leads in this range." />
+        </Panel>
+          <Panel title="In state vs out of state" note="From the city and state in each lead, or the label your team set.">
           <SplitBar parts={[
             { label: "Texas", value: inState, color: "#1c7ed6" },
             { label: "Out of state", value: outState, color: "#f08c00" },
             { label: "Not known", value: people - inState - outState, color: "#ced4da" },
           ]} emptyText="No leads in this range." />
         </Panel>
-
-        <Panel title="Out-of-state customers by state" note="Only customers marked out of state.">
+          <Panel title="Out-of-state customers by state" note="Only customers marked out of state.">
           <BarList items={topStates} colorFor={stateColor} emptyText="No out-of-state customers in this range." />
         </Panel>
-
-        <Panel title={days <= 45 ? "Leads per day" : days <= 120 ? "Leads per week" : "Leads per month"} note={`Every lead and credit application email, by the day it arrived (Dallas time).${days <= 45 ? " Today is in red." : ""} About ${Math.round(emails / Math.max(days, 1))} a day on average.`} wide>
+          <Panel title={days <= 45 ? "Leads per day" : days <= 120 ? "Leads per week" : "Leads per month"} note={`Every lead and credit application email, by the day it arrived (Dallas time).${days <= 45 ? " Today is in red." : ""} About ${Math.round(emails / Math.max(days, 1))} a day on average.`} wide>
           <Columns items={buckets} color="#4c6ef5" highlightLast={days <= 45} emptyText="No leads in this range." />
         </Panel>
+        </div>
+      )}
 
-        <Panel title="Credit applications" note="Received means the application arrived; it isn't an approval. Approved and denied come from the Financing label.">
+      {tab === "sales" && (
+        <>
+          <section aria-label="Sales totals" className="mb-6 grid max-w-5xl grid-cols-2 gap-4 lg:grid-cols-4">
+            <Stat value={applications} label="Applied for credit" sub={people ? `${Math.round((applications / people) * 100)}% of customers` : "people"} color="#f08c00" />
+            <Stat value={purchased} label="Marked purchased" sub="by your team, in this range" color="#0ca678" />
+            <Stat value={inv?.sold ?? 0} label="Cars sold" sub={inv?.soldTotal ? `${money(inv.soldTotal)} in sales` : "since AutoDash started tracking"} color="#c8102e" />
+            <Stat value={money(inv?.avgSold)} label="Average sold price" color="#1c7ed6" />
+          </section>
+          <div className="grid max-w-5xl gap-5 lg:grid-cols-2">
+            <Panel title="Credit applications" note="Received means the application arrived; it isn't an approval. Approved and denied come from the Financing label.">
           <p className="mb-3 text-[15px]"><span className="font-condensed text-3xl font-semibold" style={{ color: "#f08c00" }}>{applications}</span> <span className="text-muted">received</span></p>
           <SplitBar parts={[
             { label: "Approved", value: approved, color: "#0ca678" },
@@ -153,12 +234,25 @@ export default async function AnalyticsPage({ searchParams }: { searchParams: Pr
             { label: "Still needs review", value: applications - approved - denied, color: "#fab005" },
           ]} emptyText="No credit applications in this range." />
         </Panel>
-
-        <Panel title="Which sources lead to purchases" note="Customers marked Purchased in this range, by where they heard about us.">
+            <Panel title="Which sources lead to purchases" note="Customers marked Purchased in this range, by where they heard about us.">
           {dbReady ? <BarList items={purchasesBySource} colorFor={sourceColor} emptyText="No purchases marked in this range yet." /> : <DbNotice state={state} what="This chart" />}
         </Panel>
+            <Panel title="Cars sold per month" note="Not affected by the date range. Cars sold by date, from the Inventory page.">
+              <Columns items={(inv?.byMonth ?? []).map((m) => ({ label: monthLabel(m.month), value: m.n }))} color="#c8102e" highlightLast emptyText="No sales recorded yet." />
+            </Panel>
+            <Panel title="Best-selling makes" note="Cars sold, by make.">
+              <BarList items={(inv?.byMake ?? []).map((m) => ({ label: m.make, value: m.n, note: m.avg ? `avg ${money(m.avg)}` : undefined }))} emptyText="No sales recorded yet." />
+            </Panel>
+            <Panel title="What price range sells" note="Cars sold, grouped by what they sold for." wide>
+              <BarList items={(inv?.byPrice ?? []).map((p) => ({ label: p.label, value: p.n }))} emptyText="No sales recorded yet." />
+            </Panel>
+          </div>
+        </>
+      )}
 
-        <Panel title="Salespeople" note="Customers assigned, appointments in this range and how they went, and customers marked purchased." wide>
+      {tab === "team" && (
+        <div className="grid max-w-5xl gap-5">
+          <Panel title="Salespeople" note="Customers assigned, appointments in this range and how they went, and customers marked purchased." wide>
           {dbReady ? (
             repRows.length === 0 ? <p className="text-sm text-muted">No salespeople yet. Add them in Settings.</p> : (
               <div className="overflow-x-auto">
@@ -188,7 +282,8 @@ export default async function AnalyticsPage({ searchParams }: { searchParams: Pr
             )
           ) : <DbNotice state={state} what="Salesperson results" />}
         </Panel>
-      </div>
+        </div>
+      )}
     </>
   );
 }

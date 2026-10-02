@@ -559,7 +559,7 @@ export async function removeCarAction(id: string): Promise<ActionResult> {
   const { removeCar } = await import("@/lib/inventory/store");
   try { await removeCar(id); } catch { return NO_DB; }
   revalidatePath("/inventory");
-  return { ok: true, message: "Removed." };
+  return { ok: true, message: "Deleted." };
 }
 
 export async function addReviewAction(input: { source: string; reviewer: string; rating: number; text: string; date: string }): Promise<ActionResult> {

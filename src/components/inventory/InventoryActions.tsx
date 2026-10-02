@@ -117,12 +117,19 @@ export function ImportText() {
   );
 }
 
-/** Take a car out of AutoDash completely (it isn't really a sale you want counted). */
+/** Delete a car that isn't the dealership's. It disappears everywhere and stays deleted even if the website lists it. */
 export function RemoveCar({ id }: { id: string }) {
   const [pending, start] = useTransition();
   const router = useRouter();
   return <button type="button" className="btn btn-sm" disabled={pending} onClick={() => {
-    if (!window.confirm("Remove this car from AutoDash? It won't show on the lot or in the sold list, and it won't count in any numbers.")) return;
+    if (!window.confirm("Delete this car from AutoDash?\n\nUse this for cars that aren't yours. It won't show on the lot or in the sold list, the AI won't offer it, and it stays deleted even if your website lists it. You can restore it from Deleted cars at the bottom.")) return;
     start(async () => { await removeCarAction(id); router.refresh(); notifyChanged(); });
-  }}>{pending ? "…" : "Remove"}</button>;
+  }}>{pending ? "…" : "Delete"}</button>;
+}
+
+/** Put a deleted car back (it was deleted by mistake). */
+export function RestoreCar({ id }: { id: string }) {
+  const [pending, start] = useTransition();
+  const router = useRouter();
+  return <button type="button" className="btn btn-sm" disabled={pending} onClick={() => start(async () => { await markAvailableAction(id); router.refresh(); notifyChanged(); })}>{pending ? "…" : "Restore"}</button>;
 }

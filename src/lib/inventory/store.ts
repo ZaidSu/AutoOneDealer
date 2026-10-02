@@ -76,7 +76,8 @@ export async function applyInventory(inv: Inventory): Promise<SyncState> {
       on conflict (id) do update set finance_id = excluded.finance_id, url = excluded.url, year = excluded.year, make = excluded.make, model = excluded.model,
         slug = excluded.slug, title = excluded.title, price = excluded.price, mileage = excluded.mileage, last_seen = now(), missed = 0, updated_at = now(),
         -- A car that left the website and came back is available again, unless staff marked it sold by hand.
-        status = case when inventory.sold_by is not null then inventory.status else 'available' end,
+        -- A deleted car stays deleted even if the website lists it. Otherwise: available again, unless staff marked it sold by hand.
+        status = case when inventory.status = 'deleted' then 'deleted' when inventory.sold_by is not null then inventory.status else 'available' end,
         sold_at = case when inventory.sold_by is not null then inventory.sold_at else null end,
         sold_price = case when inventory.sold_by is not null then inventory.sold_price else null end,
         sold_note = case when inventory.sold_by is not null then inventory.sold_note else null end`;
@@ -93,6 +94,10 @@ export async function applyInventory(inv: Inventory): Promise<SyncState> {
       where inventory.status = 'available' returning (xmax = 0) as inserted`;
     soldNow += rows.filter((r) => !r.inserted).length;
   }
+  // A car deleted by staff (not the dealership's own) stays deleted: any other row for the same car (same name and mileage), like one
+  // that the website lists under a new id, is deleted too.
+  await sql`update inventory r set status = 'deleted', updated_at = now() where r.status <> 'deleted' and exists (
+    select 1 from inventory d where d.status = 'deleted' and d.id <> r.id and lower(d.title) = lower(r.title) and d.mileage is not distinct from r.mileage)`;
   // Cars added from pasted text have made-up ids. Once the website itself has been read in full, the real listing replaces them.
   if (inv.complete && inv.via !== "pasted") {
     await sql`delete from inventory t where t.id like 'txt-%' and exists (
@@ -114,21 +119,23 @@ export async function applyInventory(inv: Inventory): Promise<SyncState> {
 // ---- reading ----
 export type StoredCar = {
   id: string; url: string | null; year: number | null; make: string | null; model: string | null; slug: string | null; title: string; price: number | null; mileage: number | null;
-  status: "available" | "sold"; firstSeen: number; lastSeen: number; soldAt: number | null; soldPrice: number | null; soldBy: string | null; soldNote: string | null;
+  status: "available" | "sold" | "deleted"; firstSeen: number; lastSeen: number; soldAt: number | null; soldPrice: number | null; soldBy: string | null; soldNote: string | null;
 };
 const ms = (v: unknown) => (v ? new Date(v as string).getTime() : null);
 const toCar = (r: Record<string, unknown>): StoredCar => ({
   id: r.id as string, url: (r.url as string) ?? null, year: (r.year as number) ?? null, make: (r.make as string) ?? null, model: (r.model as string) ?? null, slug: (r.slug as string) ?? null,
   title: (r.title as string) || [r.year, r.make, r.model].filter(Boolean).join(" "), price: (r.price as number) ?? null, mileage: (r.mileage as number) ?? null,
-  status: r.status as "available" | "sold", firstSeen: ms(r.first_seen) ?? 0, lastSeen: ms(r.last_seen) ?? 0, soldAt: ms(r.sold_at), soldPrice: (r.sold_price as number) ?? null,
+  status: r.status as "available" | "sold" | "deleted", firstSeen: ms(r.first_seen) ?? 0, lastSeen: ms(r.last_seen) ?? 0, soldAt: ms(r.sold_at), soldPrice: (r.sold_price as number) ?? null,
   soldBy: (r.sold_by as string) ?? null, soldNote: (r.sold_note as string) ?? null,
 });
 
-export async function listCars(status: "available" | "sold", limit = 200): Promise<StoredCar[]> {
+export async function listCars(status: "available" | "sold" | "deleted", limit = 200): Promise<StoredCar[]> {
   const sql = await readyDb();
   if (!sql) return [];
   const rows = status === "available"
     ? await sql`select * from inventory where status = 'available' order by price desc nulls last limit ${limit}`
+    : status === "deleted"
+    ? await sql`select * from inventory where status = 'deleted' order by updated_at desc limit ${limit}`
     : await sql`select * from inventory where status = 'sold' order by sold_at desc nulls last limit ${limit}`;
   return rows.map(toCar);
 }
@@ -249,9 +256,10 @@ export async function seedInventoryOnce(): Promise<boolean> {
   return true;
 }
 
-/** Hides a car from AutoDash: not on the lot, not in the sold list, not in any numbers. It comes back as available if the website lists it for sale again. */
+/** For cars that aren't the dealership's (they're on the website for someone else): gone from the lot, the sold list, every number, and the AI.
+ *  Stays deleted even if the website keeps listing it. Restore brings it back. */
 export async function removeCar(id: string) {
   const sql = await readyDb();
   if (!sql) throw new Error("no_db");
-  await sql`update inventory set status = 'ignored', sold_note = 'Removed by staff', updated_at = now() where id = ${id}`;
+  await sql`update inventory set status = 'deleted', sold_note = 'Deleted by staff', updated_at = now() where id = ${id}`;
 }

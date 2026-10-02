@@ -1,6 +1,6 @@
 import type { Metadata } from "next";
 import { BarList, Columns, Panel, Stat } from "@/components/analytics/Charts";
-import { AddSale, BackOnLot, CheckNowButton, ImportText, MarkSold, RemoveCar } from "@/components/inventory/InventoryActions";
+import { AddSale, BackOnLot, CheckNowButton, ImportText, MarkSold, RemoveCar, RestoreCar } from "@/components/inventory/InventoryActions";
 import DbNotice from "@/components/ui/DbNotice";
 import PageHeader from "@/components/ui/PageHeader";
 import { requirePageStaff } from "@/lib/auth/guard";
@@ -26,7 +26,7 @@ export default async function InventoryPage() {
   const state = await dbState();
   if (state !== "ready") return <>{header}<DbNotice state={state} what="Inventory" /></>;
   await seedInventoryOnce().catch(() => undefined); // the first time, loads the cars from the website text sent on Oct 2
-  const [sync, stats, lot, sold] = await fresh("Inventory", () => Promise.all([getSyncState(), inventoryStats(TZ), listCars("available"), listCars("sold", 100)]));
+  const [sync, stats, lot, sold, deleted] = await fresh("Inventory", () => Promise.all([getSyncState(), inventoryStats(TZ), listCars("available"), listCars("sold", 100), listCars("deleted", 100)]));
 
   const best = stats.byMonth.length ? [...stats.byMonth].sort((a, b) => b.n - a.n)[0] : null;
   const bestMake = stats.byMake[0] ?? null;
@@ -70,7 +70,7 @@ export default async function InventoryPage() {
 
       <section aria-labelledby="lot" className="mt-10">
         <h2 id="lot" className="mb-1 text-lg font-semibold">On the lot <span className="text-muted">{lot.length}</span></h2>
-        <p className="mb-3 text-sm text-muted">Copied from your website. When a car disappears from the website it moves to Sold on its own. Sold by hand sooner? Use Mark sold.</p>
+        <p className="mb-3 text-sm text-muted">Copied from your website. When a car disappears from the website it moves to Sold on its own. Sold by hand sooner? Use Mark sold. A car that isn't yours (it's on the website for someone else)? Use Delete.</p>
         {lot.length === 0 ? <p className="panel p-5 text-muted">No cars yet.</p> : (
           <div className="panel overflow-x-auto">
             <table className="w-full min-w-[640px] text-left text-[15px]">
@@ -82,7 +82,7 @@ export default async function InventoryPage() {
                     <td className="px-4 py-2.5 tabular-nums">{usd(c.price)}</td>
                     <td className="px-4 py-2.5 tabular-nums">{c.mileage ? c.mileage.toLocaleString("en-US") : ""}</td>
                     <td className="px-4 py-2.5 text-muted">{day(c.firstSeen)}</td>
-                    <td className="px-4 py-2.5 text-right"><MarkSold id={c.id} price={c.price} /></td>
+                    <td className="px-4 py-2.5 text-right"><span className="inline-flex flex-wrap items-center justify-end gap-2"><MarkSold id={c.id} price={c.price} /><RemoveCar id={c.id} /></span></td>
                   </tr>
                 ))}
               </tbody>
@@ -118,6 +118,20 @@ export default async function InventoryPage() {
           </div>
         )}
       </section>
+      {deleted.length > 0 && (
+        <details className="mt-10">
+          <summary className="cursor-pointer text-lg font-semibold">Deleted cars <span className="text-muted">{deleted.length}</span></summary>
+          <p className="mb-3 mt-1 text-sm text-muted">Cars you deleted (not yours). They don&apos;t count anywhere and the AI never offers them. Restore one if it was a mistake.</p>
+          <ul className="panel divide-y divide-line">
+            {deleted.map((c) => (
+              <li key={c.id} className="flex flex-wrap items-center justify-between gap-3 px-5 py-3">
+                <span className="font-medium">{c.title}<span className="text-muted">{c.price ? ` · ${usd(c.price)}` : ""}{c.mileage ? ` · ${c.mileage.toLocaleString("en-US")} miles` : ""}</span></span>
+                <RestoreCar id={c.id} />
+              </li>
+            ))}
+          </ul>
+        </details>
+      )}
     </div>
   );
 }
