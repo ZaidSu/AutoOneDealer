@@ -36,7 +36,7 @@ export default async function InventoryPage() {
 
       <p role="status" className={`mb-6 rounded-xl px-4 py-3 text-[15px] ${sync?.ok ? "bg-go-soft text-go" : "border border-lane/40 bg-[#fdf6e3]"}`}>
         {!sync ? "Not read from the website yet. The timer does it every 5 minutes, or click Check website now."
-          : sync.ok ? `Checked ${ago(sync.at)}: ${sync.count} cars on the website${sync.via === "helper" ? " (read through a helper service, because the website doesn't answer AutoDash directly)" : ""}${sync.complete ? "" : ". Only part of the website could be read, so nothing is being marked sold"}.`
+          : sync.ok ? `Checked ${ago(sync.at)}: ${sync.count} cars on the website${sync.via === "helper" ? " (read through a helper service, because the website doesn't answer AutoDash directly)" : sync.via === "pushed" ? " (sent by the dealership computer)" : ""}${sync.complete ? "" : ". Only part of the website could be read, so nothing is being marked sold"}.`
           : `The last check ${ago(sync.at)} failed: ${sync.error}. The AI says a salesperson will confirm availability until this is fixed.`}
       </p>
 

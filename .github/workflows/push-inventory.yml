@@ -1,0 +1,21 @@
+# Every 15 minutes, reads the dealership website's inventory and sends it to AutoDash. Free, and doesn't need a computer
+# left on. (If the website also turns GitHub's servers away, run tools/push-inventory.mjs on a computer at the dealership instead.)
+# Needs two secrets in GitHub: Settings > Secrets and variables > Actions: AUTODASH_URL and INVENTORY_PUSH_TOKEN.
+name: Send inventory to AutoDash
+on:
+  schedule:
+    - cron: "*/15 * * * *"
+  workflow_dispatch: {}
+jobs:
+  push:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - run: node tools/push-inventory.mjs
+        env:
+          AUTODASH_URL: ${{ secrets.AUTODASH_URL }}
+          INVENTORY_PUSH_TOKEN: ${{ secrets.INVENTORY_PUSH_TOKEN }}

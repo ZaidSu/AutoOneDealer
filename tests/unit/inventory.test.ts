@@ -74,3 +74,36 @@ test("make and model are split out of the title and link", () => {
   assert.deepEqual(makeAndModel({ title: "2020 BMW 3 Series M340i", slug: "bmw-3-series", year: 2020 }), { make: "BMW", model: "3 Series" });
   assert.equal(makeAndModel({ title: "2019 Land Rover Range Rover Sport", slug: "land-rover-range-rover-sport", year: 2019 }).make, "Land Rover");
 });
+
+import { combinePages } from "../../src/lib/inventory/match.ts";
+test("pages are combined, and only complete when every page was read and the count matches", () => {
+  const p1 = parseInventoryPage(page);                                   // says "Page 1 of 4", 83 cars; has 6
+  const p2 = { listings: [{ ...listings[0], id: "999" }], total: 83, pages: 4 };
+  assert.equal(combinePages([p1], 0).complete, false);                   // only 1 of 4 pages
+  assert.equal(combinePages([p1, p2], 2).complete, false);               // 2 pages couldn't be read
+  assert.equal(combinePages([p1, p1, p1, p1], 0).complete, false);       // all 4 pages, but 6 cars is not 83
+  assert.equal(combinePages([p1, p2], 0).listings.length, 7);
+  const small = { listings, total: 6, pages: 1 };
+  assert.equal(combinePages([small], 0).complete, true);                 // the whole website is one page of 6 cars
+});
+
+test("pages slimmed down by the dealership-computer script read the same", () => {
+  const slim = (html: string) => html.replace(/<(script|style|svg)[\s\S]*?<\/\1>/gi, " ").replace(/<!--[\s\S]*?-->/g, " ").replace(/\s{2,}/g, " ");
+  const noisy = `<html><head><script>var a = "<li>not a car</li>";</script><style>.x{}</style></head>${page}<!-- x --></html>`;
+  const a = parseInventoryPage(page), b = parseInventoryPage(slim(noisy));
+  assert.deepEqual(b.listings.map((l) => [l.id, l.price, l.mileage, l.sold]), a.listings.map((l) => [l.id, l.price, l.mileage, l.sold]));
+  assert.equal(b.total, 83);
+});
+
+test("the page count is worked out even if the website doesn't say 'Page 1 of N'", () => {
+  const noPageLine = page.replace("<ul><li>Page 1 of 4</li></ul>", "");
+  assert.equal(parseInventoryPage(noPageLine).pages, 4); // "Results 1 - 24 of 83" -> 24 per page -> 4 pages
+  const oneOfThree = page.replace("Page 1 of 4", "Page 1 of 3");
+  assert.equal(parseInventoryPage(oneOfThree).pages, 3);
+});
+test("with no page or car count at all, a read is never called complete (so nothing is marked sold)", () => {
+  const blind = parseInventoryPage("<a href='https://x.com/details/used-2020-honda-civic/130000001'>2020 Honda Civic</a>");
+  assert.equal(blind.pages, null);
+  assert.equal(blind.total, null);
+  assert.equal(combinePages([blind], 0).complete, false);
+});

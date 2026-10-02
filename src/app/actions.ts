@@ -502,7 +502,7 @@ export async function syncInventoryNowAction(): Promise<ActionResult> {
   const staff = await requireStaff();
   if (!staff) return fail("Your session ended. Sign in again.");
   const { syncInventory } = await import("@/lib/inventory/store");
-  const r = await syncInventory();
+  const r = await syncInventory({ force: true });
   revalidatePath("/inventory");
   return r.ok
     ? { ok: true, message: `Read ${r.count} cars from the website${r.added ? `, ${r.added} new` : ""}${r.sold ? `, ${r.sold} newly sold` : ""}${r.complete ? "." : ". Only part of the website could be read, so nothing was marked sold."}` }

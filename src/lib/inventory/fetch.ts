@@ -2,14 +2,16 @@
 // First tries the website directly. Some websites turn away traffic from cloud servers like Vercel, so if that fails it
 // asks a free "reader" service (INVENTORY_PROXY_URL, default r.jina.ai) to fetch the page and hand back its HTML.
 // Set INVENTORY_PROXY_URL to "off" to turn the helper off.
-import { parseInventoryPage, type Listing } from "./match";
+import { combinePages, parseInventoryPage, type Listing } from "./match";
 
 const SITE = process.env.INVENTORY_URL || "https://www.autoonemotorstx.com/cars-for-sale";
 const PROXY_RAW = process.env.INVENTORY_PROXY_URL || "https://r.jina.ai/";
 const PROXY = /^https:\/\//.test(PROXY_RAW.trim()) ? PROXY_RAW.trim() : "";
 export const TTL_MS = 10 * 60_000;
-const DIRECT_MS = 8_000;
-const PROXY_MS = 20_000;
+const DIRECT_MS = 18_000;
+const PROXY_MS = 22_000;
+const BUDGET_MS = 50_000; // the whole read must finish inside this
+const MAX_PAGES = 30; // 30 pages is over 700 cars
 const HEADERS = {
   "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0 Safari/537.36",
   Accept: "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
@@ -22,7 +24,7 @@ const HEADERS = {
 const pageUrl = (n: number) => n <= 1 ? SITE
   : `${SITE}?PageNumber=${n}&Sort=MakeAsc&StockNumber=&Condition=&BodyStyle=&Make=&MaxPrice=&Mileage=&SoldStatus=AllVehicles&StockNumber=`;
 
-export type Via = "direct" | "helper";
+export type Via = "direct" | "helper" | "pushed";
 
 const why = (error: unknown, ms: number) => {
   const name = (error as { name?: string })?.name;
@@ -31,10 +33,10 @@ const why = (error: unknown, ms: number) => {
 };
 
 async function request(url: string, via: Via): Promise<string> {
-  const ms = via === "direct" ? DIRECT_MS : PROXY_MS;
-  const response = await fetch(via === "direct" ? url : `${PROXY}${url}`, {
+  const ms = via === "helper" ? PROXY_MS : DIRECT_MS;
+  const response = await fetch(via === "helper" ? `${PROXY}${url}` : url, {
     cache: "no-store",
-    headers: via === "direct" ? HEADERS : { Accept: "text/html", "X-Return-Format": "html", "X-No-Cache": "true" },
+    headers: via !== "helper" ? HEADERS : { Accept: "text/html", "X-Return-Format": "html", "X-No-Cache": "true" },
     signal: AbortSignal.timeout(ms),
   }).catch((error) => { throw new Error(why(error, ms)); });
   if (!response.ok) throw new Error(response.status === 403 || response.status === 429 ? `blocked (${response.status})` : `error ${response.status}`);
@@ -55,6 +57,7 @@ export type Inventory = { listings: Listing[]; complete: boolean; fetchedAt: num
 
 /** Every car on the website, read fresh. `complete` is true only if every page was read and the count matches what the site says. */
 export async function fetchInventory(): Promise<Inventory> {
+  const deadline = Date.now() + BUDGET_MS;
   let via: Via = "direct";
   let firstHtml: string;
   try { firstHtml = await request(pageUrl(1), "direct"); } catch (direct) {
@@ -64,19 +67,30 @@ export async function fetchInventory(): Promise<Inventory> {
     }
   }
   const first = parseInventoryPage(firstHtml);
-  const pages = Math.min(first.pages ?? 1, 15);
-  const rest = await Promise.allSettled(Array.from({ length: Math.max(0, pages - 1) }, (_, i) => request(pageUrl(i + 2), via).then(parseInventoryPage)));
-  const byId = new Map<string, Listing>();
-  for (const l of first.listings) byId.set(l.id, l);
-  let failed = 0;
-  for (const r of rest) {
-    if (r.status === "fulfilled") r.value.listings.forEach((l) => byId.set(l.id, l));
-    else failed++;
+  const pages = [first];
+  let missing = 0;
+  // One page at a time with a short pause (asking for all of them at once can look like an attack to the website), and
+  // one retry if a page doesn't answer.
+  for (let n = 2; n <= Math.min(first.pages ?? 1, MAX_PAGES); n++) {
+    let got: ReturnType<typeof parseInventoryPage> | null = null;
+    for (let attempt = 0; attempt < 2 && !got && Date.now() < deadline - 5_000; attempt++) {
+      try { got = parseInventoryPage(await request(pageUrl(n), via)); } catch { await new Promise((r) => setTimeout(r, 1_500)); }
+    }
+    if (got && got.listings.length === 0) break; // past the last page
+    if (got) pages.push(got); else missing++;
+    await new Promise((r) => setTimeout(r, 700));
   }
-  const listings = [...byId.values()];
+  const { listings, complete } = combinePages(pages, missing);
   if (listings.length === 0) throw new Error("No cars found on the page (the website layout may have changed)");
-  const complete = failed === 0 && (first.total == null || listings.length >= first.total);
   return { listings, complete, fetchedAt: Date.now(), via };
+}
+
+/** The same thing, from page HTML that the dealership's own computer downloaded and sent to AutoDash. */
+export function inventoryFromHtml(htmls: string[]): Inventory {
+  const pages = htmls.map(parseInventoryPage);
+  const { listings, complete } = combinePages(pages);
+  if (listings.length === 0) throw new Error("No cars found in the pages that were sent");
+  return { listings, complete, fetchedAt: Date.now(), via: "pushed" };
 }
 
 let cached: Inventory | null = null;

@@ -3,28 +3,40 @@
 // (15 minutes, with every page read each time) is recorded as sold; staff can correct that by hand.
 import { readyDb } from "@/lib/db";
 import { getSetting, setSetting } from "@/lib/db/data";
-import { fetchInventory } from "./fetch";
+import { fetchInventory, type Inventory } from "./fetch";
 import { makeAndModel, type Listing } from "./match";
 
-export type SyncState = { at: number; ok: boolean; count: number; complete: boolean; added: number; sold: number; error: string | null; via?: "direct" | "helper" };
+export type SyncState = { at: number; ok: boolean; count: number; complete: boolean; added: number; sold: number; error: string | null; via?: "direct" | "helper" | "pushed" };
 const SYNC_KEY = "inventory_sync";
 
 export async function getSyncState(): Promise<SyncState | null> {
   try { const raw = await getSetting(SYNC_KEY); return raw ? (JSON.parse(raw) as SyncState) : null; } catch { return null; }
 }
 
-export async function syncInventory(): Promise<SyncState> {
-  const sql = await readyDb();
-  const fail = async (error: string): Promise<SyncState> => {
-    const prev = await getSyncState();
-    const state: SyncState = { at: Date.now(), ok: false, count: prev?.count ?? 0, complete: false, added: 0, sold: 0, error };
-    await setSetting(SYNC_KEY, JSON.stringify(state)).catch(() => undefined);
-    return state;
-  };
-  if (!sql) return fail("The database isn't connected.");
-  let inv;
-  try { inv = await fetchInventory(); } catch (e) { return fail(e instanceof Error ? e.message : "Couldn't read the website"); }
+const FRESH_MS = 30 * 60_000;
 
+/** Reads the website from the server (the timer does this every 5 minutes). If the dealership computer has sent the
+ *  inventory recently, that is used instead and the website isn't read from here. */
+export async function syncInventory(opts: { force?: boolean } = {}): Promise<SyncState> {
+  const prev = await getSyncState();
+  if (!opts.force && prev?.ok && prev.via === "pushed" && Date.now() - prev.at < 40 * 60_000) return prev;
+  let inv: Inventory;
+  try { inv = await fetchInventory(); } catch (e) { return recordFailure(e instanceof Error ? e.message : "Couldn't read the website", prev); }
+  return applyInventory(inv);
+}
+
+/** A failed read is saved so the Inventory page can say why, unless a good copy from the last 30 minutes exists (then that one stays). */
+async function recordFailure(error: string, prev: SyncState | null): Promise<SyncState> {
+  if (prev?.ok && Date.now() - prev.at < FRESH_MS) return { ...prev, ok: false, error };
+  const state: SyncState = { at: Date.now(), ok: false, count: prev?.count ?? 0, complete: false, added: 0, sold: 0, error };
+  await setSetting(SYNC_KEY, JSON.stringify(state)).catch(() => undefined);
+  return state;
+}
+
+/** Saves a read of the website (from the server, or sent by the dealership computer) into the inventory table. */
+export async function applyInventory(inv: Inventory): Promise<SyncState> {
+  const sql = await readyDb();
+  if (!sql) return recordFailure("The database isn't connected.", await getSyncState());
   const started = new Date();
   const toRow = (l: Listing) => {
     const { make, model } = makeAndModel(l);

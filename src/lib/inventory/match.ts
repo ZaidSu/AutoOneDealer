@@ -26,8 +26,11 @@ const num = (s: string | undefined) => (s ? Number(s.replace(/[^\d]/g, "")) || n
 /** Pulls every car out of one inventory page. */
 export function parseInventoryPage(html: string): Page {
   const plain = text(html);
-  const total = Number(/Results\s+\d+\s*-\s*\d+\s+of\s+(\d+)/i.exec(plain)?.[1]) || null;
-  const pages = Number(/Page\s+\d+\s+of\s+(\d+)/i.exec(plain)?.[1]) || null;
+  const range = /Results\s+(\d+)\s*-\s*(\d+)\s+of\s+(\d+)/i.exec(plain);
+  const total = Number(range?.[3]) || null;
+  const perPage = range ? Number(range[2]) - Number(range[1]) + 1 : 0;
+  // How many pages: the website says so ("Page 1 of 4"), or it can be worked out from "Results 1 - 24 of 83".
+  const pages = Number(/Page\s+\d+\s+of\s+(\d+)/i.exec(plain)?.[1]) || (total && perPage > 0 ? Math.ceil(total / perPage) : null);
 
   const link = /<a\b[^>]*?href="([^"]*\/details\/([a-z0-9-]+)\/(\d+)[^"]*)"[^>]*>([\s\S]*?)<\/a>/gi;
   const hits = [...html.matchAll(link)].map((m) => ({ at: m.index ?? 0, href: m[1], slug: m[2], id: m[3], label: text(m[4]) }));
@@ -117,4 +120,17 @@ export function makeAndModel(listing: { title: string; slug: string; year: numbe
   let model = rest.map(cap).join(" ");
   model = model.replace(/\b([A-Za-z]{1,2}) ([A-Za-z]{1,2})\b/, "$1-$2").replace(/^([A-Za-z]) (\d)/, "$1-$2"); // "Hr V" -> "HR-V", "F 150" -> "F-150"
   return { make, model };
+}
+
+/** Several pages of the website combined into one list. `missing` is how many pages couldn't be read. Complete only if every
+ *  page was read and the number of cars matches what the website says it has. */
+export function combinePages(pages: Page[], missing = 0): { listings: Listing[]; complete: boolean } {
+  const byId = new Map<string, Listing>();
+  for (const page of pages) for (const l of page.listings) byId.set(l.id, l);
+  const listings = [...byId.values()];
+  const first = pages[0];
+  // If the page says neither how many pages nor how many cars there are, there's no way to know everything was read.
+  const known = Boolean(first) && (first.pages != null || first.total != null);
+  const complete = known && missing === 0 && pages.length >= (first.pages ?? 1) && (first.total == null || listings.length >= first.total);
+  return { listings, complete };
 }
