@@ -40,10 +40,9 @@ export default async function InventoryPage() {
           : `The last check ${ago(sync.at)} failed: ${sync.error}. The AI says a salesperson will confirm availability until this is fixed.`}
       </p>
 
-      <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
-        <Stat value={stats.available} label="On the lot" color="#1f7a4d" sub={stats.totalAsking ? `${usd(stats.totalAsking)} asking in total` : undefined} />
+      <div className="grid grid-cols-2 gap-3 lg:grid-cols-3">
+        <Stat value={stats.available} label="On the lot" color="#1f7a4d" />
         <Stat value={stats.sold} label="Sold" color="#c8102e" sub={stats.soldTotal ? `${usd(stats.soldTotal)} total` : "since AutoDash started tracking"} />
-        <Stat value={usd(stats.avgAsking)} label="Average asking price" />
         <Stat value={usd(stats.avgSold)} label="Average sold price" />
       </div>
 

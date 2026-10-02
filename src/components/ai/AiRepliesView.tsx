@@ -13,42 +13,11 @@ const ago = (ms: number) => {
   return min < 1 ? "just now" : min < 60 ? `${min} min ago` : min < 1440 ? `${Math.round(min / 60)} h ago` : `${Math.round(min / 1440)} days ago`;
 };
 
-export default function AiRepliesView({ drafts: initialDrafts, history, setup, canWriteNow, autoSend, outcomes, lastReport }: { drafts: AiReply[]; history: AiReply[]; setup: Setup; canWriteNow: boolean; autoSend: boolean; outcomes: LeadOutcome[]; lastReport: string | null }) {
+/** Replies waiting for a person, and what the AI did with each recent lead. (Settings and history have their own pages.) */
+export default function AiRepliesView({ drafts: initialDrafts, canSend, outcomes }: { drafts: AiReply[]; canSend: boolean; outcomes: LeadOutcome[] }) {
   const [drafts, setDrafts] = useState(initialDrafts);
-  const [done, setDone] = useState<AiReply[]>([]);
-  const [msg, setMsg] = useState<Msg>(null);
-  const [pending, start] = useTransition();
-  const timerOk = setup.lastTimer !== null && Date.now() - setup.lastTimer < 20 * 60_000;
-
-  const writeNow = () => start(async () => {
-    const r = await draftAiRepliesNowAction();
-    setMsg(r.ok ? { ok: true, text: r.message ?? "Done." } : { ok: false, text: r.error });
-    if (r.ok) window.location.reload();
-  });
-
   return (
     <div className="grid gap-8">
-      <section aria-label="Setup" className="panel p-5">
-        <div className="flex flex-wrap items-start justify-between gap-4">
-          <ul className="grid gap-2 text-[15px]">
-            <Check ok={setup.ai} good="AI is connected" bad="AI key missing: add ANTHROPIC_API_KEY in Vercel and redeploy" />
-            <Check ok={setup.canSend} good="Gmail can send" bad={setup.gmail ? "Gmail can read but not send yet" : "Gmail isn't connected"}
-              action={<Link href="/settings" className="font-semibold text-signal underline">{setup.gmail ? "Reconnect Gmail" : "Connect Gmail"}</Link>} />
-            <Check ok={timerOk} good={`Timer running (last check ${setup.lastTimer ? ago(setup.lastTimer) : ""})`}
-              bad={setup.lastTimer ? `Timer hasn't run since ${ago(setup.lastTimer)}` : "Timer not set up: replies are only written when you click Write replies now"} />
-          </ul>
-          {lastReport && <p className="mt-2 text-sm text-muted"><b className="font-semibold text-ink">Last check:</b> {lastReport}</p>}
-          {canWriteNow && (
-            <div className="flex flex-col items-end gap-1">
-              <button type="button" className="btn" disabled={pending || !setup.ai} onClick={writeNow}>{pending ? "Writing…" : "Write replies now"}</button>
-              <p className="text-xs text-muted">Normally automatic, Mon to Sat 9 AM to 7 PM</p>
-            </div>
-          )}
-        </div>
-        {msg && <p role={msg.ok ? "status" : "alert"} className={`mt-3 text-sm ${msg.ok ? "text-go" : "text-signal"}`}>{msg.text}</p>}
-        <AutoSendToggle initial={autoSend} canChange={canWriteNow} canSend={setup.canSend} />
-      </section>
-
       <section aria-labelledby="waiting">
         <h2 id="waiting" className="mb-3 text-lg font-semibold">Waiting for you <span className="text-muted">{drafts.length}</span></h2>
         {drafts.length === 0 ? (
@@ -57,8 +26,7 @@ export default function AiRepliesView({ drafts: initialDrafts, history, setup, c
           <ul className="grid gap-4">
             {drafts.map((d) => (
               <li key={d.id}>
-                <Draft reply={d} canSend={setup.canSend}
-                  onDone={(r) => { setDrafts((all) => all.filter((x) => x.id !== d.id)); setDone((all) => [r, ...all]); }} />
+                <Draft reply={d} canSend={canSend} onDone={() => setDrafts((all) => all.filter((x) => x.id !== d.id))} />
               </li>
             ))}
           </ul>
@@ -83,13 +51,47 @@ export default function AiRepliesView({ drafts: initialDrafts, history, setup, c
           </ul>
         )}
       </section>
-
-      <section aria-labelledby="history">
-        <h2 id="history" className="mb-3 text-lg font-semibold">History</h2>
-        <HistoryList rows={[...done, ...history]} />
-      </section>
     </div>
   );
+}
+
+/** The Email settings page: is everything connected, write replies now, and automatic sending. */
+export function EmailSettingsPanel({ setup, canWriteNow, autoSend, lastReport }: { setup: Setup; canWriteNow: boolean; autoSend: boolean; lastReport: string | null }) {
+  const [msg, setMsg] = useState<Msg>(null);
+  const [pending, start] = useTransition();
+  const timerOk = setup.lastTimer !== null && Date.now() - setup.lastTimer < 20 * 60_000;
+  const writeNow = () => start(async () => {
+    const r = await draftAiRepliesNowAction();
+    setMsg(r.ok ? { ok: true, text: r.message ?? "Done." } : { ok: false, text: r.error });
+    if (r.ok) window.location.reload();
+  });
+  return (
+    <section aria-label="Setup" className="panel p-5">
+      <div className="flex flex-wrap items-start justify-between gap-4">
+        <ul className="grid gap-2 text-[15px]">
+          <Check ok={setup.ai} good="AI is connected" bad="AI key missing: add ANTHROPIC_API_KEY in Vercel and redeploy" />
+          <Check ok={setup.canSend} good="Gmail can send" bad={setup.gmail ? "Gmail can read but not send yet" : "Gmail isn't connected"}
+            action={<Link href="/settings" className="font-semibold text-signal underline">{setup.gmail ? "Reconnect Gmail" : "Connect Gmail"}</Link>} />
+          <Check ok={timerOk} good={`Timer running (last check ${setup.lastTimer ? ago(setup.lastTimer) : ""})`}
+            bad={setup.lastTimer ? `Timer hasn't run since ${ago(setup.lastTimer)}` : "Timer not set up: replies are only written when you click Write replies now"} />
+        </ul>
+        {lastReport && <p className="mt-2 text-sm text-muted"><b className="font-semibold text-ink">Last check:</b> {lastReport}</p>}
+        {canWriteNow && (
+          <div className="flex flex-col items-end gap-1">
+            <button type="button" className="btn" disabled={pending || !setup.ai} onClick={writeNow}>{pending ? "Writing…" : "Write replies now"}</button>
+            <p className="text-xs text-muted">Normally automatic, Mon to Sat 9 AM to 7 PM</p>
+          </div>
+        )}
+      </div>
+      {msg && <p role={msg.ok ? "status" : "alert"} className={`mt-3 text-sm ${msg.ok ? "text-go" : "text-signal"}`}>{msg.text}</p>}
+      <AutoSendToggle initial={autoSend} canChange={canWriteNow} canSend={setup.canSend} />
+    </section>
+  );
+}
+
+/** The Email history page: everything the AI did, with tabs for replied, discarded, skipped and failed. */
+export function EmailHistoryView({ history }: { history: AiReply[] }) {
+  return <HistoryList rows={history} />;
 }
 
 const TABS: { id: string; label: string; match: (s: string) => boolean }[] = [

@@ -66,6 +66,15 @@ create table if not exists inventory (
 create index if not exists inventory_status on inventory (status, last_seen desc);
 create index if not exists inventory_sold_at on inventory (sold_at desc) where status = 'sold';
 alter table inventory enable row level security;
+-- v14: To do list: what was marked done or snoozed
+create table if not exists todo_state (
+  key text primary key,
+  state text not null,
+  until timestamptz,
+  by text,
+  updated_at timestamptz not null default now()
+);
+alter table todo_state enable row level security;
 create index if not exists customers_follow_up on customers (follow_up_at) where follow_up_at is not null;
 create index if not exists leads_kind_received on leads (kind, received_at desc) where not ignored;
 create table if not exists activities (

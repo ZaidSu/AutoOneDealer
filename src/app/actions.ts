@@ -550,6 +550,46 @@ export async function addSaleAction(input: { title: string; price: string; date:
   return { ok: true, message: "Sale added." };
 }
 
+// ---- To do list ----
+
+const TODO_CONTACT_REASONS = new Set(["new_lead", "application", "callback"]);
+
+/** "Done": hides these items. For a new lead, application or follow-up reminder it also marks the customer contacted. */
+export async function todoDoneAction(keys: string[], customerKey: string | null, name: string | null): Promise<ActionResult> {
+  const staff = await requireStaff();
+  if (!staff) return fail("Your session ended. Sign in again.");
+  const { STATE_KEY, reasonOfKey } = await import("@/lib/crm/todo-rules");
+  const clean = (Array.isArray(keys) ? keys : []).filter((k) => typeof k === "string" && STATE_KEY.test(k)).slice(0, 12);
+  if (clean.length === 0) return fail("Unknown item.");
+  const { setTodoState } = await import("@/lib/crm/todos");
+  try {
+    await setTodoState(clean, 0, staff.name);
+    const key = customerKey && KEY_PATTERN.test(customerKey) ? customerKey : null;
+    if (key && clean.some((k) => TODO_CONTACT_REASONS.has(reasonOfKey(k) ?? ""))) {
+      await data.markContacted(key, name ? cleanName(name, 80) : null);
+      await logActivity(key, "note", "Marked done on the To do list", staff.name).catch(() => undefined);
+    }
+  } catch {
+    return NO_DB;
+  }
+  revalidatePath("/todo");
+  return { ok: true, message: "Done." };
+}
+
+/** "Snooze": hides these items for 1, 3 or 7 days. They come back after that, or sooner if the customer does something new. */
+export async function todoSnoozeAction(keys: string[], days: number): Promise<ActionResult> {
+  const staff = await requireStaff();
+  if (!staff) return fail("Your session ended. Sign in again.");
+  const { STATE_KEY } = await import("@/lib/crm/todo-rules");
+  const clean = (Array.isArray(keys) ? keys : []).filter((k) => typeof k === "string" && STATE_KEY.test(k)).slice(0, 12);
+  if (clean.length === 0) return fail("Unknown item.");
+  if (![1, 3, 7].includes(days)) return fail("Pick 1, 3 or 7 days.");
+  const { setTodoState } = await import("@/lib/crm/todos");
+  try { await setTodoState(clean, days, staff.name); } catch { return NO_DB; }
+  revalidatePath("/todo");
+  return { ok: true, message: days === 1 ? "Snoozed until tomorrow." : `Snoozed for ${days} days.` };
+}
+
 export async function disconnectBankAction(): Promise<ActionResult> {
   const staff = await requireStaff();
   if (!staff || !can.viewBilling(staff.role)) return fail("Only the owner can change how bills are paid.");

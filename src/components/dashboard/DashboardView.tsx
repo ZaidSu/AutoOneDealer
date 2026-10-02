@@ -7,6 +7,7 @@ import Badge from "@/components/leads/Badge";
 import DbNotice from "@/components/ui/DbNotice";
 import PageLoading from "@/components/ui/PageLoading";
 import { useLive } from "@/lib/client/live";
+import type { TodoRow } from "@/lib/crm/todo-rules";
 import type { Lead } from "@/lib/gmail";
 import { displayName, formatMoney, formatPhone } from "@/lib/utils/format";
 
@@ -15,6 +16,7 @@ type Data = {
   state: "ready" | "unreachable" | "not_configured"; dbReady: boolean; tz: string; greeting: string; firstName: string;
   problems: string[]; since: number; counts: { leads: number; applications: number } | null; latest: Lead[];
   replies?: { gmailId: string; customerKey: string | null; name: string | null; email: string; subject: string; body: string; at: number }[];
+  todo?: { count: number; top: TodoRow[] };
   appointmentsToday: Appt[] | null; ai: { enabled: boolean; emails: number; waiting?: number; texts: number };
 };
 
@@ -61,6 +63,31 @@ export default function DashboardView() {
             {!ai.enabled ? "AI email and text replies" : ai.waiting ? `AI replies waiting for you (${ai.emails} emails, ${ai.texts} texts sent since last night)` : `AI emails sent since last night${ai.texts ? `, plus ${ai.texts} texts` : ""}`}
           </p>
         </Link>
+      </section>
+
+      <section aria-labelledby="todo" className="panel mb-6">
+        <div className="panel-head">
+          <h2 id="todo">To do {(data.todo?.count ?? 0) > 0 && <span className="ml-1 rounded-full bg-signal px-2 py-0.5 align-middle text-xs font-semibold text-white">{data.todo!.count}</span>}</h2>
+          <Link href="/todo" className="panel-link">See all</Link>
+        </div>
+        {(data.todo?.top.length ?? 0) === 0 ? (
+          <p className="px-5 pt-1 pb-5 text-muted">Nothing needs you right now.</p>
+        ) : (
+          <ul className="divide-y divide-line px-5 pb-2">
+            {data.todo!.top.map((row) => (
+              <li key={row.id} className="flex flex-wrap items-center gap-x-4 gap-y-1 py-3">
+                <div className="min-w-0 flex-1 basis-56">
+                  <p className="font-semibold">
+                    <Link href={row.customerKey ? `/customers/${encodeURIComponent(row.customerKey)}` : "/todo"} className="hover:text-signal hover:underline">{displayName(row.name) || (row.phone ? formatPhone(row.phone) : "Customer")}</Link>
+                    {row.vehicle && <span className="ml-2 text-sm font-normal text-muted">{row.vehicle}</span>}
+                  </p>
+                  <p className="truncate text-sm text-muted"><span className="font-semibold text-ink">{row.reasons[0].hot ? "Ready to move" : row.reasons[0].label}:</span> {row.reasons[0].detail}</p>
+                </div>
+                {row.phone && <a href={`tel:${row.phone}`} className="btn btn-sm">Call</a>}
+              </li>
+            ))}
+          </ul>
+        )}
       </section>
 
       <div className="grid gap-6 lg:grid-cols-[minmax(0,5fr)_minmax(0,7fr)] lg:items-start">

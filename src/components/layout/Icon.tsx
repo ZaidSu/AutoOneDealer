@@ -7,6 +7,7 @@ const PATHS: Record<string, string> = {
   credit: "M3 7h18v10H3zM3 11h18M7 15h3",
   customers: "M9 11a3.5 3.5 0 100-7 3.5 3.5 0 000 7zM2.5 20c.6-3.6 3.2-5.5 6.5-5.5s5.9 1.9 6.5 5.5M16 4.3a3.5 3.5 0 010 6.4M18 14.8c2 .8 3.2 2.5 3.5 5.2",
   appointments: "M4 6h16v14H4zM4 10h16M8 3v5M16 3v5",
+  todo: "M4 6l2 2 3-3M12 7h8M4 13l2 2 3-3M12 14h8M4 20h5M12 20h8",
   analytics: "M4 20V10M10 20V4M16 20v-7M22 20H2",
   ai: "M12 3v3M12 18v3M3 12h3M18 12h3M7 7l1.5 1.5M15.5 15.5L17 17M7 17l1.5-1.5M15.5 8.5L17 7M12 9a3 3 0 100 6 3 3 0 000-6z",
   automations: "M13 3L5 14h6l-1 7 8-11h-6z",

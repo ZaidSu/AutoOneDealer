@@ -10,6 +10,7 @@ import { aiConfigured } from "@/lib/ai/claude";
 import { replyCounts } from "@/lib/ai/replies";
 import { textCounts } from "@/lib/sms";
 import { repliesSince } from "@/lib/ai/followups";
+import { getTodos } from "@/lib/crm/todos";
 import { attempt } from "@/lib/utils/safe";
 import { addDays, dayKey, zonedToUtc } from "@/lib/utils/time";
 
@@ -29,7 +30,7 @@ export async function GET(req: NextRequest) {
   const dayEnd = zonedToUtc(addDays(today, 1), "00:00", tz)!;
 
   // Each part loads on its own, so one problem can't take the whole page down.
-  const [apptsR, countsR, latestR, aiR, repliesR] = dbReady
+  const [apptsR, countsR, latestR, aiR, repliesR, todoR] = dbReady
     ? await Promise.all([
         attempt("Today's appointments", () => appointmentsBetween(dayStart, dayEnd, null), null),
         attempt("Counts", () => leadCounts(since, since), null),
@@ -39,6 +40,7 @@ export async function GET(req: NextRequest) {
           return { waiting: e.waiting + t.waiting, sent: e.sent, texts: t.sent };
         }, { waiting: 0, sent: 0, texts: 0 }),
         attempt("Customer replies", () => repliesSince(since), []),
+        attempt("To do", async () => { const { rows } = await getTodos(); return { count: rows.length, top: rows.slice(0, 5) }; }, { count: 0, top: [] }),
       ])
     : [];
   const problems = [apptsR, countsR, latestR].map((r) => r?.error).filter(Boolean) as string[];
@@ -50,6 +52,7 @@ export async function GET(req: NextRequest) {
     counts: counts ? { leads: counts.leadsToday, applications: counts.appsToday } : null,
     latest: latestR?.data ?? [],
     replies: repliesR?.data ?? [],
+    todo: todoR?.data ?? { count: 0, top: [] },
     appointmentsToday: apptsR?.data?.filter((a) => a.status !== "canceled").map((a) => ({ ...a, startsAt: a.startsAt.getTime(), endsAt: undefined })) ?? null,
     // Texts come later; emails are real once the AI key is set.
     ai: { enabled: aiConfigured(), emails: aiR?.data?.sent ?? 0, waiting: aiR?.data?.waiting ?? 0, texts: aiR?.data?.texts ?? 0 },

@@ -4,7 +4,7 @@ import { notifyChanged } from "@/lib/client/live";
 // About once a minute it asks the server to check Gmail for new leads (one small request);
 // during the first-time import it keeps going batch after batch.
 // New leads never refresh the page by surprise: a small notice offers to show them.
-import { useRouter } from "next/navigation";
+import { usePathname, useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 
 const EVERY_MS = 60 * 1000;
@@ -12,6 +12,7 @@ const WHILE_IMPORTING_MS = 3000;
 
 export default function AutoSync() {
   const router = useRouter();
+  const pathname = usePathname();
   const [fresh, setFresh] = useState(0);
 
   useEffect(() => {
@@ -45,7 +46,12 @@ export default function AutoSync() {
   return (
     <div role="status" className="toast fixed right-4 bottom-4 z-40 flex items-center gap-3 rounded-lg bg-graphite py-2.5 pr-2.5 pl-4 text-white shadow-xl">
       <span>{fresh === 1 ? "1 new lead came in" : `${fresh} new leads came in`}</span>
-      <button type="button" onClick={() => { setFresh(0); router.refresh(); notifyChanged(); }} className="rounded-md bg-signal px-3 py-1.5 text-sm font-semibold hover:bg-signal-dark">Show</button>
+      <button type="button" onClick={() => {
+        setFresh(0);
+        // Go to the newest leads. Already there: reload the list and scroll to the top so the change is visible.
+        if (pathname === "/leads") { router.refresh(); window.scrollTo({ top: 0, behavior: "smooth" }); } else router.push("/leads");
+        notifyChanged();
+      }} className="rounded-md bg-signal px-3 py-1.5 text-sm font-semibold hover:bg-signal-dark">Show</button>
       <button type="button" onClick={() => setFresh(0)} aria-label="Dismiss" className="rounded-md px-2 py-1.5 text-white/60 hover:text-white">✕</button>
     </div>
   );

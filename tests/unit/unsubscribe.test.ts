@@ -10,3 +10,9 @@ test("normal replies are not", () => {
   for (const t of ["Is the Camry still available?", "I'll stop by Saturday", "Can you send more pictures?", "Cancel my appointment and book Sunday instead", ""])
     assert.equal(wantsNoMoreEmail(t), false, t);
 });
+
+test("'please stop by' is not an unsubscribe", () => {
+  assert.equal(wantsNoMoreEmail("Please stop by Saturday"), false);
+  assert.equal(wantsNoMoreEmail("please stop"), true);
+  assert.equal(wantsNoMoreEmail("Unsubscribe me from this list"), true);
+});

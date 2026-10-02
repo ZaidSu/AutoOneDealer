@@ -15,6 +15,7 @@ type NavEntry = NavItem | NavGroup;
 // The sidebar: a few pages on their own, the rest in groups that open and close.
 const NAV: NavEntry[] = [
   { href: "/dashboard", label: "Dashboard", icon: "dashboard" },
+  { href: "/todo", label: "To do", icon: "todo" },
   {
     id: "sales", label: "Sales", icon: "sales", items: [
       { href: "/pipeline", label: "Pipeline", icon: "pipeline" },
@@ -31,9 +32,21 @@ const NAV: NavEntry[] = [
     ],
   },
   {
-    id: "ai", label: "AI assistant", icon: "ai", items: [
-      { href: "/ai/emails", label: "Emails", icon: "mail" },
-      { href: "/ai/texts", label: "Texts", icon: "chat" },
+    id: "aiemail", label: "AI emails", icon: "mail", items: [
+      { href: "/ai/emails", label: "Replies", icon: "mail" },
+      { href: "/ai/emails/history", label: "History", icon: "mail" },
+      { href: "/ai/emails/settings", label: "Settings", icon: "mail" },
+    ],
+  },
+  {
+    id: "aitext", label: "AI texts", icon: "chat", items: [
+      { href: "/ai/texts", label: "Conversations", icon: "chat" },
+      { href: "/ai/texts/history", label: "History", icon: "chat" },
+      { href: "/ai/texts/settings", label: "Settings", icon: "chat" },
+    ],
+  },
+  {
+    id: "ai", label: "AI setup", icon: "ai", items: [
       { href: "/ai/train", label: "Train your AI", icon: "ai" },
       { href: "/ai/dealership", label: "Dealership info", icon: "store" },
       { href: "/ai/phone-numbers", label: "Phone numbers", icon: "phone" },
@@ -49,11 +62,14 @@ const FOOTER: NavItem[] = [
 ];
 // The pages people open most load in the background, so clicking them is instant.
 const PRELOAD = new Set(["/dashboard", "/pipeline", "/customers", "/appointments", "/leads"]);
-const DEFAULT_OPEN: Record<string, boolean> = { sales: true, leads: true, ai: false };
+const DEFAULT_OPEN: Record<string, boolean> = { sales: true, leads: true, aiemail: false, aitext: false, ai: false };
 const OPEN_KEY = "ad:nav-open";
 
-const isActive = (pathname: string, href: string) => pathname === href || pathname.startsWith(href + "/");
 const isGroup = (e: NavEntry): e is NavGroup => "items" in e;
+const ALL_HREFS = [...NAV.flatMap((e) => (isGroup(e) ? e.items.map((i) => i.href) : [e.href])), ...FOOTER.map((i) => i.href)];
+const under = (pathname: string, href: string) => pathname === href || pathname.startsWith(href + "/");
+/** The link for the page you're on. When two links both match (like /ai/emails and /ai/emails/history), only the longer one lights up. */
+const isActive = (pathname: string, href: string) => under(pathname, href) && !ALL_HREFS.some((h) => h.length > href.length && under(pathname, h));
 
 type Me = { name: string; role?: string; roleLabel: string; dealershipName: string };
 
@@ -147,6 +163,7 @@ function Brand({ dealershipName }: { dealershipName: string }) {
 }
 
 function Nav({ pathname }: { pathname: string }) {
+  const todoCount = useLive<{ count: number; urgent?: number }>("/api/todo/count", { every: 3 * 60_000 }).data;
   const [openGroups, setOpenGroups] = useState<Record<string, boolean>>(DEFAULT_OPEN);
   // Remember which groups each person keeps open.
   useEffect(() => {
@@ -161,7 +178,7 @@ function Nav({ pathname }: { pathname: string }) {
   return (
     <ul className="space-y-0.5">
       {NAV.map((entry) => {
-        if (!isGroup(entry)) return <li key={entry.href}><NavLink item={entry} active={isActive(pathname, entry.href)} /></li>;
+        if (!isGroup(entry)) return <li key={entry.href}><NavLink item={entry} active={isActive(pathname, entry.href)} badge={entry.href === "/todo" ? todoCount?.count : undefined} urgent={entry.href === "/todo" && Boolean(todoCount?.urgent)} /></li>;
         const hasActive = entry.items.some((i) => isActive(pathname, i.href));
         const expanded = hasActive || Boolean(openGroups[entry.id]);
         return (
@@ -186,7 +203,7 @@ function Nav({ pathname }: { pathname: string }) {
   );
 }
 
-function NavLink({ item, active, nested }: { item: NavItem; active: boolean; nested?: boolean }) {
+function NavLink({ item, active, nested, badge, urgent }: { item: NavItem; active: boolean; nested?: boolean; badge?: number; urgent?: boolean }) {
   return (
     <Link
       prefetch={PRELOAD.has(item.href)}
@@ -197,7 +214,8 @@ function NavLink({ item, active, nested }: { item: NavItem; active: boolean; nes
       }`}
     >
       {!nested && <Icon name={item.icon} className={`size-[18px] ${active ? "text-signal" : ""}`} />}
-      {item.label}
+      <span className="flex-1">{item.label}</span>
+      {badge ? <span className={`rounded-full px-2 py-0.5 text-xs font-semibold tabular-nums ${urgent ? "bg-signal text-white" : "bg-graphite-3/20 text-ink"}`}>{badge}</span> : null}
     </Link>
   );
 }

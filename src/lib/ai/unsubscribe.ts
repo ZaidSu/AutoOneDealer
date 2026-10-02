@@ -3,6 +3,6 @@
 export function wantsNoMoreEmail(body: string): boolean {
   const text = body.trim().slice(0, 300).toLowerCase().replace(/\s+/g, " ");
   if (!text) return false;
-  if (/^(please\s+)?(unsubscribe|stop|remove me|opt[- ]?out)\b/.test(text)) return true;
+  if (/^(please\s+)?(unsubscribe|stop|remove me|opt[- ]?out)\W*$/.test(text)) return true; // the whole message is just that
   return /\b(unsubscribe|remove me from|take me off|stop (emailing|sending|contacting) me|do not (email|contact) me|don'?t (email|contact) me)\b/.test(text);
 }
