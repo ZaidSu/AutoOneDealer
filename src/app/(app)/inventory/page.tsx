@@ -5,7 +5,7 @@ import DbNotice from "@/components/ui/DbNotice";
 import PageHeader from "@/components/ui/PageHeader";
 import { requirePageStaff } from "@/lib/auth/guard";
 import { dbState, fresh } from "@/lib/db";
-import { getSyncState, inventoryStats, listCars } from "@/lib/inventory/store";
+import { getSyncState, inventoryStats, listCars, seedInventoryOnce } from "@/lib/inventory/store";
 
 export const metadata: Metadata = { title: "Inventory" };
 export const dynamic = "force-dynamic";
@@ -25,6 +25,7 @@ export default async function InventoryPage() {
   const header = <PageHeader title="Inventory" description="The cars on your website, what sold, and what sells best. The AI reads this to answer “is it still available?”." action={<CheckNowButton />} />;
   const state = await dbState();
   if (state !== "ready") return <>{header}<DbNotice state={state} what="Inventory" /></>;
+  await seedInventoryOnce().catch(() => undefined); // the first time, loads the cars from the website text sent on Oct 2
   const [sync, stats, lot, sold] = await fresh("Inventory", () => Promise.all([getSyncState(), inventoryStats(TZ), listCars("available"), listCars("sold", 100)]));
 
   const best = stats.byMonth.length ? [...stats.byMonth].sort((a, b) => b.n - a.n)[0] : null;

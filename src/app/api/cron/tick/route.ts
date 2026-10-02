@@ -9,7 +9,7 @@ import { setSetting } from "@/lib/db/data";
 import { chargeDueBillsByCard, collectOpenBills, ensureInvoice } from "@/lib/billing";
 import { withGmail } from "@/lib/gmail";
 import { syncLeads } from "@/lib/leads/sync";
-import { syncInventory } from "@/lib/inventory/store";
+import { seedInventoryOnce, syncInventory } from "@/lib/inventory/store";
 import { sendPurchaseFollowups } from "@/lib/sms";
 
 export const dynamic = "force-dynamic";
@@ -38,7 +38,7 @@ export async function GET(req: NextRequest) {
   // Copy the website's inventory into the database. Runs after the timer has answered, so a slow website can't hold up
   // or break the rest of the timer. The result shows on the Inventory page.
   after(async () => {
-    try { await syncInventory(); } catch (error) { console.error("[autodash:inventory] sync failed:", error instanceof Error ? error.message : error); }
+    try { await seedInventoryOnce().catch(() => undefined); await syncInventory(); } catch (error) { console.error("[autodash:inventory] sync failed:", error instanceof Error ? error.message : error); }
   });
   try {
     // Customers who wrote back by email (answered in the same thread).

@@ -177,3 +177,21 @@ test("a lead's short name finds the website's car: '2011 Bmw 328' is the '2011 B
   assert.deepEqual(sameModel("2012 Bmw 328", lots), []);         // wrong year
   assert.match(describeListing(lots[0]), /autoonemotorstx\.com\/cars-for-sale/); // a car with no page of its own links to the inventory
 });
+
+import { SEED, seedText } from "../../src/lib/inventory/seed.ts";
+test("the starter inventory matches the website: 82 cars, 4 sold, and the website's own count per make", () => {
+  const { cars, total } = parsePastedInventory(seedText());
+  assert.equal(total, 82);
+  assert.equal(cars.length, 82);
+  assert.equal(SEED.length, 82);
+  assert.equal(cars.filter((c) => c.sold).length, 4);
+  // the website's "Popular Makes" list: the check that every car was copied correctly
+  const website: Record<string, number> = { Acura: 5, BMW: 2, Cadillac: 1, Chevrolet: 10, Chrysler: 4, Dodge: 4, Ford: 1, Genesis: 1, GMC: 7, Honda: 22, Jeep: 2, Lexus: 5, Mazda: 1, Nissan: 8, Subaru: 1, Toyota: 8 };
+  const ours: Record<string, number> = {};
+  for (const c of cars) ours[c.make] = (ours[c.make] ?? 0) + 1;
+  assert.deepEqual(ours, website);
+  // no two cars share the same name and mileage (that's how they're told apart)
+  assert.equal(new Set(cars.map((c) => `${c.title}|${c.mileage}`)).size, 82);
+  // and the total of the asking prices on the 78 for sale is a number that can be checked against the website
+  assert.equal(cars.filter((c) => !c.sold).length, 78);
+});

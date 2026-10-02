@@ -4,6 +4,7 @@
 import { readyDb } from "@/lib/db";
 import { getSetting, setSetting } from "@/lib/db/data";
 import { fetchInventory, type Inventory } from "./fetch";
+import { seedText } from "./seed";
 import { makeAndModel, mergePageStore, pagesToRead, parsePastedInventory, SITE_PAGE, type Listing, type PageStore } from "./match";
 
 export type SyncState = { at: number; ok: boolean; count: number; complete: boolean; added: number; sold: number; error: string | null; via?: "direct" | "helper" | "pushed" | "pasted"; pagesRead?: number; pagesExpected?: number | null };
@@ -230,4 +231,19 @@ export async function importPasted(text: string): Promise<PasteResult> {
   const complete = total != null && cars.length >= total;
   const state = await applyInventory({ listings, complete, fetchedAt: Date.now(), via: "pasted" });
   return { state, cars: cars.length, available: cars.filter((c) => !c.sold).length, soldOnSite: cars.filter((c) => c.sold).length, total };
+}
+
+const SEED_FLAG = "inventory_seed_oct2";
+/** One time: loads the 82 cars from the website's pages as of Oct 2, 2026 (see seed.ts), so the AI can answer "is it available?"
+ *  before AutoDash can read the website itself. Skipped if the inventory is already mostly filled in some other way. */
+export async function seedInventoryOnce(): Promise<boolean> {
+  const sql = await readyDb();
+  if (!sql) return false;
+  if (await getSetting(SEED_FLAG).catch(() => null)) return false;
+  const state = await getSyncState();
+  const [{ n }] = await sql`select count(*)::int as n from inventory`;
+  if ((state?.ok && state.via === "pushed") || n >= 80) { await setSetting(SEED_FLAG, "skipped").catch(() => undefined); return false; }
+  await importPasted(seedText());
+  await setSetting(SEED_FLAG, "done").catch(() => undefined);
+  return true;
 }
