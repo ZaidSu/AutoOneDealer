@@ -1,6 +1,6 @@
 import type { Metadata } from "next";
 import { BarList, Columns, Panel, Stat } from "@/components/analytics/Charts";
-import { AddSale, BackOnLot, CheckNowButton, ImportText, MarkSold } from "@/components/inventory/InventoryActions";
+import { AddSale, BackOnLot, CheckNowButton, ImportText, MarkSold, RemoveCar } from "@/components/inventory/InventoryActions";
 import DbNotice from "@/components/ui/DbNotice";
 import PageHeader from "@/components/ui/PageHeader";
 import { requirePageStaff } from "@/lib/auth/guard";
@@ -110,7 +110,7 @@ export default async function InventoryPage() {
                     <td className="px-4 py-2.5 tabular-nums">{usd(c.soldPrice ?? c.price)}</td>
                     <td className="px-4 py-2.5 text-muted">{c.soldAt ? day(c.soldAt) : "date unknown"}</td>
                     <td className="px-4 py-2.5 text-muted">{c.soldBy ? `${c.soldNote ?? "By hand"} (${c.soldBy})` : c.soldNote}</td>
-                    <td className="px-4 py-2.5 text-right"><BackOnLot id={c.id} /></td>
+                    <td className="px-4 py-2.5 text-right"><span className="inline-flex gap-2"><BackOnLot id={c.id} /><RemoveCar id={c.id} /></span></td>
                   </tr>
                 ))}
               </tbody>

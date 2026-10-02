@@ -93,6 +93,8 @@ alter table sms_consents enable row level security;
 -- v16: cars that were already Sold on the website when AutoDash first saw them have no known sale date (it used to stamp the day they were first seen)
 update inventory set sold_at = null, sold_note = 'Shown as Sold on the website (date unknown)'
   where status = 'sold' and sold_by is null and sold_note = 'Marked sold on the website' and sold_price is null and sold_at <= first_seen + interval '2 minutes';
+-- v17: cars the website already showed as Sold when AutoDash first saw them (no known sale) are hidden, not counted as sales
+update inventory set status = 'ignored' where status = 'sold' and sold_at is null and sold_by is null;
 create index if not exists customers_follow_up on customers (follow_up_at) where follow_up_at is not null;
 create index if not exists leads_kind_received on leads (kind, received_at desc) where not ignored;
 create table if not exists activities (

@@ -552,6 +552,16 @@ export async function markAvailableAction(id: string): Promise<ActionResult> {
   return { ok: true, message: "Back on the lot." };
 }
 
+export async function removeCarAction(id: string): Promise<ActionResult> {
+  const staff = await requireStaff();
+  if (!staff) return fail("Your session ended. Sign in again.");
+  if (!/^[\w-]{1,60}$/.test(id)) return fail("Unknown car.");
+  const { removeCar } = await import("@/lib/inventory/store");
+  try { await removeCar(id); } catch { return NO_DB; }
+  revalidatePath("/inventory");
+  return { ok: true, message: "Removed." };
+}
+
 export async function addSaleAction(input: { title: string; price: string; date: string }): Promise<ActionResult> {
   const staff = await requireStaff();
   if (!staff) return fail("Your session ended. Sign in again.");

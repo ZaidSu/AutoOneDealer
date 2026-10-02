@@ -81,16 +81,16 @@ export async function applyInventory(inv: Inventory): Promise<SyncState> {
         sold_price = case when inventory.sold_by is not null then inventory.sold_price else null end,
         sold_note = case when inventory.sold_by is not null then inventory.sold_note else null end`;
   }
-  // Cards the website itself marks Sold. A car we had seen for sale and now see as Sold sold sometime since: dated now. One we
-  // are meeting for the first time already Sold has no known date or price, so it's kept out of the sales numbers.
+  // Cards the website itself marks Sold. A car we had seen for sale and now see as Sold sold sometime since: dated now. One we are
+  // meeting for the first time already Sold has no known date or price, so it's kept out of AutoDash entirely (status "ignored").
   let soldNow = 0;
   for (let i = 0; i < flagged.length; i += 200) {
     const rows = await sql`insert into inventory (${sql.unsafe(cols)}, status, last_seen, sold_at, sold_price, sold_note)
-      select ${sql.unsafe(cols)}, 'sold', now(), null, null, 'Shown as Sold on the website (date unknown)' from jsonb_to_recordset(${sql.json(flagged.slice(i, i + 200))}::jsonb) as x(${sql.unsafe(shape)})
+      select ${sql.unsafe(cols)}, 'ignored', now(), null, null, 'Already Sold on the website when first seen' from jsonb_to_recordset(${sql.json(flagged.slice(i, i + 200))}::jsonb) as x(${sql.unsafe(shape)})
       on conflict (id) do update set last_seen = now(), updated_at = now(),
         status = 'sold', sold_at = now(), sold_price = coalesce(inventory.sold_price, inventory.price, excluded.price),
         sold_note = 'Marked sold on the website'
-      where inventory.status <> 'sold' returning (xmax = 0) as inserted`;
+      where inventory.status = 'available' returning (xmax = 0) as inserted`;
     soldNow += rows.filter((r) => !r.inserted).length;
   }
   // Cars added from pasted text have made-up ids. Once the website itself has been read in full, the real listing replaces them.
@@ -247,4 +247,11 @@ export async function seedInventoryOnce(): Promise<boolean> {
   await importPasted(seedText());
   await setSetting(SEED_FLAG, "done").catch(() => undefined);
   return true;
+}
+
+/** Hides a car from AutoDash: not on the lot, not in the sold list, not in any numbers. It comes back as available if the website lists it for sale again. */
+export async function removeCar(id: string) {
+  const sql = await readyDb();
+  if (!sql) throw new Error("no_db");
+  await sql`update inventory set status = 'ignored', sold_note = 'Removed by staff', updated_at = now() where id = ${id}`;
 }

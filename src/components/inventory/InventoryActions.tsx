@@ -2,7 +2,7 @@
 import { useRouter } from "next/navigation";
 import { useState, useTransition } from "react";
 import { notifyChanged } from "@/lib/client/live";
-import { addSaleAction, importInventoryTextAction, markAvailableAction, markSoldAction, syncInventoryNowAction } from "@/app/actions";
+import { addSaleAction, importInventoryTextAction, markAvailableAction, markSoldAction, removeCarAction, syncInventoryNowAction } from "@/app/actions";
 
 type Msg = { ok: boolean; text: string } | null;
 const today = () => new Date().toLocaleDateString("en-CA", { timeZone: "America/Chicago" });
@@ -115,4 +115,14 @@ export function ImportText() {
       {msg && <p role={msg.ok ? "status" : "alert"} className={`mt-2 text-sm ${msg.ok ? "text-go" : "text-signal"}`}>{msg.text}</p>}
     </div>
   );
+}
+
+/** Take a car out of AutoDash completely (it isn't really a sale you want counted). */
+export function RemoveCar({ id }: { id: string }) {
+  const [pending, start] = useTransition();
+  const router = useRouter();
+  return <button type="button" className="btn btn-sm" disabled={pending} onClick={() => {
+    if (!window.confirm("Remove this car from AutoDash? It won't show on the lot or in the sold list, and it won't count in any numbers.")) return;
+    start(async () => { await removeCarAction(id); router.refresh(); notifyChanged(); });
+  }}>{pending ? "…" : "Remove"}</button>;
 }
