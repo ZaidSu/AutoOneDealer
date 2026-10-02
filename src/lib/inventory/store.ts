@@ -81,16 +81,17 @@ export async function applyInventory(inv: Inventory): Promise<SyncState> {
         sold_price = case when inventory.sold_by is not null then inventory.sold_price else null end,
         sold_note = case when inventory.sold_by is not null then inventory.sold_note else null end`;
   }
-  // Cards the website itself marks Sold.
+  // Cards the website itself marks Sold. A car we had seen for sale and now see as Sold sold sometime since: dated now. One we
+  // are meeting for the first time already Sold has no known date or price, so it's kept out of the sales numbers.
   let soldNow = 0;
   for (let i = 0; i < flagged.length; i += 200) {
     const rows = await sql`insert into inventory (${sql.unsafe(cols)}, status, last_seen, sold_at, sold_price, sold_note)
-      select ${sql.unsafe(cols)}, 'sold', now(), now(), price, 'Marked sold on the website' from jsonb_to_recordset(${sql.json(flagged.slice(i, i + 200))}::jsonb) as x(${sql.unsafe(shape)})
-      on conflict (id) do update set price = excluded.price, last_seen = now(), updated_at = now(),
-        status = 'sold', sold_at = coalesce(inventory.sold_at, now()), sold_price = coalesce(inventory.sold_price, excluded.price),
-        sold_note = coalesce(inventory.sold_note, 'Marked sold on the website')
-      where inventory.status <> 'sold' returning id`;
-    soldNow += rows.length;
+      select ${sql.unsafe(cols)}, 'sold', now(), null, null, 'Shown as Sold on the website (date unknown)' from jsonb_to_recordset(${sql.json(flagged.slice(i, i + 200))}::jsonb) as x(${sql.unsafe(shape)})
+      on conflict (id) do update set last_seen = now(), updated_at = now(),
+        status = 'sold', sold_at = now(), sold_price = coalesce(inventory.sold_price, inventory.price, excluded.price),
+        sold_note = 'Marked sold on the website'
+      where inventory.status <> 'sold' returning (xmax = 0) as inserted`;
+    soldNow += rows.filter((r) => !r.inserted).length;
   }
   // Cars added from pasted text have made-up ids. Once the website itself has been read in full, the real listing replaces them.
   if (inv.complete && inv.via !== "pasted") {
@@ -141,7 +142,7 @@ export async function readSnapshot(): Promise<{ listings: Listing[]; sold: Listi
   if (!state?.ok || Date.now() - state.at > (state.via === "pasted" ? PASTED_FRESH_MS : SNAPSHOT_MAX_AGE_MS)) return null;
   const [avail, sold] = await Promise.all([
     sql`select * from inventory where status = 'available'`,
-    sql`select * from inventory where status = 'sold' and sold_at > now() - interval '90 days' and slug is not null`,
+    sql`select * from inventory where status = 'sold' and (sold_at is null or sold_at > now() - interval '90 days') and slug is not null`,
   ]);
   if (avail.length === 0) return null;
   const toListing = (r: Record<string, unknown>, isSold: boolean): Listing => ({
@@ -174,7 +175,7 @@ export async function addSale(input: { title: string; year: number | null; price
 
 // ---- numbers for the page ----
 export type InventoryStats = {
-  available: number; sold: number; avgAsking: number | null; totalAsking: number | null; soldTotal: number; avgSold: number | null;
+  available: number; sold: number; soldUnknown: number; avgAsking: number | null; totalAsking: number | null; soldTotal: number; avgSold: number | null;
   byMonth: { month: string; n: number; total: number }[];
   byMake: { make: string; n: number; avg: number | null }[];
   byPrice: { label: string; n: number }[];
@@ -183,23 +184,23 @@ export type InventoryStats = {
 
 export async function inventoryStats(timeZone: string): Promise<InventoryStats> {
   const sql = await readyDb();
-  const empty: InventoryStats = { available: 0, sold: 0, avgAsking: null, totalAsking: null, soldTotal: 0, avgSold: null, byMonth: [], byMake: [], byPrice: [], lotByMake: [] };
+  const empty: InventoryStats = { available: 0, sold: 0, soldUnknown: 0, avgAsking: null, totalAsking: null, soldTotal: 0, avgSold: null, byMonth: [], byMake: [], byPrice: [], lotByMake: [] };
   if (!sql) return empty;
   const [[c], months, makes, prices, lot] = await Promise.all([
-    sql`select count(*) filter (where status = 'available')::int as available, count(*) filter (where status = 'sold')::int as sold,
+    sql`select count(*) filter (where status = 'available')::int as available, count(*) filter (where status = 'sold')::int as sold, count(*) filter (where status = 'sold' and sold_at is null)::int as sold_unknown,
         avg(price) filter (where status = 'available')::float8 as avg_asking, sum(price) filter (where status = 'available')::float8 as total_asking,
-        coalesce(sum(sold_price) filter (where status = 'sold'), 0)::float8 as sold_total, avg(sold_price) filter (where status = 'sold')::float8 as avg_sold from inventory`,
+        coalesce(sum(sold_price) filter (where status = 'sold' and sold_at is not null), 0)::float8 as sold_total, avg(sold_price) filter (where status = 'sold' and sold_at is not null)::float8 as avg_sold from inventory`,
     sql`select to_char(sold_at at time zone ${timeZone}, 'YYYY-MM') as m, count(*)::int as n, coalesce(sum(sold_price), 0)::float8 as total
         from inventory where status = 'sold' and sold_at is not null group by 1 order by 1 desc limit 12`,
-    sql`select coalesce(make, 'Unknown') as make, count(*)::int as n, avg(sold_price)::float8 as avg from inventory where status = 'sold' group by 1 order by n desc, make limit 10`,
+    sql`select coalesce(make, 'Unknown') as make, count(*)::int as n, avg(sold_price)::float8 as avg from inventory where status = 'sold' and sold_at is not null group by 1 order by n desc, make limit 10`,
     sql`select case when sold_price is null then 'Price not known' when sold_price < 10000 then 'Under $10,000' when sold_price < 15000 then '$10,000 to $14,999'
           when sold_price < 20000 then '$15,000 to $19,999' when sold_price < 30000 then '$20,000 to $29,999' else '$30,000 and up' end as label, count(*)::int as n
-        from inventory where status = 'sold' group by 1`,
+        from inventory where status = 'sold' and sold_at is not null group by 1`,
     sql`select coalesce(make, 'Unknown') as make, count(*)::int as n from inventory where status = 'available' group by 1 order by n desc, make limit 10`,
   ]);
   const ORDER = ["Under $10,000", "$10,000 to $14,999", "$15,000 to $19,999", "$20,000 to $29,999", "$30,000 and up", "Price not known"];
   return {
-    available: c.available, sold: c.sold, avgAsking: c.avg_asking, totalAsking: c.total_asking, soldTotal: c.sold_total, avgSold: c.avg_sold,
+    available: c.available, sold: c.sold, soldUnknown: c.sold_unknown, avgAsking: c.avg_asking, totalAsking: c.total_asking, soldTotal: c.sold_total, avgSold: c.avg_sold,
     byMonth: months.map((r) => ({ month: r.m as string, n: r.n as number, total: r.total as number })).reverse(),
     byMake: makes.map((r) => ({ make: r.make as string, n: r.n as number, avg: (r.avg as number) ?? null })),
     byPrice: ORDER.map((label) => ({ label, n: (prices.find((r) => r.label === label)?.n as number) ?? 0 })).filter((p) => p.n > 0),

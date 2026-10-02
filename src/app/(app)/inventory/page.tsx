@@ -45,9 +45,13 @@ export default async function InventoryPage() {
 
       <div className="grid grid-cols-2 gap-3 lg:grid-cols-3">
         <Stat value={stats.available} label="On the lot" color="#1f7a4d" />
-        <Stat value={stats.sold} label="Sold" color="#c8102e" sub={stats.soldTotal ? `${usd(stats.soldTotal)} total` : "since AutoDash started tracking"} />
+        <Stat value={stats.sold} label="Sold" color="#c8102e" sub={stats.soldUnknown ? `${stats.sold - stats.soldUnknown} with a sale date, ${stats.soldUnknown} sold before AutoDash was tracking` : stats.soldTotal ? `${usd(stats.soldTotal)} total` : "since AutoDash started tracking"} />
         <Stat value={usd(stats.avgSold)} label="Average sold price" />
       </div>
+
+      {stats.soldUnknown > 0 && (
+        <p className="mt-4 text-sm text-muted">{stats.soldUnknown} car{stats.soldUnknown === 1 ? " was" : "s were"} already marked Sold on the website when AutoDash first saw {stats.soldUnknown === 1 ? "it" : "them"}, so there's no sale date or price. They're listed under Sold but left out of the charts below. Click Not sold to put one back on the lot, or add its real sale with Add a past sale.</p>
+      )}
 
       <div className="mt-6 grid gap-6 lg:grid-cols-2">
         <Panel title="Sales by month" note={best ? `Best month so far: ${monthLabel(best.month)} with ${best.n} sold.` : "Fills in as cars sell. Add past sales below to include earlier months."}>
@@ -104,7 +108,7 @@ export default async function InventoryPage() {
                   <tr key={c.id}>
                     <td className="px-4 py-2.5 font-medium">{c.title}</td>
                     <td className="px-4 py-2.5 tabular-nums">{usd(c.soldPrice ?? c.price)}</td>
-                    <td className="px-4 py-2.5 text-muted">{day(c.soldAt)}</td>
+                    <td className="px-4 py-2.5 text-muted">{c.soldAt ? day(c.soldAt) : "date unknown"}</td>
                     <td className="px-4 py-2.5 text-muted">{c.soldBy ? `${c.soldNote ?? "By hand"} (${c.soldBy})` : c.soldNote}</td>
                     <td className="px-4 py-2.5 text-right"><BackOnLot id={c.id} /></td>
                   </tr>
