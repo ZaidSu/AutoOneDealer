@@ -4,9 +4,9 @@
 import { readyDb } from "@/lib/db";
 import { getSetting, setSetting } from "@/lib/db/data";
 import { fetchInventory, type Inventory } from "./fetch";
-import { makeAndModel, type Listing } from "./match";
+import { makeAndModel, mergePageStore, type Listing, type PageStore } from "./match";
 
-export type SyncState = { at: number; ok: boolean; count: number; complete: boolean; added: number; sold: number; error: string | null; via?: "direct" | "helper" | "pushed" };
+export type SyncState = { at: number; ok: boolean; count: number; complete: boolean; added: number; sold: number; error: string | null; via?: "direct" | "helper" | "pushed"; pagesRead?: number; pagesExpected?: number | null };
 const SYNC_KEY = "inventory_sync";
 
 export async function getSyncState(): Promise<SyncState | null> {
@@ -22,7 +22,18 @@ export async function syncInventory(opts: { force?: boolean } = {}): Promise<Syn
   if (!opts.force && prev?.ok && prev.via === "pushed" && Date.now() - prev.at < 40 * 60_000) return prev;
   let inv: Inventory;
   try { inv = await fetchInventory(); } catch (e) { return recordFailure(e instanceof Error ? e.message : "Couldn't read the website", prev); }
-  return applyInventory(inv);
+  return applyInventory(await mergeWithRecent(inv));
+}
+
+const PAGES_KEY = "inventory_pages";
+/** Adds pages read in the last 25 minutes to this read, so a read that gets some pages now and the rest next time still adds up. */
+async function mergeWithRecent(inv: Inventory): Promise<Inventory> {
+  if (!inv.parts) return inv;
+  let saved: PageStore = {};
+  try { const raw = await getSetting(PAGES_KEY); if (raw) saved = JSON.parse(raw); } catch { /* start fresh */ }
+  const m = mergePageStore(saved, inv.parts, Date.now(), 25 * 60_000);
+  await setSetting(PAGES_KEY, JSON.stringify(m.store)).catch(() => undefined);
+  return { ...inv, listings: m.listings, complete: m.complete, pagesRead: m.read, pagesExpected: m.expected };
 }
 
 /** A failed read is saved so the Inventory page can say why, unless a good copy from the last 30 minutes exists (then that one stays). */
@@ -80,7 +91,7 @@ export async function applyInventory(inv: Inventory): Promise<SyncState> {
       where status = 'available' and missed >= 3 returning id`;
     soldNow += gone.length;
   }
-  const state: SyncState = { at: Date.now(), ok: true, count: live.length, complete: inv.complete, added, sold: soldNow, error: null, via: inv.via };
+  const state: SyncState = { at: Date.now(), ok: true, count: live.length, complete: inv.complete, added, sold: soldNow, error: null, via: inv.via, pagesRead: inv.pagesRead, pagesExpected: inv.pagesExpected };
   await setSetting(SYNC_KEY, JSON.stringify(state)).catch(() => undefined);
   return state;
 }

@@ -2,7 +2,7 @@
 // First tries the website directly. Some websites turn away traffic from cloud servers like Vercel, so if that fails it
 // asks a free "reader" service (INVENTORY_PROXY_URL, default r.jina.ai) to fetch the page and hand back its HTML.
 // Set INVENTORY_PROXY_URL to "off" to turn the helper off.
-import { combinePages, parseInventoryPage, type Listing } from "./match";
+import { combinePages, parseInventoryPage, type Listing, type Page } from "./match";
 
 const SITE = process.env.INVENTORY_URL || "https://www.autoonemotorstx.com/cars-for-sale";
 const PROXY_RAW = process.env.INVENTORY_PROXY_URL || "https://r.jina.ai/";
@@ -53,7 +53,12 @@ export async function getHtml(url: string): Promise<string> {
   }
 }
 
-export type Inventory = { listings: Listing[]; complete: boolean; fetchedAt: number; via: Via };
+export type Inventory = {
+  listings: Listing[]; complete: boolean; fetchedAt: number; via: Via;
+  /** The pages read this time, by page number, so reads can be added together across runs. */
+  parts?: { n: number; page: Page }[];
+  pagesRead?: number; pagesExpected?: number | null;
+};
 
 /** Every car on the website, read fresh. `complete` is true only if every page was read and the count matches what the site says. */
 export async function fetchInventory(): Promise<Inventory> {
@@ -67,22 +72,27 @@ export async function fetchInventory(): Promise<Inventory> {
     }
   }
   const first = parseInventoryPage(firstHtml);
+  const parts: { n: number; page: Page }[] = [{ n: 1, page: first }];
   const pages = [first];
   let missing = 0;
-  // One page at a time with a short pause (asking for all of them at once can look like an attack to the website), and
-  // one retry if a page doesn't answer.
+  // One page at a time with a short pause (asking for all of them at once can look like an attack to the website). Each page
+  // is tried the usual way, then the other way (directly / through the helper), with a retry, until time runs out.
+  const routes: Via[] = via === "direct" ? (PROXY ? ["direct", "helper"] : ["direct"]) : ["helper", "direct"];
   for (let n = 2; n <= Math.min(first.pages ?? 1, MAX_PAGES); n++) {
-    let got: ReturnType<typeof parseInventoryPage> | null = null;
-    for (let attempt = 0; attempt < 2 && !got && Date.now() < deadline - 5_000; attempt++) {
-      try { got = parseInventoryPage(await request(pageUrl(n), via)); } catch { await new Promise((r) => setTimeout(r, 1_500)); }
+    let got: Page | null = null;
+    for (const route of routes) {
+      for (let attempt = 0; attempt < 2 && !got && Date.now() < deadline - 4_000; attempt++) {
+        try { got = parseInventoryPage(await request(pageUrl(n), route)); } catch { await new Promise((r) => setTimeout(r, 1_200)); }
+        if (got && got.listings.length === 0 && n <= (first.pages ?? 1)) got = null; // a page inside the range with no cars is a bad read, try again
+      }
+      if (got) break;
     }
-    if (got && got.listings.length === 0) break; // past the last page
-    if (got) pages.push(got); else missing++;
-    await new Promise((r) => setTimeout(r, 700));
+    if (got) { pages.push(got); parts.push({ n, page: got }); } else missing++;
+    await new Promise((r) => setTimeout(r, 600));
   }
   const { listings, complete } = combinePages(pages, missing);
   if (listings.length === 0) throw new Error("No cars found on the page (the website layout may have changed)");
-  return { listings, complete, fetchedAt: Date.now(), via };
+  return { listings, complete, fetchedAt: Date.now(), via, parts, pagesRead: pages.length, pagesExpected: first.pages };
 }
 
 /** The same thing, from page HTML that the dealership's own computer downloaded and sent to AutoDash. */

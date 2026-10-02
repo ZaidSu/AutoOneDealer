@@ -134,3 +134,20 @@ export function combinePages(pages: Page[], missing = 0): { listings: Listing[];
   const complete = known && missing === 0 && pages.length >= (first.pages ?? 1) && (first.total == null || listings.length >= first.total);
   return { listings, complete };
 }
+
+export type PageStore = Record<string, { at: number; page: Page }>;
+/** Pages read in earlier runs (recent enough) plus the ones read just now, combined. Lets a read that gets pages 1 and 2 this
+ *  time and 3 and 4 the next time still add up to the whole website. */
+export function mergePageStore(saved: PageStore, parts: { n: number; page: Page }[], now: number, maxAgeMs: number):
+  { store: PageStore; listings: Listing[]; complete: boolean; read: number; expected: number } {
+  const store: PageStore = {};
+  for (const [n, v] of Object.entries(saved)) if (now - v.at < maxAgeMs) store[n] = v;
+  for (const { n, page } of parts) store[String(n)] = { at: now, page };
+  const have = Object.keys(store).map(Number).filter((n) => n >= 1);
+  const first = store["1"]?.page;
+  const expected = first?.pages ?? (have.length ? Math.max(...have) : 1);
+  const ordered: Page[] = [];
+  for (let n = 1; n <= expected; n++) if (store[String(n)]) ordered.push(store[String(n)].page);
+  const { listings, complete } = combinePages(ordered, expected - ordered.length);
+  return { store, listings, complete, read: ordered.length, expected };
+}

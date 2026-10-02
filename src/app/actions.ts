@@ -506,7 +506,7 @@ export async function syncInventoryNowAction(): Promise<ActionResult> {
   revalidatePath("/inventory");
   return r.ok
     ? { ok: true, message: `Read ${r.count} cars from the website${r.added ? `, ${r.added} new` : ""}${r.sold ? `, ${r.sold} newly sold` : ""}${r.complete ? "." : ". Only part of the website could be read, so nothing was marked sold."}` }
-    : fail(`Couldn't read the website: ${r.error}`);
+    : fail(/^couldn't/i.test(r.error ?? "") ? (r.error as string) : `Couldn't read the website: ${r.error}`);
 }
 
 export async function markSoldAction(id: string, price: string, date: string): Promise<ActionResult> {

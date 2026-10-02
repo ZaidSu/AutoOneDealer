@@ -107,3 +107,25 @@ test("with no page or car count at all, a read is never called complete (so noth
   assert.equal(blind.total, null);
   assert.equal(combinePages([blind], 0).complete, false);
 });
+
+import { mergePageStore } from "../../src/lib/inventory/match.ts";
+test("pages read in different runs add up to the whole website", () => {
+  const mk = (n: number, ids: string[]) => ({ listings: ids.map((id) => ({ ...listings[0], id })), total: 8, pages: 4 });
+  const T = 1_000_000_000_000, MIN = 60_000;
+  // run 1 gets pages 1 and 2
+  const r1 = mergePageStore({}, [{ n: 1, page: mk(1, ["a", "b"]) }, { n: 2, page: mk(2, ["c", "d"]) }], T, 25 * MIN);
+  assert.equal(r1.complete, false);
+  assert.deepEqual([r1.read, r1.expected], [2, 4]);
+  // run 2, five minutes later, gets page 1 again and page 3
+  const r2 = mergePageStore(r1.store, [{ n: 1, page: mk(1, ["a", "b"]) }, { n: 3, page: mk(3, ["e", "f"]) }], T + 5 * MIN, 25 * MIN);
+  assert.equal(r2.complete, false);
+  assert.equal(r2.read, 3);
+  // run 3 gets page 4: now all four pages are there and the count matches
+  const r3 = mergePageStore(r2.store, [{ n: 1, page: mk(1, ["a", "b"]) }, { n: 4, page: mk(4, ["g", "h"]) }], T + 10 * MIN, 25 * MIN);
+  assert.equal(r3.complete, true);
+  assert.equal(r3.listings.length, 8);
+  // but pages that are too old don't count
+  const r4 = mergePageStore(r3.store, [{ n: 1, page: mk(1, ["a", "b"]) }], T + 60 * MIN, 25 * MIN);
+  assert.equal(r4.complete, false);
+  assert.equal(r4.read, 1);
+});
