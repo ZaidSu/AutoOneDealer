@@ -6,6 +6,8 @@
 //   INVENTORY_PUSH_TOKEN  the same secret you saved in Vercel with that name
 //   INVENTORY_SOURCE_URL  optional, the website's inventory page (default: autoonemotorstx.com/cars-for-sale)
 
+import { execFile } from "node:child_process";
+
 const SOURCE = process.env.INVENTORY_SOURCE_URL || "https://www.autoonemotorstx.com/cars-for-sale";
 const AUTODASH = (process.env.AUTODASH_URL || "").replace(/\/$/, "");
 const TOKEN = process.env.INVENTORY_PUSH_TOKEN || "";
@@ -26,17 +28,30 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 // Scripts and styles aren't needed and make the upload large.
 const slim = (html) => html.replace(/<(script|style|svg)[\s\S]*?<\/\1>/gi, " ").replace(/<!--[\s\S]*?-->/g, " ").replace(/\s{2,}/g, " ");
 
+// Some websites refuse Node's requests but accept curl's (Windows 10 and 11 include curl.exe).
+function viaCurl(url) {
+  return new Promise((resolve, reject) => {
+    execFile(process.platform === "win32" ? "curl.exe" : "curl", ["-sL", "--compressed", "-m", "40", "-A", HEADERS["User-Agent"], "-H", `Accept: ${HEADERS.Accept}`, "-H", "Accept-Language: en-US,en;q=0.9", url],
+      { maxBuffer: 20 * 1024 * 1024 }, (error, stdout) => (error ? reject(error) : resolve(String(stdout))));
+  });
+}
+
 /** The page's HTML, or null if the page loaded but has no cars on it (past the last page). Network problems throw. */
 async function get(url) {
   let last;
-  for (let attempt = 1; attempt <= 3; attempt++) {
+  for (let attempt = 1; attempt <= 2; attempt++) {
     try {
       const res = await fetch(url, { headers: HEADERS, signal: AbortSignal.timeout(30_000) });
       if (!res.ok) throw new Error(`the website answered ${res.status}`);
       const html = await res.text();
       return /details\//.test(html) ? html : null;
-    } catch (error) { last = error; await sleep(2000 * attempt); }
+    } catch (error) { last = error; await sleep(1500 * attempt); }
   }
+  try {
+    const html = await viaCurl(url);
+    if (/details\//.test(html)) { console.log("(Node was refused, so curl was used for this page.)"); return html; }
+    if (/Results\s+\d|Page\s+\d+\s+of/i.test(html)) return null;
+  } catch { /* curl isn't available or was refused too */ }
   throw new Error(`${url}: ${last instanceof Error ? last.message : last}`);
 }
 

@@ -1,0 +1,9 @@
+{
+  "name": "autodash-inventory-tools",
+  "private": true,
+  "type": "module",
+  "description": "Scripts that send the dealership website's inventory to AutoDash. Kept separate from the app.",
+  "dependencies": {
+    "playwright": "^1.48.0"
+  }
+}
