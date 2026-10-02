@@ -576,6 +576,19 @@ export async function addReviewAction(input: { source: string; reviewer: string;
   return { ok: true, message: "Review added." };
 }
 
+export async function setGoogleProfileAction(total: number, rating: number | null): Promise<ActionResult> {
+  const staff = await requireStaff();
+  if (!staff) return fail("Your session ended. Sign in again.");
+  const n = Math.round(Number(total));
+  if (!(n >= 0 && n <= 100000)) return fail("Enter how many reviews Google shows.");
+  const r = rating === null || rating === undefined || String(rating) === "" ? null : Math.round(Number(rating) * 10) / 10;
+  if (r !== null && !(r >= 1 && r <= 5)) return fail("The rating is a number from 1 to 5, like 4.8.");
+  const { setGoogleProfile } = await import("@/lib/reviews/store");
+  try { await setGoogleProfile(n, r); } catch { return NO_DB; }
+  revalidatePath("/analytics");
+  return { ok: true, message: "Saved." };
+}
+
 export async function removeReviewAction(id: string): Promise<ActionResult> {
   const staff = await requireStaff();
   if (!staff) return fail("Your session ended. Sign in again.");

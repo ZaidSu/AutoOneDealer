@@ -8,7 +8,8 @@ import { dayKey } from "@/lib/utils/time";
 import { parseReviewEmail } from "./parse";
 
 const LAST_KEY = "reviews_last_sync";
-const REMOVED_KEY = "reviews_removed_seen";
+const REMOVALS_KEY = "reviews_removals";
+const GOOGLE_KEY = "reviews_google_profile";
 const SEARCH = `from:businessprofile-noreply@google.com (subject:"left a review" OR subject:"new review" OR subject:"new reviews" OR subject:"review has been removed")`;
 
 export type ReviewSyncResult = { skipped?: string; added?: number; removed?: number; scanned?: number; error?: string };
@@ -25,22 +26,18 @@ export async function syncReviews(opts: { force?: boolean } = {}): Promise<Revie
   const result = await withGmail(async (gmail) => {
     const ids = await gmail.listIds(`${SEARCH}${last ? " newer_than:30d" : ""}`, 100);
     const known = new Set((ids.length ? await sql`select distinct gmail_id from reviews where gmail_id = any(${ids})` : []).map((r) => r.gmail_id as string));
-    let removedSeen: string[] = [];
-    try { removedSeen = JSON.parse((await getSetting(REMOVED_KEY)) ?? "[]"); } catch { /* start fresh */ }
-    let added = 0, removed = 0, scanned = 0;
+    let removals: { name: string; at: number }[] = [];
+    try { removals = JSON.parse((await getSetting(REMOVALS_KEY)) ?? "[]"); } catch { /* start fresh */ }
+    let added = 0, scanned = 0;
     for (const id of ids) {
-      if (known.has(id) || removedSeen.includes(id)) continue;
+      if (known.has(id)) continue;
       scanned++;
       const m = await gmail.full(id);
       const parsed = parseReviewEmail(m.subject, m.text || readableBody(m));
       if (!parsed) continue;
       if (parsed.kind === "removed") {
-        if (parsed.reviewer) {
-          const rows = await sql`update reviews set status = 'removed' where status = 'active' and source = 'Google'
-            and (lower(reviewer) = lower(${parsed.reviewer}) or lower(reviewer) like lower(${parsed.reviewer}) || ' %') returning id`;
-          removed += rows.length;
-        }
-        removedSeen = [...removedSeen, id].slice(-60);
+        // Applied below, once every review in this batch is saved (the newest emails are read first, so a removal can arrive before the review it removes).
+        if (parsed.reviewer) removals.push({ name: parsed.reviewer, at: m.receivedAt || Date.now() });
         continue;
       }
       for (const [n, r] of parsed.reviews.entries()) {
@@ -51,7 +48,16 @@ export async function syncReviews(opts: { force?: boolean } = {}): Promise<Revie
         if (rows[0]?.inserted) added++;
       }
     }
-    await setSetting(REMOVED_KEY, JSON.stringify(removedSeen)).catch(() => undefined);
+    // Reviews Google removed: taken out of the numbers. Remembered, and applied every run, so the order the emails arrive in doesn't matter.
+    const seen = new Set<string>();
+    removals = removals.filter((r) => { const k = `${r.name.toLowerCase()}|${r.at}`; return seen.has(k) ? false : (seen.add(k), true); }).slice(-60);
+    await setSetting(REMOVALS_KEY, JSON.stringify(removals)).catch(() => undefined);
+    let removed = 0;
+    for (const r of removals) {
+      const rows = await sql`update reviews set status = 'removed' where status = 'active' and source = 'Google' and reviewed_at <= ${new Date(r.at)}
+        and (lower(reviewer) = lower(${r.name}) or lower(reviewer) like lower(${r.name}) || ' %') returning id`;
+      removed += rows.length;
+    }
     return { added, removed, scanned };
   }, connection, "background");
   if (result.status !== "ok") return { error: result.status === "error" ? result.message : "Gmail isn't connected" };
@@ -77,7 +83,13 @@ export type ReviewStats = {
   thisMonth: { n: number; avg: number | null }; lastMonth: { n: number };
   byMonth: { month: string; n: number }[]; bySource: { source: string; n: number; avg: number | null }[];
   recent: ReviewRow[]; since: number | null; lastSync: number | null;
+  /** What Google's own page says (typed in by staff), since Google doesn't email about every review. */
+  google: { total: number; rating: number | null; at: number } | null;
 };
+
+export async function setGoogleProfile(total: number, rating: number | null) {
+  await setSetting(GOOGLE_KEY, JSON.stringify({ total, rating, at: Date.now() }));
+}
 
 export async function reviewStats(timeZone = dealership.timeZone): Promise<ReviewStats | null> {
   const sql = await readyDb();
@@ -97,11 +109,13 @@ export async function reviewStats(timeZone = dealership.timeZone): Promise<Revie
   const byMonth: { month: string; n: number }[] = [];
   for (let i = 5; i >= 0; i--) { const k = new Date(Date.UTC(y, mo - 1 - i, 1)).toISOString().slice(0, 7); byMonth.push({ month: k, n: find(k)?.n ?? 0 }); }
   const lastSync = Number(await getSetting(LAST_KEY).catch(() => 0)) || null;
+  let google: ReviewStats["google"] = null;
+  try { const raw = await getSetting(GOOGLE_KEY); if (raw) google = JSON.parse(raw); } catch { /* none saved */ }
   return {
     total: t.total, avg: t.avg, fiveStar: t.five, unrated: t.unrated,
     thisMonth: { n: find(thisKey)?.n ?? 0, avg: find(thisKey)?.avg ?? null }, lastMonth: { n: find(lastKey)?.n ?? 0 },
     byMonth, bySource: sources.map((r) => ({ source: r.source as string, n: r.n as number, avg: (r.avg as number) ?? null })),
     recent: recent.map((r) => ({ id: r.id, source: r.source, reviewer: r.reviewer ?? null, rating: r.rating ?? null, body: r.body ?? null, link: r.link ?? null, at: new Date(r.reviewed_at).getTime() })),
-    since: t.since ? new Date(t.since).getTime() : null, lastSync,
+    since: t.since ? new Date(t.since).getTime() : null, lastSync, google,
   };
 }

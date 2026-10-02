@@ -112,6 +112,9 @@ create table if not exists reviews (
 create index if not exists reviews_when on reviews (reviewed_at desc);
 create index if not exists reviews_gmail on reviews (gmail_id);
 alter table reviews enable row level security;
+-- v19: a review Google removed was counted because its removal email was read before the review itself. Repair it and re-read the emails.
+update reviews set status = 'removed' where source = 'Google' and rating = 1 and lower(reviewer) like 'craig%' and reviewed_at < timestamptz '2026-07-09 00:00:00+00';
+delete from app_settings where key in ('reviews_last_sync', 'reviews_removed_seen');
 create index if not exists customers_follow_up on customers (follow_up_at) where follow_up_at is not null;
 create index if not exists leads_kind_received on leads (kind, received_at desc) where not ignored;
 create table if not exists activities (

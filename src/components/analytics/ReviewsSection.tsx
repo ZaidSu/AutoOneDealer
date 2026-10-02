@@ -1,5 +1,5 @@
 import { Columns, Panel, Stat } from "@/components/analytics/Charts";
-import { AddReview, RemoveReview } from "@/components/analytics/AddReview";
+import { AddReview, GoogleNumbers, RemoveReview } from "@/components/analytics/AddReview";
 import type { ReviewStats } from "@/lib/reviews/store";
 
 const stars = (n: number | null) => (n ? "★".repeat(n) + "☆".repeat(5 - n) : "no stars");
@@ -21,9 +21,11 @@ export default function ReviewsSection({ stats }: { stats: ReviewStats | null })
         <>
           <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
             <Stat value={s.thisMonth.n} label="Reviews this month" sub={deltaText} color="#f08c00" />
-            <Stat value={s.avg ? s.avg.toFixed(1) : "n/a"} label="Average rating" sub={s.avg ? `${stars(Math.round(s.avg))} from ${s.total - s.unrated} rated` : "no ratings yet"} color="#f59f00" />
-            <Stat value={s.fiveStar} label="5-star reviews" sub={s.total ? `${Math.round((s.fiveStar / s.total) * 100)}% of all reviews` : "none yet"} color="#0ca678" />
-            <Stat value={s.total} label="Reviews in total" sub={s.since ? `since ${day(s.since)}` : "none yet"} color="#1c7ed6" />
+            <Stat value={s.google?.rating ? s.google.rating.toFixed(1) : s.avg ? s.avg.toFixed(1) : "n/a"} label="Average rating"
+              sub={s.google?.rating ? `on Google (${s.avg ? s.avg.toFixed(1) : "n/a"} from the ${s.total - s.unrated} listed here)` : s.avg ? `${stars(Math.round(s.avg))} from ${s.total - s.unrated} rated` : "no ratings yet"} color="#f59f00" />
+            <Stat value={s.fiveStar} label="5-star reviews" sub={s.total ? `${Math.round((s.fiveStar / s.total) * 100)}% of the ${s.total} listed here` : "none yet"} color="#0ca678" />
+            <Stat value={s.google ? s.google.total : s.total} label="Reviews in total"
+              sub={s.google ? `on Google, as you entered ${day(s.google.at)}. ${s.total} are listed here` : s.since ? `listed here, since ${day(s.since)}` : "none yet"} color="#1c7ed6" />
           </div>
           <div className="mt-4 grid gap-5 lg:grid-cols-2">
             <Panel title="Reviews per month" note="The last 6 months. This month is in red.">
@@ -50,7 +52,9 @@ export default function ReviewsSection({ stats }: { stats: ReviewStats | null })
               )}
             </Panel>
           </div>
+          <GoogleNumbers total={s.google?.total ?? null} rating={s.google?.rating ?? null} />
           <p className="mt-3 text-sm text-muted">
+            {s.google && s.google.total > s.total ? `Google shows ${s.google.total - s.total} more review${s.google.total - s.total === 1 ? "" : "s"} than are listed here. Google doesn't email about every review. ` : ""}
             Google reviews are counted from the &ldquo;new review&rdquo; emails Google sends to the dealership inbox{s.since ? `, starting ${day(s.since)}` : ""}. A review Google never emailed about isn&apos;t counted, so use <b>Add a review</b> for older ones or ones on other sites (Cars.com, Facebook, DealerRater).
             {s.unrated > 0 ? ` ${s.unrated} didn't say how many stars (Google only gives a tally when several come in together), so they're left out of the average.` : ""}
           </p>

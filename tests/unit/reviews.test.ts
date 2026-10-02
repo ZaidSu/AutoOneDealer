@@ -37,3 +37,11 @@ test("a removed review names who it was from; other emails are ignored", () => {
   assert.deepEqual(removed, { kind: "removed", reviewer: "Craig" });
   assert.equal(parseReviewEmail("Auto One Motors, your performance report for August 2026", "930 people viewed"), null);
 });
+
+test("a removal email read BEFORE the review it removes still takes effect (the order bug)", () => {
+  // The newest emails are read first. Simulate the store: removals are collected, then applied after every review is saved.
+  const reviews = [{ reviewer: "Craig Smith", at: Date.parse("2025-05-22"), status: "active" }, { reviewer: "Mo Asad", at: Date.parse("2026-08-21"), status: "active" }];
+  const removals = [{ name: "Craig", at: Date.parse("2026-07-09") }];
+  for (const r of removals) for (const v of reviews) if (v.status === "active" && v.at <= r.at && (v.reviewer.toLowerCase() === r.name.toLowerCase() || v.reviewer.toLowerCase().startsWith(r.name.toLowerCase() + " "))) v.status = "removed";
+  assert.deepEqual(reviews.map((v) => v.status), ["removed", "active"]);
+});

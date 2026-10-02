@@ -1,7 +1,7 @@
 "use client";
 import { useRouter } from "next/navigation";
 import { useState, useTransition } from "react";
-import { addReviewAction, removeReviewAction } from "@/app/actions";
+import { addReviewAction, removeReviewAction, setGoogleProfileAction } from "@/app/actions";
 
 const SOURCES = ["Google", "Facebook", "Cars.com", "DealerRater", "CarsForSale", "Yelp", "Other"];
 const today = () => new Date().toLocaleDateString("en-CA", { timeZone: "America/Chicago" });
@@ -45,4 +45,25 @@ export function RemoveReview({ id }: { id: string }) {
     if (!window.confirm("Take this review out of the numbers?")) return;
     start(async () => { await removeReviewAction(id); router.refresh(); });
   }}>{pending ? "…" : "Remove"}</button>;
+}
+
+/** Google doesn't email about every review, so the totals can be set to what Google's own page shows. */
+export function GoogleNumbers({ total, rating }: { total: number | null; rating: number | null }) {
+  const [t, setT] = useState(total === null ? "" : String(total));
+  const [r, setR] = useState(rating === null ? "" : String(rating));
+  const [msg, setMsg] = useState<{ ok: boolean; text: string } | null>(null);
+  const [pending, start] = useTransition();
+  const router = useRouter();
+  return (
+    <div className="mt-3 flex flex-wrap items-end gap-3 rounded-lg border border-line bg-white p-3">
+      <p className="basis-full text-sm font-semibold">Google&apos;s own numbers <span className="font-normal text-muted">(search your business on Google and type what it shows, so the totals match)</span></p>
+      <label className="field w-32">Reviews<input className="input" inputMode="numeric" placeholder="13" value={t} onChange={(e) => { setT(e.target.value); setMsg(null); }} /></label>
+      <label className="field w-32">Stars (like 4.8)<input className="input" inputMode="decimal" placeholder="5.0" value={r} onChange={(e) => { setR(e.target.value); setMsg(null); }} /></label>
+      <button type="button" className="btn" disabled={pending || !t} onClick={() => start(async () => {
+        const res = await setGoogleProfileAction(Number(t), r === "" ? null : Number(r));
+        setMsg(res.ok ? { ok: true, text: "Saved." } : { ok: false, text: res.error }); if (res.ok) router.refresh();
+      })}>{pending ? "Saving…" : "Save"}</button>
+      {msg && <p role={msg.ok ? "status" : "alert"} className={`text-sm ${msg.ok ? "text-go" : "text-signal"}`}>{msg.text}</p>}
+    </div>
+  );
 }
