@@ -1,6 +1,7 @@
 "use client";
 import { useRouter } from "next/navigation";
 import { useState, useTransition } from "react";
+import { notifyChanged } from "@/lib/client/live";
 import { addSaleAction, importInventoryTextAction, markAvailableAction, markSoldAction, syncInventoryNowAction } from "@/app/actions";
 
 type Msg = { ok: boolean; text: string } | null;
@@ -16,7 +17,7 @@ export function CheckNowButton() {
       <button type="button" className="btn" disabled={pending} onClick={() => start(async () => {
         const r = await syncInventoryNowAction();
         setMsg(r.ok ? { ok: true, text: r.message ?? "Done." } : { ok: false, text: r.error });
-        router.refresh();
+        router.refresh(); notifyChanged();
       })}>{pending ? "Checking…" : "Check website now"}</button>
       {msg && <p role={msg.ok ? "status" : "alert"} className={`max-w-xs text-right text-sm ${msg.ok ? "text-go" : "text-signal"}`}>{msg.text}</p>}
     </div>
@@ -39,7 +40,7 @@ export function MarkSold({ id, price }: { id: string; price: number | null }) {
       <button type="button" className="btn btn-sm btn-red" disabled={pending} onClick={() => start(async () => {
         const r = await markSoldAction(id, amount, date);
         if (!r.ok) return setMsg({ ok: false, text: r.error });
-        setOpen(false); router.refresh();
+        setOpen(false); router.refresh(); notifyChanged();
       })}>{pending ? "Saving…" : "Save"}</button>
       <button type="button" className="btn btn-sm" onClick={() => setOpen(false)}>Cancel</button>
       {msg && <p role="alert" className="text-sm text-signal">{msg.text}</p>}
@@ -53,7 +54,7 @@ export function BackOnLot({ id }: { id: string }) {
   const router = useRouter();
   return <button type="button" className="btn btn-sm" disabled={pending} onClick={() => {
     if (!window.confirm("Put this car back on the lot as available?")) return;
-    start(async () => { await markAvailableAction(id); router.refresh(); });
+    start(async () => { await markAvailableAction(id); router.refresh(); notifyChanged(); });
   }}>{pending ? "…" : "Not sold"}</button>;
 }
 
@@ -106,7 +107,7 @@ export function ImportText() {
         <button type="button" className="btn btn-red" disabled={pending || text.length < 200} onClick={() => start(async () => {
           const r = await importInventoryTextAction(text);
           if (!r.ok) return setMsg({ ok: false, text: r.error });
-          setMsg({ ok: true, text: r.message ?? "Imported." }); setText(""); router.refresh();
+          setMsg({ ok: true, text: r.message ?? "Imported." }); setText(""); router.refresh(); notifyChanged();
         })}>{pending ? "Importing…" : "Import"}</button>
         <button type="button" className="btn" onClick={() => setOpen(false)}>Close</button>
         {text.length > 0 && <span className="text-sm text-muted">{Math.round(text.length / 1000)}K characters pasted</span>}

@@ -164,6 +164,7 @@ function Brand({ dealershipName }: { dealershipName: string }) {
 
 function Nav({ pathname }: { pathname: string }) {
   const todoCount = useLive<{ count: number; urgent?: number }>("/api/todo/count", { every: 3 * 60_000 }).data;
+  const inventoryCount = useLive<{ count: number }>("/api/inventory/count", { every: 5 * 60_000 }).data;
   const [openGroups, setOpenGroups] = useState<Record<string, boolean>>(DEFAULT_OPEN);
   // Remember which groups each person keeps open.
   useEffect(() => {
@@ -193,7 +194,7 @@ function Nav({ pathname }: { pathname: string }) {
             </button>
             {expanded && (
               <ul id={`nav-${entry.id}`} className="mt-0.5 space-y-0.5 border-l border-line pl-2 ml-[21px]">
-                {entry.items.map((item) => <li key={item.href}><NavLink item={item} active={isActive(pathname, item.href)} nested /></li>)}
+                {entry.items.map((item) => <li key={item.href}><NavLink item={item} active={isActive(pathname, item.href)} nested badge={item.href === "/inventory" ? inventoryCount?.count : undefined} /></li>)}
               </ul>
             )}
           </li>
