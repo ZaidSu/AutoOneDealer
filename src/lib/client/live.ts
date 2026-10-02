@@ -64,7 +64,7 @@ export function preloadData(url: string) {
 
 const useIsoLayoutEffect = typeof window === "undefined" ? useEffect : useLayoutEffect;
 
-export function useLive<T>(url: string, { every = 60_000 } = {}) {
+export function useLive<T>(url: string, { every = 60_000, enabled = true }: { every?: number; enabled?: boolean } = {}) {
   const [data, setData] = useState<T | undefined>(undefined);
   const [error, setError] = useState<string | null>(null);
   const [refreshing, setRefreshing] = useState(false);
@@ -86,10 +86,11 @@ export function useLive<T>(url: string, { every = 60_000 } = {}) {
   // Before the first paint: show the saved copy, then check for newer data.
   useIsoLayoutEffect(() => {
     setData(readSaved<T>(url));
-    void load();
-  }, [url, load]);
+    if (enabled) void load();
+  }, [url, load, enabled]);
 
   useEffect(() => {
+    if (!enabled) return;
     const onChanged = () => void load();
     const onVisible = () => {
       if (document.visibilityState === "visible" && Date.now() - (lastLoad.get(url) ?? 0) > 10_000) void load();
@@ -104,7 +105,7 @@ export function useLive<T>(url: string, { every = 60_000 } = {}) {
       document.removeEventListener("visibilitychange", onVisible);
       window.removeEventListener("focus", onVisible);
     };
-  }, [url, load, every]);
+  }, [url, load, every, enabled]);
 
   return { data, error, refreshing, reload: load };
 }

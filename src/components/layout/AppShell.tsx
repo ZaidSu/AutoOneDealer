@@ -163,8 +163,11 @@ function Brand({ dealershipName }: { dealershipName: string }) {
 }
 
 function Nav({ pathname }: { pathname: string }) {
-  const todoCount = useLive<{ count: number; urgent?: number }>("/api/todo/count", { every: 3 * 60_000 }).data;
-  const inventoryCount = useLive<{ count: number }>("/api/inventory/count", { every: 5 * 60_000 }).data;
+  // The sidebar numbers wait a few seconds after the page opens, so the page's own data gets the database first.
+  const [countsReady, setCountsReady] = useState(false);
+  useEffect(() => { const t = setTimeout(() => setCountsReady(true), 3500); return () => clearTimeout(t); }, []);
+  const todoCount = useLive<{ count: number; urgent?: number }>("/api/todo/count", { every: 3 * 60_000, enabled: countsReady }).data;
+  const inventoryCount = useLive<{ count: number }>("/api/inventory/count", { every: 5 * 60_000, enabled: countsReady }).data;
   const [openGroups, setOpenGroups] = useState<Record<string, boolean>>(DEFAULT_OPEN);
   // Remember which groups each person keeps open.
   useEffect(() => {

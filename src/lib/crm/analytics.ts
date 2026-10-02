@@ -1,5 +1,6 @@
 // Analytics numbers, counted inside the database (a handful of small grouped queries, no matter how many leads).
 import { readyDb } from "@/lib/db";
+import { cached } from "@/lib/utils/cache";
 
 export type AnalyticsData = {
   leadsByDay: Map<string, number>;
@@ -10,7 +11,12 @@ export type AnalyticsData = {
   purchases: { source: string; repId: number | null; n: number }[];
 };
 
-export async function analytics(since: Date, timeZone: string): Promise<AnalyticsData | null> {
+/** Worked out at most once every 45 seconds per date range. */
+export function analytics(since: Date, timeZone: string): Promise<AnalyticsData | null> {
+  return cached(`analytics:${since.toISOString()}:${timeZone}`, 45_000, () => computeAnalytics(since, timeZone));
+}
+
+async function computeAnalytics(since: Date, timeZone: string): Promise<AnalyticsData | null> {
   const sql = await readyDb();
   if (!sql) return null;
   const [days, providers, people, appts, purchases] = await Promise.all([

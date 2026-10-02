@@ -4,6 +4,7 @@ import { getSetting, setSetting } from "@/lib/db/data";
 import { dealership } from "@/lib/dealership";
 import { readableBody, withGmail } from "@/lib/gmail";
 import { loadGmailConnection } from "@/lib/gmail/connection";
+import { cached, dropCached } from "@/lib/utils/cache";
 import { dayKey } from "@/lib/utils/time";
 import { parseReviewEmail } from "./parse";
 
@@ -60,18 +61,21 @@ export async function syncReviews(opts: { force?: boolean } = {}): Promise<Revie
     }
     return { added, removed, scanned };
   }, connection, "background");
+  if (result.status === "ok" && (result.data.added || result.data.removed)) dropCached("reviews:");
   if (result.status !== "ok") return { error: result.status === "error" ? result.message : "Gmail isn't connected" };
   await setSetting(LAST_KEY, String(Date.now())).catch(() => undefined);
   return result.data;
 }
 
 export async function addReview(input: { source: string; reviewer: string; rating: number; text: string; reviewedOn: Date }, by: string) {
+  dropCached("reviews:");
   const sql = await readyDb();
   if (!sql) throw new Error("no_db");
   await sql`insert into reviews (id, source, reviewer, rating, body, reviewed_at, added_by) values (${`manual-${Date.now()}`}, ${input.source}, ${input.reviewer || null}, ${input.rating}, ${input.text || null}, ${input.reviewedOn}, ${by})`;
 }
 
 export async function removeReview(id: string) {
+  dropCached("reviews:");
   const sql = await readyDb();
   if (!sql) throw new Error("no_db");
   await sql`update reviews set status = 'removed' where id = ${id}`;
@@ -88,10 +92,15 @@ export type ReviewStats = {
 };
 
 export async function setGoogleProfile(total: number, rating: number | null) {
+  dropCached("reviews:");
   await setSetting(GOOGLE_KEY, JSON.stringify({ total, rating, at: Date.now() }));
 }
 
-export async function reviewStats(timeZone = dealership.timeZone): Promise<ReviewStats | null> {
+export function reviewStats(timeZone = dealership.timeZone): Promise<ReviewStats | null> {
+  return cached(`reviews:stats:${timeZone}`, 30_000, () => computeReviewStats(timeZone));
+}
+
+async function computeReviewStats(timeZone: string): Promise<ReviewStats | null> {
   const sql = await readyDb();
   if (!sql) return null;
   const [[t], months, sources, recent] = await Promise.all([
@@ -118,4 +127,21 @@ export async function reviewStats(timeZone = dealership.timeZone): Promise<Revie
     recent: recent.map((r) => ({ id: r.id, source: r.source, reviewer: r.reviewer ?? null, rating: r.rating ?? null, body: r.body ?? null, link: r.link ?? null, at: new Date(r.reviewed_at).getTime() })),
     since: t.since ? new Date(t.since).getTime() : null, lastSync, google,
   };
+}
+
+/** Just what the Overview needs: this month's reviews, last month's, and the average. One small query. */
+export function reviewSummary(timeZone = dealership.timeZone): Promise<{ thisMonth: number; lastMonth: number; avg: number | null; total: number; google: ReviewStats["google"] }> {
+  return cached(`reviews:summary:${timeZone}`, 30_000, async () => {
+    const sql = await readyDb();
+    let google: ReviewStats["google"] = null;
+    try { const raw = await getSetting(GOOGLE_KEY); if (raw) google = JSON.parse(raw); } catch { /* none saved */ }
+    if (!sql) return { thisMonth: 0, lastMonth: 0, avg: null, total: 0, google };
+    const thisKey = dayKey(Date.now(), timeZone).slice(0, 7);
+    const [y, mo] = thisKey.split("-").map(Number);
+    const lastKey = new Date(Date.UTC(y, mo - 2, 1)).toISOString().slice(0, 7);
+    const [r] = await sql`select count(*) filter (where to_char(reviewed_at at time zone ${timeZone}, 'YYYY-MM') = ${thisKey})::int as this_month,
+        count(*) filter (where to_char(reviewed_at at time zone ${timeZone}, 'YYYY-MM') = ${lastKey})::int as last_month, avg(rating)::float8 as avg, count(*)::int as total
+        from reviews where status = 'active'`;
+    return { thisMonth: r.this_month as number, lastMonth: r.last_month as number, avg: (r.avg as number) ?? null, total: r.total as number, google };
+  });
 }

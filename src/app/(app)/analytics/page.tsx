@@ -1,6 +1,7 @@
 import { requirePageStaff } from "@/lib/auth/guard";
 import type { Metadata } from "next";
 import Link from "next/link";
+import { Suspense } from "react";
 import { BarList, Columns, Panel, SplitBar, Stat, stateColor } from "@/components/analytics/Charts";
 import ChannelSummary from "@/components/ai/ChannelSummary";
 import ReviewsSection from "@/components/analytics/ReviewsSection";
@@ -11,8 +12,8 @@ import { analytics, type AnalyticsData } from "@/lib/crm/analytics";
 import { dbState, fresh } from "@/lib/db";
 import { listReps } from "@/lib/db/data";
 import { dataStartLabel, dealership, notBeforeStart } from "@/lib/dealership";
-import { inventoryStats } from "@/lib/inventory/store";
-import { reviewStats, syncReviews } from "@/lib/reviews/store";
+import { inventoryCounts, inventoryStats } from "@/lib/inventory/store";
+import { reviewStats, reviewSummary, syncReviews } from "@/lib/reviews/store";
 import { textStats } from "@/lib/sms";
 import { stateName } from "@/lib/utils/geo";
 import { sourceColor } from "@/lib/utils/sourceColors";
@@ -70,17 +71,55 @@ export default async function AnalyticsPage({ searchParams }: { searchParams: Pr
     </>
   );
   if (!dbReady) return <>{header}<DbNotice state={state} what="Analytics" /></>;
+  // The tabs and date buttons appear straight away; the numbers for the chosen tab stream in underneath.
+  return (
+    <>
+      {header}
+      <Suspense key={`${tab}-${range}`} fallback={<TabSkeleton />}>
+        <TabContent tab={tab} range={range} since={since} days={days} state={state} />
+      </Suspense>
+    </>
+  );
+}
+
+function TabSkeleton() {
+  return (
+    <div aria-busy="true" aria-label="Loading" className="grid max-w-5xl gap-5">
+      <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">{[0, 1, 2, 3].map((i) => <div key={i} className="panel h-24 animate-pulse bg-line/40" />)}</div>
+      <div className="grid gap-5 lg:grid-cols-2">{[0, 1].map((i) => <div key={i} className="panel h-56 animate-pulse bg-line/40" />)}</div>
+    </div>
+  );
+}
+
+type TabProps = { tab: Tab; range: Range; since: Date; days: number; state: Awaited<ReturnType<typeof dbState>> };
+
+/** What's under the tabs. Loaded on its own, so a slow query never holds up the tabs or the date buttons, and a failure shows a message right here. */
+async function TabContent(props: TabProps) {
+  try {
+    return await TabBody(props);
+  } catch (error) {
+    console.error(`[autodash:analytics] ${props.tab} failed:`, error instanceof Error ? error.message : error);
+    return (
+      <p role="alert" className="max-w-5xl rounded-xl border border-lane/40 bg-[#fdf6e3] px-4 py-3 text-[15px]">
+        This part took too long to load. Nothing was lost. <Link href={`/analytics?tab=${props.tab}&range=${props.range}`} className="font-semibold text-signal underline">Try again</Link>
+      </p>
+    );
+  }
+}
+
+async function TabBody({ tab, range, since, days, state }: TabProps) {
+  const today = dayKey(Date.now(), tz);
+  const dbReady = true;
   if (tab === "reviews") {
     // Pick up any new review emails (at most every 30 minutes; the first time it reads them all). Never holds the page up for long.
-    await Promise.race([syncReviews().catch(() => undefined), new Promise((r) => setTimeout(r, 9000))]);
-    return <>{header}<ReviewsSection stats={await reviewStats(tz).catch(() => null)} /></>;
+    await Promise.race([syncReviews().catch(() => undefined), new Promise((r) => setTimeout(r, 6000))]);
+    return <><ReviewsSection stats={await reviewStats(tz).catch(() => null)} /></>;
   }
   if (tab === "ai") {
     const aiDays = range === "all" ? 365 : Number(range);
     const [em, tx] = await fresh("AI numbers", () => Promise.all([replyStats(aiDays), textStats(aiDays)]));
     return (
       <>
-        {header}
         <div className="grid max-w-5xl gap-8">
           <ChannelSummary title="AI emails" note={`${RANGES[range]}. Details are under AI emails → History.`}
             stats={[
@@ -98,11 +137,15 @@ export default async function AnalyticsPage({ searchParams }: { searchParams: Pr
       </>
     );
   }
-  const [inv, reviews] = tab === "overview" || tab === "sales"
-    ? await Promise.all([inventoryStats(tz).catch(() => null), tab === "overview" ? reviewStats(tz).catch(() => null) : Promise.resolve(null)])
-    : [null, null];
-  const [data, reps] = await fresh("Analytics", () => Promise.all([analytics(since, tz), listReps(true)]));
-  if (!data) return <>{header}<DbNotice state={state} what="Analytics" /></>;
+  // Everything this tab needs, asked for all at once (the heavy numbers are also remembered for 30 to 45 seconds).
+  const [data, reps, inv, reviews, counts] = await fresh("Analytics", () => Promise.all([
+    analytics(since, tz),
+    listReps(true),
+    tab === "sales" ? inventoryStats(tz).catch(() => null) : Promise.resolve(null),
+    tab === "overview" ? reviewSummary(tz).catch(() => null) : Promise.resolve(null),
+    tab === "overview" ? inventoryCounts().catch(() => null) : Promise.resolve(null),
+  ]), 9000, 12000);
+  if (!data) return <DbNotice state={state} what="Analytics" />;
 
   type P = AnalyticsData["people"][number];
   const rows = data.people;
@@ -167,8 +210,6 @@ export default async function AnalyticsPage({ searchParams }: { searchParams: Pr
 
   return (
     <>
-      {header}
-
       {tab === "overview" && (
         <>
           <section aria-label="Totals" className="mb-6 grid max-w-5xl grid-cols-2 gap-4 lg:grid-cols-4">
@@ -179,9 +220,9 @@ export default async function AnalyticsPage({ searchParams }: { searchParams: Pr
       </section>
 
           <section aria-label="Cars and reviews" className="mb-6 grid max-w-5xl grid-cols-2 gap-4 lg:grid-cols-4">
-            <Stat value={inv?.available ?? 0} label="Cars for sale" sub="on your website" color="#1f7a4d" />
-            <Stat value={inv?.sold ?? 0} label="Cars sold" sub="since AutoDash started tracking" color="#c8102e" />
-            <Stat value={reviews?.thisMonth.n ?? 0} label="Reviews this month" sub={reviews ? `${reviews.lastMonth.n} last month` : "none yet"} color="#f08c00" />
+            <Stat value={counts?.available ?? 0} label="Cars for sale" sub="on your website" color="#1f7a4d" />
+            <Stat value={counts?.sold ?? 0} label="Cars sold" sub="since AutoDash started tracking" color="#c8102e" />
+            <Stat value={reviews?.thisMonth ?? 0} label="Reviews this month" sub={reviews ? `${reviews.lastMonth} last month` : "none yet"} color="#f08c00" />
             <Stat value={reviews?.google?.rating ? reviews.google.rating.toFixed(1) : reviews?.avg ? reviews.avg.toFixed(1) : "n/a"} label="Average rating" sub={reviews?.google ? `${reviews.google.total} reviews on Google` : reviews ? `${reviews.total} reviews` : "no reviews yet"} color="#f59f00" />
           </section>
 

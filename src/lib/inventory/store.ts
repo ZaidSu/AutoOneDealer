@@ -4,6 +4,7 @@
 import { readyDb } from "@/lib/db";
 import { getSetting, setSetting } from "@/lib/db/data";
 import { fetchInventory, type Inventory } from "./fetch";
+import { cached, dropCached } from "@/lib/utils/cache";
 import { seedText } from "./seed";
 import { makeAndModel, mergePageStore, pagesToRead, parsePastedInventory, SITE_PAGE, type Listing, type PageStore } from "./match";
 
@@ -55,6 +56,7 @@ async function recordFailure(error: string, prev: SyncState | null): Promise<Syn
 
 /** Saves a read of the website (from the server, or sent by the dealership computer) into the inventory table. */
 export async function applyInventory(inv: Inventory): Promise<SyncState> {
+  dropCached("inv:");
   const sql = await readyDb();
   if (!sql) return recordFailure("The database isn't connected.", await getSyncState());
   const started = new Date();
@@ -161,17 +163,20 @@ export async function readSnapshot(): Promise<{ listings: Listing[]; sold: Listi
 
 // ---- by hand ----
 export async function markSold(id: string, price: number | null, soldOn: Date, by: string) {
+  dropCached("inv:");
   const sql = await readyDb();
   if (!sql) throw new Error("no_db");
   await sql`update inventory set status = 'sold', sold_at = ${soldOn}, sold_price = coalesce(${price}, price), sold_by = ${by}, sold_note = 'Marked sold by staff', updated_at = now() where id = ${id}`;
 }
 export async function markAvailable(id: string) {
+  dropCached("inv:");
   const sql = await readyDb();
   if (!sql) throw new Error("no_db");
   // Back on the lot. Cleared of the sale; the website decides from here (if it's still listed it stays available).
   await sql`update inventory set status = 'available', sold_at = null, sold_price = null, sold_by = null, sold_note = null, missed = 0, last_seen = now(), updated_at = now() where id = ${id}`;
 }
 export async function addSale(input: { title: string; year: number | null; price: number; soldOn: Date }, by: string) {
+  dropCached("inv:");
   const sql = await readyDb();
   if (!sql) throw new Error("no_db");
   const slug = input.title.replace(/^\s*(?:19|20)\d{2}\s+/, "").toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "");
@@ -189,7 +194,21 @@ export type InventoryStats = {
   lotByMake: { make: string; n: number }[];
 };
 
-export async function inventoryStats(timeZone: string): Promise<InventoryStats> {
+export function inventoryStats(timeZone: string): Promise<InventoryStats> {
+  return cached(`inv:stats:${timeZone}`, 30_000, () => computeInventoryStats(timeZone));
+}
+
+/** Just the two numbers the Overview needs: one small query. */
+export function inventoryCounts(): Promise<{ available: number; sold: number }> {
+  return cached("inv:counts", 30_000, async () => {
+    const sql = await readyDb();
+    if (!sql) return { available: 0, sold: 0 };
+    const [r] = await sql`select count(*) filter (where status = 'available')::int as available, count(*) filter (where status = 'sold' and sold_at is not null)::int as sold from inventory`;
+    return { available: r.available as number, sold: r.sold as number };
+  });
+}
+
+async function computeInventoryStats(timeZone: string): Promise<InventoryStats> {
   const sql = await readyDb();
   const empty: InventoryStats = { available: 0, sold: 0, soldUnknown: 0, avgAsking: null, totalAsking: null, soldTotal: 0, avgSold: null, byMonth: [], byMake: [], byPrice: [], lotByMake: [] };
   if (!sql) return empty;
@@ -259,6 +278,7 @@ export async function seedInventoryOnce(): Promise<boolean> {
 /** For cars that aren't the dealership's (they're on the website for someone else): gone from the lot, the sold list, every number, and the AI.
  *  Stays deleted even if the website keeps listing it. Restore brings it back. */
 export async function removeCar(id: string) {
+  dropCached("inv:");
   const sql = await readyDb();
   if (!sql) throw new Error("no_db");
   await sql`update inventory set status = 'deleted', sold_note = 'Deleted by staff', updated_at = now() where id = ${id}`;

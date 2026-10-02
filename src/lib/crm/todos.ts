@@ -4,6 +4,7 @@
 import { dealership, dataStartDate } from "@/lib/dealership";
 import { readyDb } from "@/lib/db";
 import { formatMoney } from "@/lib/utils/format";
+import { cached, dropCached } from "@/lib/utils/cache";
 import { addDays, dayKey, zonedToUtc } from "@/lib/utils/time";
 import { ago, isKeywordOnly, LABEL, mergeRows, snippet, stateKey, WEIGHT, wantsToBuy, type Reason, type TodoReason, type TodoRow } from "./todo-rules";
 
@@ -15,7 +16,12 @@ const REPLY_MIN_AGE_MS = 10 * 60_000;
 
 type Flat = Parameters<typeof mergeRows>[0][number];
 
-export async function getTodos(): Promise<{ rows: TodoRow[]; problems: string[] }> {
+/** Worked out at most once every 30 seconds (the sidebar number, the dashboard and the To do page all ask for it). */
+export function getTodos(): Promise<{ rows: TodoRow[]; problems: string[] }> {
+  return cached("todos", 30_000, computeTodos);
+}
+
+async function computeTodos(): Promise<{ rows: TodoRow[]; problems: string[] }> {
   const sql = await readyDb();
   if (!sql) return { rows: [], problems: ["The database isn't connected."] };
   const now = Date.now();
@@ -138,6 +144,7 @@ export async function setTodoState(keys: string[], days: number, by: string) {
   const sql = await readyDb();
   if (!sql) throw new Error("no_db");
   const until = days > 0 ? zonedToUtc(addDays(dayKey(Date.now(), tz), days), "07:00", tz) : null;
+  dropCached("todos");
   for (const key of keys) {
     await sql`insert into todo_state (key, state, until, by) values (${key}, ${days > 0 ? "snoozed" : "done"}, ${until}, ${by})
       on conflict (key) do update set state = excluded.state, until = excluded.until, by = excluded.by, updated_at = now()`;
