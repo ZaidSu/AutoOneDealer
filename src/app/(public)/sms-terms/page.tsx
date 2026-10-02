@@ -14,7 +14,7 @@ export default function SmsTermsPage() {
       <P>Text messages from {L.dealer} about a vehicle you asked about or bought: answers to your questions, appointment confirmations and reminders, availability updates, and a check-in after your purchase. We do not send promotional blasts or send your number to anyone to market to you.</P>
 
       <H2>How you agree</H2>
-      <P>You agree to receive these texts when you (1) submit an inquiry or finance application on {L.website} or on CarsForSale.com and give us your phone number, (2) text our number first, or (3) agree on our sales paperwork when you buy a car. Consent to receive texts is <b>not a condition of buying anything</b> from us.</P>
+      <P>You agree to receive these texts when you (1) sign up on our <Link className="font-semibold text-signal hover:underline" href="/text-updates">text updates page</Link> by entering your mobile number and checking the agreement box, (2) submit an inquiry or finance application on {L.website} or on CarsForSale.com and give us your phone number, (3) text our number first, or (4) agree on our sales paperwork when you buy a car. Consent to receive texts is <b>not a condition of buying anything</b> from us.</P>
 
       <H2>Message frequency and cost</H2>
       <P>Message frequency varies. Usually it is a few messages around your inquiry, visit or purchase. <b>Message and data rates may apply</b>, according to your mobile plan.</P>

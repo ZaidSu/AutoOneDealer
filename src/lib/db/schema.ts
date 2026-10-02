@@ -75,6 +75,21 @@ create table if not exists todo_state (
   updated_at timestamptz not null default now()
 );
 alter table todo_state enable row level security;
+-- v15: proof that people agreed to receive texts (the public sign-up form)
+create table if not exists sms_consents (
+  id bigserial primary key,
+  phone text not null,
+  name text,
+  vehicle text,
+  source text not null default 'text-updates page',
+  consent_text text not null,
+  ip text,
+  user_agent text,
+  created_at timestamptz not null default now()
+);
+create index if not exists sms_consents_phone on sms_consents (phone, created_at desc);
+create index if not exists sms_consents_ip on sms_consents (ip, created_at desc);
+alter table sms_consents enable row level security;
 create index if not exists customers_follow_up on customers (follow_up_at) where follow_up_at is not null;
 create index if not exists leads_kind_received on leads (kind, received_at desc) where not ignored;
 create table if not exists activities (

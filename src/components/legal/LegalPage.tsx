@@ -4,6 +4,7 @@ import { LEGAL } from "@/lib/legal/config";
 
 const LINKS = [
   { href: "/privacy", label: "Privacy Policy" },
+  { href: "/text-updates", label: "Get text updates" },
   { href: "/sms-terms", label: "Text Message Terms" },
   { href: "/email-terms", label: "Email Terms" },
   { href: "/terms", label: "AutoDash Service Agreement" },

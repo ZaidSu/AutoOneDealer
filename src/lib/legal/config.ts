@@ -20,3 +20,6 @@ export const LEGAL = {
 
 /** The footer added to every AI email, so each one says who sent it and how to stop. */
 export const EMAIL_FOOTER = `--\n${LEGAL.dealer} | ${LEGAL.address} | ${LEGAL.phone}\nDon't want emails from us? Just reply "unsubscribe" and we'll stop.`;
+
+/** The exact words next to the sign-up checkbox. Saved with every sign-up as proof of what the person agreed to. */
+export const SMS_CONSENT_TEXT = `By checking this box and submitting, I agree to receive text messages from ${LEGAL.dealer} at the mobile number I entered, about my vehicle inquiry or purchase (such as answers to my questions, appointment reminders and follow-ups). Message frequency varies. Message and data rates may apply. Reply STOP to cancel and HELP for help. Consent is not a condition of any purchase.`;
