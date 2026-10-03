@@ -91,6 +91,42 @@ function TabSkeleton() {
   );
 }
 
+const money = (n: number | null | undefined) => (n == null ? "n/a" : n.toLocaleString("en-US", { style: "currency", currency: "USD", maximumFractionDigits: 0 }));
+const monthLabel = (m: string) => new Date(`${m}-15T12:00:00Z`).toLocaleDateString("en-US", { month: "short", year: "2-digit", timeZone: "UTC" });
+
+/** The Sales tab's cars-sold numbers, from the Inventory page. Gives up after 10 seconds with a message instead of loading forever. */
+async function SalesCars({ range }: { range: Range }) {
+  const inv = await Promise.race([inventoryStats(tz).catch(() => null), new Promise<null>((r) => setTimeout(() => r(null), 10_000))]);
+  if (!inv) {
+    return (
+      <p role="alert" className="mt-8 max-w-5xl rounded-xl border border-lane/40 bg-[#fdf6e3] px-4 py-3 text-[15px]">
+        The cars sold numbers took too long to load. Nothing was lost. <Link href={`/analytics?tab=sales&range=${range}`} className="font-semibold text-signal underline">Try again</Link>
+      </p>
+    );
+  }
+  return (
+    <>
+      <h2 className="mb-3 mt-8 text-lg font-semibold">Cars sold</h2>
+      <section aria-label="Cars sold totals" className="mb-5 grid max-w-5xl grid-cols-2 gap-4 lg:grid-cols-4">
+        <Stat value={inv.sold} label="Cars sold" sub={inv.soldTotal ? `${money(inv.soldTotal)} in sales` : "since AutoDash started tracking"} color="#c8102e" />
+        <Stat value={money(inv.avgSold)} label="Average sold price" color="#1c7ed6" />
+        <Stat value={inv.available} label="Cars for sale" sub="on your website" color="#1f7a4d" />
+      </section>
+      <div className="grid max-w-5xl gap-5 lg:grid-cols-2">
+        <Panel title="Cars sold per month" note="Not affected by the date range. Cars sold by date, from the Inventory page.">
+          <Columns items={inv.byMonth.map((m) => ({ label: monthLabel(m.month), value: m.n }))} color="#c8102e" highlightLast emptyText="No sales recorded yet." />
+        </Panel>
+        <Panel title="Best-selling makes" note="Cars sold, by make.">
+          <BarList items={inv.byMake.map((m) => ({ label: m.make, value: m.n, note: m.avg ? `avg ${money(m.avg)}` : undefined }))} emptyText="No sales recorded yet." />
+        </Panel>
+        <Panel title="What price range sells" note="Cars sold, grouped by what they sold for." wide>
+          <BarList items={inv.byPrice.map((p) => ({ label: p.label, value: p.n }))} emptyText="No sales recorded yet." />
+        </Panel>
+      </div>
+    </>
+  );
+}
+
 type TabProps = { tab: Tab; range: Range; since: Date; days: number; state: Awaited<ReturnType<typeof dbState>> };
 
 /** What's under the tabs. Loaded on its own, so a slow query never holds up the tabs or the date buttons, and a failure shows a message right here. */
@@ -138,13 +174,12 @@ async function TabBody({ tab, range, since, days, state }: TabProps) {
     );
   }
   // Everything this tab needs, asked for all at once (the heavy numbers are also remembered for 30 to 45 seconds).
-  const [data, reps, inv, reviews, counts] = await fresh("Analytics", () => Promise.all([
+  const [data, reps, reviews, counts] = await fresh("Analytics", () => Promise.all([
     analytics(since, tz),
     listReps(true),
-    tab === "sales" ? inventoryStats(tz).catch(() => null) : Promise.resolve(null),
     tab === "overview" ? reviewSummary(tz).catch(() => null) : Promise.resolve(null),
     tab === "overview" ? inventoryCounts().catch(() => null) : Promise.resolve(null),
-  ]), 9000, 12000);
+  ]), 6000, 12000);
   if (!data) return <DbNotice state={state} what="Analytics" />;
 
   type P = AnalyticsData["people"][number];
@@ -205,9 +240,6 @@ async function TabBody({ tab, range, since, days, state }: TabProps) {
     purchased: data.purchases.reduce((n, p) => n + (p.repId === r.id ? p.n : 0), 0),
   }));
 
-  const money = (n: number | null | undefined) => (n == null ? "n/a" : n.toLocaleString("en-US", { style: "currency", currency: "USD", maximumFractionDigits: 0 }));
-  const monthLabel = (m: string) => new Date(`${m}-15T12:00:00Z`).toLocaleDateString("en-US", { month: "short", year: "2-digit", timeZone: "UTC" });
-
   return (
     <>
       {tab === "overview" && (
@@ -263,8 +295,6 @@ async function TabBody({ tab, range, since, days, state }: TabProps) {
           <section aria-label="Sales totals" className="mb-6 grid max-w-5xl grid-cols-2 gap-4 lg:grid-cols-4">
             <Stat value={applications} label="Applied for credit" sub={people ? `${Math.round((applications / people) * 100)}% of customers` : "people"} color="#f08c00" />
             <Stat value={purchased} label="Marked purchased" sub="by your team, in this range" color="#0ca678" />
-            <Stat value={inv?.sold ?? 0} label="Cars sold" sub={inv?.soldTotal ? `${money(inv.soldTotal)} in sales` : "since AutoDash started tracking"} color="#c8102e" />
-            <Stat value={money(inv?.avgSold)} label="Average sold price" color="#1c7ed6" />
           </section>
           <div className="grid max-w-5xl gap-5 lg:grid-cols-2">
             <Panel title="Credit applications" note="Received means the application arrived; it isn't an approval. Approved and denied come from the Financing label.">
@@ -278,16 +308,11 @@ async function TabBody({ tab, range, since, days, state }: TabProps) {
             <Panel title="Which sources lead to purchases" note="Customers marked Purchased in this range, by where they heard about us.">
           {dbReady ? <BarList items={purchasesBySource} colorFor={sourceColor} emptyText="No purchases marked in this range yet." /> : <DbNotice state={state} what="This chart" />}
         </Panel>
-            <Panel title="Cars sold per month" note="Not affected by the date range. Cars sold by date, from the Inventory page.">
-              <Columns items={(inv?.byMonth ?? []).map((m) => ({ label: monthLabel(m.month), value: m.n }))} color="#c8102e" highlightLast emptyText="No sales recorded yet." />
-            </Panel>
-            <Panel title="Best-selling makes" note="Cars sold, by make.">
-              <BarList items={(inv?.byMake ?? []).map((m) => ({ label: m.make, value: m.n, note: m.avg ? `avg ${money(m.avg)}` : undefined }))} emptyText="No sales recorded yet." />
-            </Panel>
-            <Panel title="What price range sells" note="Cars sold, grouped by what they sold for." wide>
-              <BarList items={(inv?.byPrice ?? []).map((p) => ({ label: p.label, value: p.n }))} emptyText="No sales recorded yet." />
-            </Panel>
           </div>
+          {/* The cars sold numbers load on their own, so a slow one never holds up the panels above. */}
+          <Suspense fallback={<div aria-busy="true" className="mt-8 grid max-w-5xl gap-5 lg:grid-cols-2">{[0, 1].map((i) => <div key={i} className="panel h-48 animate-pulse bg-line/40" />)}</div>}>
+            <SalesCars range={range} />
+          </Suspense>
         </>
       )}
 
