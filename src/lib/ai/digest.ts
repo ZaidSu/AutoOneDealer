@@ -30,20 +30,25 @@ async function gather(from: number, to: number): Promise<DigestData | null> {
   const sql = await readyDb();
   if (!sql) return null;
   const since = new Date(Math.max(from, dataStartDate().getTime()));
-  const q = <T,>(p: Promise<T>, fallback: T) => p.catch((e) => { console.error("[autodash:digest]", e instanceof Error ? e.message : e); return fallback; });
+  // Each query on its own: if one fails the update is still sent with the rest.
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  type Row = Record<string, any>;
+  const q = async (query: PromiseLike<unknown>): Promise<Row[]> => {
+    try { return (await query) as Row[]; } catch (e) { console.error("[autodash:digest]", e instanceof Error ? e.message : e); return []; }
+  };
   const [people, sent, drafts, emails, texts, appts, newCars, soldCars] = await Promise.all([
     q(sql`select l.name, l.phone, l.email, l.vehicle, l.provider, l.comments, l.received_at, c.contacted_at,
             r.status as reply_status, r.sent_at as reply_sent_at
           from leads l left join customers c on c.key = l.customer_key left join ai_replies r on r.lead_id = l.message_id
-          where not l.ignored and l.received_at >= ${since} order by l.received_at asc limit 30`, []),
-    q(sql`select customer_name, to_email, vehicle, sent_at, sent_by from ai_replies where status = 'sent' and sent_at >= ${since} order by sent_at asc limit 30`, []),
-    q(sql`select count(*)::int as n from ai_replies where status = 'draft'`, [{ n: 0 }]),
-    q(sql`select from_name, from_email, body, received_at from customer_replies where received_at >= ${since} order by received_at asc limit 20`, []),
+          where not l.ignored and l.received_at >= ${since} order by l.received_at asc limit 30`),
+    q(sql`select customer_name, to_email, vehicle, sent_at, sent_by from ai_replies where status = 'sent' and sent_at >= ${since} order by sent_at asc limit 30`),
+    q(sql`select count(*)::int as n from ai_replies where status = 'draft'`),
+    q(sql`select from_name, from_email, body, received_at from customer_replies where received_at >= ${since} order by received_at asc limit 20`),
     q(sql`select m.phone, m.body, m.created_at, c.name from sms_messages m left join customers c on c.key = m.customer_key
-          where m.direction = 'in' and m.created_at >= ${since} order by m.created_at asc limit 20`, []),
-    q(sql`select customer_name, phone, vehicle, starts_at from appointments where status = 'scheduled' and starts_at between now() and now() + interval '24 hours' order by starts_at limit 15`, []),
-    q(sql`select title from inventory where status = 'available' and first_seen >= ${since} order by first_seen limit 10`, []),
-    q(sql`select title from inventory where status = 'sold' and sold_at >= ${since} order by sold_at limit 10`, []),
+          where m.direction = 'in' and m.created_at >= ${since} order by m.created_at asc limit 20`),
+    q(sql`select customer_name, phone, vehicle, starts_at from appointments where status = 'scheduled' and starts_at between now() and now() + interval '24 hours' order by starts_at limit 15`),
+    q(sql`select title from inventory where status = 'available' and first_seen >= ${since} order by first_seen limit 10`),
+    q(sql`select title from inventory where status = 'sold' and sold_at >= ${since} order by sold_at limit 10`),
   ]);
   return {
     dealership: dealership.name, timeZone: dealership.timeZone, from, to, appUrl: (process.env.APP_URL ?? "").replace(/\/+$/, "") || null,
