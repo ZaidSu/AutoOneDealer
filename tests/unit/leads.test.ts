@@ -112,3 +112,27 @@ test("the car falls back to the subject line when the email has no vehicle block
   const lead = parseLead({ from: "comm+x@carsforsalemail.com", subject: "New Lead – 2014 Cadillac CTS – Carsforsale.com", text: "", html: fixture("cfs-lead.html") })!;
   assert.equal(lead.vehicle, "2014 Cadillac CTS");
 });
+
+test("OfferUp buyer message becomes a lead whose email is OfferUp's private reply address", () => {
+  const from = "Zaid (OfferUp) <reply-808138aa128c439e98de0c21edd0fc47@messages.offerup.com>";
+  const lead = parseLead({ from, subject: "Re: 2015 Nissan Murano", text: fixture("offerup-message.txt"), html: "" })!;
+  assert.equal(lead.kind, "inquiry");
+  assert.equal(lead.provider, "OfferUp");
+  assert.equal(lead.type, "OfferUp message");
+  assert.equal(lead.name, "Zaid");
+  assert.equal(lead.email, "reply-808138aa128c439e98de0c21edd0fc47@messages.offerup.com");
+  assert.equal(lead.vehicle, "2015 Nissan Murano");
+  assert.equal(lead.comments, "Hello");
+  assert.equal(lead.phone, null);
+  assert.equal(lead.location, null, "the town printed under the car is the dealership's, not the buyer's");
+});
+
+test("OfferUp: a message of several lines, an HTML-only email, and promotions that are not messages", () => {
+  const from = "Maria G (OfferUp) <reply-abc123@messages.offerup.com>";
+  const multi = parseLead({ from, subject: "Re: 2019 Honda Civic", text: "Maria G:\n“Is this still available?\nCan I come today?”\n2019 Honda Civic\t2019 Honda Civic\nDallas, TX - $14,500.00", html: "" })!;
+  assert.equal(multi.comments, "Is this still available?\nCan I come today?");
+  const html = parseLead({ from, subject: "Re: 2019 Honda Civic", text: "", html: "<div>Respond to Maria G by simply replying to this email.</div><p>Maria G:</p><p>&ldquo;What&#39;s your best price?&rdquo;</p><p>2019 Honda Civic</p>" })!;
+  assert.equal(html.comments, "What's your best price?");
+  assert.equal(parseLead({ from: "OfferUp <noreply@offerup.com>", subject: "Re: your listing", text: "Promote your listing", html: "" }), null);
+  assert.equal(parseLead({ from: "OfferUp <reply-abc123@messages.offerup.com>", subject: "Re: 2019 Honda Civic", text: "nothing quoted here", html: "" }), null);
+});

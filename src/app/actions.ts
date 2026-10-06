@@ -473,6 +473,46 @@ export async function savePurchaseFollowupAction(on: boolean, days: number): Pro
   return { ok: true, message: on ? `Saved. Customers get a follow-up text ${d} day${d === 1 ? "" : "s"} after they're marked purchased.` : "Saved. Purchase follow-up texts are off." };
 }
 
+export async function saveAiScheduleAction(input: { days: number[]; from: string; to: string }): Promise<ActionResult> {
+  const staff = await requireStaff();
+  if (!staff) return fail("Your session ended. Sign in again.");
+  if (!can.editAiSettings(staff.role)) return fail(AI_EDIT_DENIED);
+  const { scheduleProblem } = await import("@/lib/ai/hours");
+  const problem = scheduleProblem({ days: Array.isArray(input?.days) ? input.days.map(Number) : [], from: String(input?.from ?? ""), to: String(input?.to ?? "") });
+  if (problem) return fail(problem);
+  const { saveAiSchedule, describeSchedule } = await import("@/lib/ai/schedule");
+  try {
+    const saved = await saveAiSchedule({ days: input.days.map(Number), from: input.from, to: input.to });
+    revalidatePath("/ai/automations"); revalidatePath("/ai/emails"); revalidatePath("/ai/texts");
+    return { ok: true, message: `Saved. The AI works ${describeSchedule(saved)} (Dallas time).` };
+  } catch { return NO_DB; }
+}
+
+export async function saveDigestSettingsAction(input: { on: boolean; everyMin: number; to: string }): Promise<ActionResult> {
+  const staff = await requireStaff();
+  if (!staff) return fail("Your session ended. Sign in again.");
+  if (!can.editAiSettings(staff.role)) return fail(AI_EDIT_DENIED);
+  const { DIGEST_EVERY, saveDigestSettings } = await import("@/lib/ai/digest");
+  const everyMin = Math.round(Number(input?.everyMin));
+  if (!(DIGEST_EVERY as readonly number[]).includes(everyMin)) return fail("Pick how often from the list.");
+  const to = String(input?.to ?? "").trim().toLowerCase();
+  if (to && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(to)) return fail("That email address doesn't look right.");
+  try { await saveDigestSettings({ on: Boolean(input?.on), everyMin, to }); } catch { return NO_DB; }
+  revalidatePath("/ai/automations");
+  return { ok: true, message: input?.on ? `Saved. An update goes out about every ${everyMin} minutes while the AI is working, if anything happened.` : "Saved. Update emails are off." };
+}
+
+export async function sendDigestNowAction(): Promise<ActionResult> {
+  const staff = await requireStaff();
+  if (!staff) return fail("Your session ended. Sign in again.");
+  if (!can.editAiSettings(staff.role)) return fail(AI_EDIT_DENIED);
+  const { sendDigestIfDue } = await import("@/lib/ai/digest");
+  try {
+    const r = await sendDigestIfDue({ force: true });
+    return r.sent ? { ok: true, message: `Update email ${r.reason}. Check the inbox.` } : fail(`Couldn't send it: ${r.reason}.`);
+  } catch (error) { return fail(error instanceof Error ? error.message : "Couldn't send the update."); }
+}
+
 export async function acceptAgreementAction(): Promise<ActionResult> {
   const staff = await requireStaff();
   if (!staff) return fail("Your session ended. Sign in again.");
@@ -686,6 +726,28 @@ export async function turnOffCardAutopayAction(): Promise<ActionResult> {
   await setCardAutopay(null);
   revalidatePath("/billing");
   return { ok: true, message: "Autopay is off. Pay each bill with the Pay button." };
+}
+
+// ---- Removing a customer ----
+
+export async function removeCustomerAction(key: string): Promise<ActionResult> {
+  const staff = await requireStaff();
+  if (!staff) return fail("Your session ended. Sign in again.");
+  if (!can.deleteCustomers(staff.role)) return fail("Only owners and managers can remove customers.");
+  if (!KEY_PATTERN.test(key)) return fail("Unknown customer.");
+  const { removeCustomer } = await import("@/lib/customers/remove");
+  try {
+    const r = await removeCustomer(key);
+    if (!r.removed) return fail("This customer was already removed.");
+    console.log(`[autodash:customers] ${staff.name} removed ${key} (${r.leads} lead emails hidden)`);
+  } catch { return NO_DB; }
+  revalidatePath("/customers");
+  revalidatePath("/pipeline");
+  revalidatePath("/leads");
+  revalidatePath("/dashboard");
+  revalidatePath("/todo");
+  revalidatePath("/analytics");
+  return { ok: true, message: "Customer removed." };
 }
 
 // ---- Adding a customer by hand (walk-ins, phone calls, referrals) ----

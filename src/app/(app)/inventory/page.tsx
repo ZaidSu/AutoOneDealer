@@ -5,7 +5,7 @@ import DbNotice from "@/components/ui/DbNotice";
 import PageHeader from "@/components/ui/PageHeader";
 import { requirePageStaff } from "@/lib/auth/guard";
 import { dbState, fresh } from "@/lib/db";
-import { getSyncState, inventoryStats, listCars, seedInventoryOnce } from "@/lib/inventory/store";
+import { aiViewOfInventory, getSyncState, inventoryStats, listCars, seedInventoryOnce } from "@/lib/inventory/store";
 
 export const metadata: Metadata = { title: "Inventory" };
 export const dynamic = "force-dynamic";
@@ -26,7 +26,7 @@ export default async function InventoryPage() {
   const state = await dbState();
   if (state !== "ready") return <>{header}<DbNotice state={state} what="Inventory" /></>;
   await seedInventoryOnce().catch(() => undefined); // the first time, loads the cars from the website text sent on Oct 2
-  const [sync, stats, lot, sold, deleted] = await fresh("Inventory", () => Promise.all([getSyncState(), inventoryStats(TZ), listCars("available"), listCars("sold", 100), listCars("deleted", 100)]));
+  const [sync, stats, lot, sold, deleted, aiView] = await fresh("Inventory", () => Promise.all([getSyncState(), inventoryStats(TZ), listCars("available"), listCars("sold", 100), listCars("deleted", 100), aiViewOfInventory()]));
 
   const best = stats.byMonth.length ? [...stats.byMonth].sort((a, b) => b.n - a.n)[0] : null;
   const bestMake = stats.byMake[0] ?? null;
@@ -39,6 +39,11 @@ export default async function InventoryPage() {
         {!sync ? "Not read from the website yet. The timer does it every 5 minutes, or click Check website now."
           : sync.ok ? `Checked ${ago(sync.at)}: ${sync.count} cars on the website${sync.via === "helper" ? " (read through a helper service, because the website doesn't answer AutoDash directly)" : sync.via === "pushed" ? " (sent by the dealership computer)" : sync.via === "pasted" ? " (pasted from the website, trusted for a day)" : ""}${sync.complete ? "" : `. Only part of the website could be read${sync.pagesExpected ? ` (${sync.pagesRead ?? 0} of ${sync.pagesExpected} pages)` : ""}, so nothing is being marked sold. It keeps trying every 5 minutes`}.`
           : `The last check ${ago(sync.at)} failed: ${sync.error}. The AI says a salesperson will confirm availability until this is fixed.`}
+      </p>
+
+      <p role="status" className={`-mt-3 mb-6 rounded-xl px-4 py-3 text-[15px] ${aiView.ok ? "bg-go-soft text-go" : "border border-signal/30 bg-warn-soft text-ink"}`}>
+        <span className="font-semibold">What the AI sees: </span>{aiView.text}
+        {aiView.noLink > 0 && ` ${aiView.noLink} car${aiView.noLink === 1 ? " has" : "s have"} no link yet (they came from pasted text); they're replaced by the real ones after the next full read of the website.`}
       </p>
 
       <div className="mb-6"><ImportText /></div>
@@ -73,14 +78,23 @@ export default async function InventoryPage() {
         <p className="mb-3 text-sm text-muted">Copied from your website. When a car disappears from the website it moves to Sold on its own. Sold by hand sooner? Use Mark sold. A car that isn't yours (it's on the website for someone else)? Use Delete.</p>
         {lot.length === 0 ? <p className="panel p-5 text-muted">No cars yet.</p> : (
           <div className="panel overflow-x-auto">
-            <table className="w-full min-w-[640px] text-left text-[15px]">
-              <thead className="border-b border-line text-sm text-muted"><tr><th className="px-4 py-2.5 font-semibold">Car</th><th className="px-4 py-2.5 font-semibold">Price</th><th className="px-4 py-2.5 font-semibold">Miles</th><th className="px-4 py-2.5 font-semibold">First seen</th><th className="px-4 py-2.5" /></tr></thead>
+            <table className="w-full min-w-[760px] text-left text-[15px]">
+              <thead className="border-b border-line text-sm text-muted"><tr><th className="px-4 py-2.5 font-semibold">Car</th><th className="px-4 py-2.5 font-semibold">Price</th><th className="px-4 py-2.5 font-semibold">Miles</th><th className="px-4 py-2.5 font-semibold">VIN</th><th className="px-4 py-2.5 font-semibold">First seen</th><th className="px-4 py-2.5" /></tr></thead>
               <tbody className="divide-y divide-line">
                 {lot.map((c) => (
                   <tr key={c.id}>
-                    <td className="px-4 py-2.5 font-medium">{c.url ? <a href={c.url} target="_blank" rel="noopener noreferrer" className="hover:underline">{c.title}</a> : c.title}</td>
+                    <td className="px-4 py-2.5 font-medium">
+                      <span className="flex items-center gap-3">
+                        {c.imageUrl && (
+                          // eslint-disable-next-line @next/next/no-img-element
+                          <img src={c.imageUrl} alt="" width={64} height={48} loading="lazy" className="h-12 w-16 shrink-0 rounded-md bg-line object-cover" />
+                        )}
+                        <span>{c.url ? <a href={c.url} target="_blank" rel="noopener noreferrer" className="hover:underline">{c.title}</a> : c.title}{c.images.length > 1 && <span className="font-normal text-muted"> · {c.images.length} photos</span>}</span>
+                      </span>
+                    </td>
                     <td className="px-4 py-2.5 tabular-nums">{usd(c.price)}</td>
                     <td className="px-4 py-2.5 tabular-nums">{c.mileage ? c.mileage.toLocaleString("en-US") : ""}</td>
+                    <td className="px-4 py-2.5 font-mono text-sm text-muted" title={c.vin ?? undefined}>{c.vin ? <><span>{c.vin.slice(0, -6)}</span><span className="font-semibold text-ink">{c.vin.slice(-6)}</span></> : "…"}</td>
                     <td className="px-4 py-2.5 text-muted">{day(c.firstSeen)}</td>
                     <td className="px-4 py-2.5 text-right"><span className="inline-flex flex-wrap items-center justify-end gap-2"><MarkSold id={c.id} price={c.price} /><RemoveCar id={c.id} /></span></td>
                   </tr>

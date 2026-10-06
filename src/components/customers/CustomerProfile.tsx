@@ -5,6 +5,7 @@ import Chip from "@/components/ui/Chip";
 import type { CustomerView } from "@/lib/customers/view";
 import { displayName, formatDateTime, formatPhone } from "@/lib/utils/format";
 import CustomerEditor from "./CustomerEditor";
+import RemoveCustomerButton from "./RemoveCustomerButton";
 
 type Option = { value: string; label: string };
 type Props = { customer: CustomerView; reps: { id: number; name: string }[]; sources: string[]; statuses: readonly Option[]; financing: readonly Option[]; today: string };
@@ -43,6 +44,9 @@ export default function CustomerProfile({ customer, ...rest }: Props) {
 
       <section aria-label="Details you can change" className="card mt-5 p-5">
         <CustomerEditor view={view} setView={setView} {...rest} />
+        <div className="mt-5 border-t border-line pt-4">
+          <RemoveCustomerButton customerKey={view.key} name={view.name} purchased={view.status === "purchased"} />
+        </div>
       </section>
     </>
   );

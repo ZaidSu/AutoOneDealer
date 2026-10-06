@@ -6,7 +6,8 @@ import { DAYS } from "@/lib/ai/types";
 import { logActivity } from "@/lib/crm/queries";
 import { readyDb, trace } from "@/lib/db";
 import { getSetting, setSetting } from "@/lib/db/data";
-import { dealership, inAiHours } from "@/lib/dealership";
+import { dealership } from "@/lib/dealership";
+import { aiHoursOpen } from "@/lib/ai/schedule";
 import { channelOn } from "@/lib/ai/switches";
 import { availabilityNote } from "@/lib/inventory";
 import { keywordFor } from "./keywords";
@@ -219,7 +220,7 @@ Write the dealership's next text.`;
   // One waiting draft per conversation: a newer customer text replaces the older draft.
   await sql`update sms_messages set status = 'discarded' where phone = ${e164} and status = 'draft'`;
   const [draft] = await sql`insert into sms_messages (customer_key, phone, direction, body, status, ai) values (${customerKey}, ${e164}, 'out', ${reply}, 'draft', true) returning id`;
-  if ((await getAutoText()) && inAiHours()) {
+  if ((await getAutoText()) && (await aiHoursOpen())) {
     const sent = await sendText({ customerKey, phone: e164, body: reply, sentBy: "AI (automatic)", ai: true, draftId: Number(draft.id) });
     trace("sms", `AI reply ${sent.ok ? "sent" : `left as draft: ${sent.error}`}`);
     return sent.ok ? "sent" : "drafted";
@@ -244,7 +245,7 @@ export async function sendPurchaseFollowups({ max = 3 } = {}): Promise<{ drafted
   const none = { drafted: 0, sent: 0, skipped: 0 };
   if (!twilioConfigured()) return { ...none, waiting: "Twilio isn't connected yet." };
   if (!aiConfigured()) return { ...none, waiting: "The AI key isn't set up." };
-  if (!inAiHours()) return { ...none, waiting: "Outside AI hours." };
+  if (!(await aiHoursOpen())) return { ...none, waiting: "Outside AI hours." };
   if (!(await channelOn("text"))) return { ...none, waiting: "AI texts are switched off." };
   const settings = await getPurchaseFollowup();
   if (!settings.on) return { ...none, waiting: "Purchase follow-ups are switched off." };

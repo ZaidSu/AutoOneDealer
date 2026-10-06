@@ -32,6 +32,7 @@ const LANES: Record<Lane, { rate: number; tokens: number; last: number; pausedUn
 };
 
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
+let markReadBlockedUntil = 0;
 
 function slowDown(lane: Lane, ms: number) {
   const until = Date.now() + ms;
@@ -126,6 +127,27 @@ export class GmailClient {
     const bodies = { text: "", html: "" };
     collectBodies(m.payload, bodies);
     return { ...toSummary(m), text: bodies.text, html: bodies.html };
+  }
+
+  /** Marks emails as read (removes the unread label). Needs the "modify" permission; returns "no_permission" if Gmail was connected without it. */
+  async markRead(ids: string[]): Promise<"ok" | "no_permission" | "failed"> {
+    const unique = [...new Set(ids)].filter(Boolean);
+    if (unique.length === 0) return "ok";
+    if (Date.now() < markReadBlockedUntil) return "no_permission";
+    for (let i = 0; i < unique.length; i += 100) {
+      await takeTurn(this.lane);
+      const response = await fetch("https://gmail.googleapis.com/gmail/v1/users/me/messages/batchModify", {
+        method: "POST", cache: "no-store",
+        headers: { Authorization: `Bearer ${this.token}`, "Content-Type": "application/json" },
+        body: JSON.stringify({ ids: unique.slice(i, i + 100), removeLabelIds: ["UNREAD"] }),
+      });
+      if (response.status === 403 || response.status === 401) {
+        markReadBlockedUntil = Date.now() + 30 * 60_000; // don't ask again for half an hour
+        return "no_permission";
+      }
+      if (!response.ok) return "failed";
+    }
+    return "ok";
   }
 
   /** Sends a plain-text email from the connected mailbox. Returns Gmail's id for the sent message. */
@@ -251,9 +273,9 @@ export async function mapLimit<T, R>(items: T[], limit: number, fn: (item: T) =>
 
 const NOT_OURS = "-in:sent -in:drafts";
 export const LEAD_QUERIES = {
-  all: `(subject:lead OR subject:"loan app" OR subject:"pre-qualification" OR subject:prequalification) ${NOT_OURS}`,
+  all: `(subject:lead OR subject:"loan app" OR subject:"pre-qualification" OR subject:prequalification OR from:messages.offerup.com) ${NOT_OURS}`,
   application: `(subject:"loan app" OR subject:"pre-qualification" OR subject:prequalification) ${NOT_OURS}`,
-  inquiry: `subject:lead -subject:"loan app" ${NOT_OURS}`,
+  inquiry: `(subject:lead OR from:messages.offerup.com) -subject:"loan app" ${NOT_OURS}`,
 } as const;
 export type LeadFilter = keyof typeof LEAD_QUERIES;
 

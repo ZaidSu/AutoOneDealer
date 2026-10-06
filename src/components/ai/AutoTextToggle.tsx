@@ -9,7 +9,7 @@ export default function AutoTextToggle({ initial, canChange }: { initial: boolea
   const [pending, start] = useTransition();
   const flip = () => {
     const next = !on;
-    if (next && !window.confirm("Turn on automatic texting? The AI will text customers back by itself, Mon to Sat 9 AM to 7 PM, without anyone checking first. Every text shows here and on the customer's page.")) return;
+    if (next && !window.confirm("Turn on automatic texting? The AI will text customers back by itself during the AI hours (set under Automations), without anyone checking first. Every text shows here and on the customer's page.")) return;
     start(async () => {
       const r = await setAutoTextAction(next);
       if (r.ok) setOn(next);

@@ -3,9 +3,13 @@
 export const SIGNIN_SCOPES = ["openid", "email", "profile"];
 // Read the mailbox, and send the AI replies a person approves (nothing else: no deleting, no changing mail).
 export const GMAIL_SEND_SCOPE = "https://www.googleapis.com/auth/gmail.send";
-export const GMAIL_SCOPES = ["https://www.googleapis.com/auth/gmail.readonly", GMAIL_SEND_SCOPE];
+// Also allowed to mark the emails AutoDash has handled as read (nothing else: it never deletes or moves mail).
+export const GMAIL_MODIFY_SCOPE = "https://www.googleapis.com/auth/gmail.modify";
+export const GMAIL_SCOPES = ["https://www.googleapis.com/auth/gmail.readonly", GMAIL_SEND_SCOPE, GMAIL_MODIFY_SCOPE];
 /** Connections made before sending was added don't have permission to send until Gmail is reconnected. */
 export const canSendFrom = (c: { scopes?: string } | null) => Boolean(c?.scopes?.split(" ").includes(GMAIL_SEND_SCOPE));
+/** Connections made before this was added can't mark emails as read until Gmail is reconnected. */
+export const canMarkRead = (c: { scopes?: string } | null) => Boolean(c?.scopes?.split(" ").includes(GMAIL_MODIFY_SCOPE));
 
 type AuthUrlOptions = { state: string; scopes: string[]; offline?: boolean; loginHint?: string };
 

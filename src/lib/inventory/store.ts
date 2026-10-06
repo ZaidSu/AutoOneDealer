@@ -3,10 +3,10 @@
 // (15 minutes, with every page read each time) is recorded as sold; staff can correct that by hand.
 import { readyDb } from "@/lib/db";
 import { getSetting, setSetting } from "@/lib/db/data";
-import { fetchInventory, type Inventory } from "./fetch";
+import { fetchInventory, getHtml, type Inventory } from "./fetch";
 import { cached, dropCached } from "@/lib/utils/cache";
 import { seedText } from "./seed";
-import { makeAndModel, mergePageStore, pagesToRead, parsePastedInventory, SITE_PAGE, type Listing, type PageStore } from "./match";
+import { makeAndModel, mergePageStore, pagesToRead, parseDetailPage, parsePastedInventory, SITE_PAGE, type Listing, type PageStore } from "./match";
 
 export type SyncState = { at: number; ok: boolean; count: number; complete: boolean; added: number; sold: number; error: string | null; via?: "direct" | "helper" | "pushed" | "pasted"; pagesRead?: number; pagesExpected?: number | null };
 const SYNC_KEY = "inventory_sync";
@@ -62,12 +62,12 @@ export async function applyInventory(inv: Inventory): Promise<SyncState> {
   const started = new Date();
   const toRow = (l: Listing) => {
     const { make, model } = makeAndModel(l);
-    return { id: l.id, finance_id: l.financeId, url: l.url, year: l.year, make, model, slug: l.slug, title: l.title || `${l.year ?? ""} ${make} ${model}`.trim(), price: l.price, mileage: l.mileage };
+    return { id: l.id, finance_id: l.financeId, url: l.url, year: l.year, make, model, slug: l.slug, title: l.title || `${l.year ?? ""} ${make} ${model}`.trim(), price: l.price, mileage: l.mileage, image_url: l.image ?? null };
   };
   const live = inv.listings.filter((l) => !l.sold).map(toRow);
   const flagged = inv.listings.filter((l) => l.sold).map(toRow);
-  const shape = "id text, finance_id text, url text, year int, make text, model text, slug text, title text, price int, mileage int";
-  const cols = "id, finance_id, url, year, make, model, slug, title, price, mileage";
+  const shape = "id text, finance_id text, url text, year int, make text, model text, slug text, title text, price int, mileage int, image_url text";
+  const cols = "id, finance_id, url, year, make, model, slug, title, price, mileage, image_url";
   let added = 0;
   const before = new Set((await sql`select id from inventory`).map((r) => r.id as string));
   added = live.filter((r) => !before.has(r.id)).length;
@@ -76,35 +76,43 @@ export async function applyInventory(inv: Inventory): Promise<SyncState> {
     await sql`insert into inventory (${sql.unsafe(cols)}, status, last_seen, missed)
       select ${sql.unsafe(cols)}, 'available', now(), 0 from jsonb_to_recordset(${sql.json(live.slice(i, i + 200))}::jsonb) as x(${sql.unsafe(shape)})
       on conflict (id) do update set finance_id = excluded.finance_id, url = excluded.url, year = excluded.year, make = excluded.make, model = excluded.model,
-        slug = excluded.slug, title = excluded.title, price = excluded.price, mileage = excluded.mileage, last_seen = now(), missed = 0, updated_at = now(),
+        slug = excluded.slug, title = excluded.title, price = excluded.price, mileage = excluded.mileage, image_url = coalesce(excluded.image_url, inventory.image_url), last_seen = now(), missed = 0, updated_at = now(),
         -- A car that left the website and came back is available again, unless staff marked it sold by hand.
         -- A deleted car stays deleted even if the website lists it. Otherwise: available again, unless staff marked it sold by hand.
-        status = case when inventory.status = 'deleted' then 'deleted' when inventory.sold_by is not null then inventory.status else 'available' end,
+        status = case when inventory.status in ('deleted', 'duplicate') then inventory.status when inventory.sold_by is not null then inventory.status else 'available' end,
         sold_at = case when inventory.sold_by is not null then inventory.sold_at else null end,
         sold_price = case when inventory.sold_by is not null then inventory.sold_price else null end,
         sold_note = case when inventory.sold_by is not null then inventory.sold_note else null end`;
   }
-  // Cards the website itself marks Sold. A car we had seen for sale and now see as Sold sold sometime since: dated now. One we are
-  // meeting for the first time already Sold has no known date or price, so it's kept out of AutoDash entirely (status "ignored").
+  // Cards the website itself marks Sold. A car we already had for sale and now see as Sold sold sometime since: dated now.
+  // A car we have never had on the lot that is already Sold on the website is NOT added to AutoDash at all (no row is created).
   let soldNow = 0;
-  for (let i = 0; i < flagged.length; i += 200) {
-    const rows = await sql`insert into inventory (${sql.unsafe(cols)}, status, last_seen, sold_at, sold_price, sold_note)
-      select ${sql.unsafe(cols)}, 'ignored', now(), null, null, 'Already Sold on the website when first seen' from jsonb_to_recordset(${sql.json(flagged.slice(i, i + 200))}::jsonb) as x(${sql.unsafe(shape)})
-      on conflict (id) do update set last_seen = now(), updated_at = now(),
-        status = 'sold', sold_at = now(), sold_price = coalesce(inventory.sold_price, inventory.price, excluded.price),
-        sold_note = 'Marked sold on the website'
-      where inventory.status = 'available' returning (xmax = 0) as inserted`;
-    soldNow += rows.filter((r) => !r.inserted).length;
+  const flaggedIds = flagged.map((r) => r.id);
+  if (flaggedIds.length) {
+    const rows = await sql`update inventory set last_seen = now(), updated_at = now(),
+        status = 'sold', sold_at = now(), sold_price = coalesce(sold_price, price), sold_note = 'Marked sold on the website'
+      where id = any(${flaggedIds}) and status = 'available' returning id`;
+    soldNow += rows.length;
   }
   // A car deleted by staff (not the dealership's own) stays deleted: any other row for the same car (same name and mileage), like one
   // that the website lists under a new id, is deleted too.
   await sql`update inventory r set status = 'deleted', updated_at = now() where r.status <> 'deleted' and exists (
     select 1 from inventory d where d.status = 'deleted' and d.id <> r.id and lower(d.title) = lower(r.title) and d.mileage is not distinct from r.mileage)`;
-  // Cars added from pasted text have made-up ids. Once the website itself has been read in full, the real listing replaces them.
+  // Cars added from pasted text have made-up ids and no link. Once the website itself has been read in full, every real car is in the
+  // table with its own link, so the made-up copies on the lot go (whether or not they matched a real one by name).
   if (inv.complete && inv.via !== "pasted") {
-    await sql`delete from inventory t where t.id like 'txt-%' and exists (
-      select 1 from inventory r where r.id not like 'txt-%' and lower(r.title) = lower(t.title) and r.mileage is not distinct from t.mileage and r.status = t.status)`;
+    await sql`delete from inventory where id like 'txt-%' and status in ('available', 'ignored')`;
   }
+  // Duplicates: the same car listed twice (same name and mileage, or the same VIN). The newest copy stays on the lot; the other is set
+  // aside as "duplicate" (hidden everywhere, but remembered so the website listing it again doesn't bring it back).
+  await sql`update inventory a set status = 'duplicate', updated_at = now() from inventory b
+    where a.id <> b.id and a.status = 'available' and b.status = 'available' and a.sold_by is null
+      and ((a.mileage is not null and a.mileage = b.mileage and lower(a.title) = lower(b.title)) or (a.vin is not null and a.vin = b.vin))
+      and (b.last_seen > a.last_seen or (b.last_seen = a.last_seen and b.id > a.id))`;
+  // If the copy that stayed has since left the website but the other is still listed, the other is the car on the lot.
+  await sql`update inventory d set status = 'available', missed = 0, updated_at = now() where d.status = 'duplicate' and d.last_seen >= ${started}
+    and not exists (select 1 from inventory k where k.status = 'available' and k.id <> d.id
+      and ((d.mileage is not null and k.mileage = d.mileage and lower(k.title) = lower(d.title)) or (d.vin is not null and k.vin = d.vin)))`;
   // Cars that weren't on the website this time. Only counted when every page was read, so a half-loaded website
   // can't make cars look sold; and only after 3 checks in a row.
   if (inv.complete) {
@@ -122,6 +130,7 @@ export async function applyInventory(inv: Inventory): Promise<SyncState> {
 export type StoredCar = {
   id: string; url: string | null; year: number | null; make: string | null; model: string | null; slug: string | null; title: string; price: number | null; mileage: number | null;
   status: "available" | "sold" | "deleted"; firstSeen: number; lastSeen: number; soldAt: number | null; soldPrice: number | null; soldBy: string | null; soldNote: string | null;
+  vin: string | null; imageUrl: string | null; images: string[];
 };
 const ms = (v: unknown) => (v ? new Date(v as string).getTime() : null);
 const toCar = (r: Record<string, unknown>): StoredCar => ({
@@ -129,6 +138,7 @@ const toCar = (r: Record<string, unknown>): StoredCar => ({
   title: (r.title as string) || [r.year, r.make, r.model].filter(Boolean).join(" "), price: (r.price as number) ?? null, mileage: (r.mileage as number) ?? null,
   status: r.status as "available" | "sold" | "deleted", firstSeen: ms(r.first_seen) ?? 0, lastSeen: ms(r.last_seen) ?? 0, soldAt: ms(r.sold_at), soldPrice: (r.sold_price as number) ?? null,
   soldBy: (r.sold_by as string) ?? null, soldNote: (r.sold_note as string) ?? null,
+  vin: (r.vin as string) ?? null, imageUrl: (r.image_url as string) ?? null, images: Array.isArray(r.images) ? (r.images as string[]) : [],
 });
 
 export async function listCars(status: "available" | "sold" | "deleted", limit = 200): Promise<StoredCar[]> {
@@ -143,12 +153,15 @@ export async function listCars(status: "available" | "sold" | "deleted", limit =
 }
 
 const SNAPSHOT_MAX_AGE_MS = 30 * 60_000;
-/** What the AI reads: the saved copy of the website, if it was refreshed in the last 30 minutes. Null if it's too old. */
+/** A saved copy up to this old can still say "yes, that car is listed" (cars rarely vanish within hours), but never "it may be sold". */
+const SNAPSHOT_STALE_MS = 3 * 3600_000;
+/** What the AI reads: the saved copy of the website. Fresh (30 minutes) it can say a car is gone; up to 3 hours old it can only say a car is listed. */
 export async function readSnapshot(): Promise<{ listings: Listing[]; sold: Listing[]; complete: boolean; fetchedAt: number } | null> {
   const sql = await readyDb();
   if (!sql) return null;
   const state = await getSyncState();
-  if (!state?.ok || Date.now() - state.at > (state.via === "pasted" ? PASTED_FRESH_MS : SNAPSHOT_MAX_AGE_MS)) return null;
+  const age = state ? Date.now() - state.at : Infinity;
+  if (!state?.ok || age > (state.via === "pasted" ? PASTED_FRESH_MS : SNAPSHOT_STALE_MS)) return null;
   const [avail, sold] = await Promise.all([
     sql`select * from inventory where status = 'available'`,
     sql`select * from inventory where status = 'sold' and (sold_at is null or sold_at > now() - interval '90 days') and slug is not null`,
@@ -157,8 +170,29 @@ export async function readSnapshot(): Promise<{ listings: Listing[]; sold: Listi
   const toListing = (r: Record<string, unknown>, isSold: boolean): Listing => ({
     id: r.id as string, financeId: (r.finance_id as string) ?? null, url: (r.url as string) ?? "", year: (r.year as number) ?? null, slug: (r.slug as string) ?? "",
     title: (r.title as string) ?? "", price: (r.price as number) ?? null, mileage: (r.mileage as number) ?? null, sold: isSold,
+    vin: (r.vin as string) ?? null,
   });
-  return { listings: avail.map((r) => toListing(r, false)), sold: sold.map((r) => toListing(r, true)), complete: state.complete, fetchedAt: state.at };
+  const fresh = state.via === "pasted" || age <= SNAPSHOT_MAX_AGE_MS;
+  return { listings: avail.map((r) => toListing(r, false)), sold: sold.map((r) => toListing(r, true)), complete: state.complete && fresh, fetchedAt: state.at };
+}
+
+/** In plain words: what the AI can use right now to say whether a car is available, and what's wrong if it can't. */
+export async function aiViewOfInventory(): Promise<{ ok: boolean; text: string; noLink: number }> {
+  const sql = await readyDb();
+  if (!sql) return { ok: false, text: "The database isn't connected, so the AI can't check cars.", noLink: 0 };
+  const state = await getSyncState();
+  const [c] = await sql`select count(*) filter (where status = 'available')::int as n, count(*) filter (where status = 'available' and (url is null or url = ''))::int as no_link from inventory`;
+  const n = c.n as number;
+  const noLink = c.no_link as number;
+  if (!state) return { ok: false, text: "The AI has nothing to check yet: the website hasn't been read.", noLink };
+  const age = Date.now() - state.at;
+  const mins = Math.round(age / 60_000);
+  const agoText = mins < 60 ? `${mins} minutes ago` : `${Math.round(mins / 60)} hours ago`;
+  if (!state.ok) return { ok: false, text: `The AI can't check cars: the last website read failed (${state.error ?? "no reason given"}). It tells customers a salesperson will confirm until this is fixed.`, noLink };
+  if (age > (state.via === "pasted" ? PASTED_FRESH_MS : SNAPSHOT_STALE_MS)) return { ok: false, text: `The AI can't check cars: the last good read of the website was ${agoText}, which is too old. It tells customers a salesperson will confirm. Click Check website now, or see whether the website is turning AutoDash away.`, noLink };
+  if (n === 0) return { ok: false, text: "The AI can't check cars: no cars are on the lot in AutoDash.", noLink };
+  const partial = !state.complete ? " Only part of the website was read, so it can say a car is available but never that it may be sold." : age > SNAPSHOT_MAX_AGE_MS && state.via !== "pasted" ? " The copy is a little old, so it can say a car is available but not that it may be sold." : "";
+  return { ok: true, text: `The AI is checking ${n} cars from a copy saved ${agoText}.${partial}`, noLink };
 }
 
 // ---- by hand ----
@@ -183,6 +217,39 @@ export async function addSale(input: { title: string; year: number | null; price
   const { make, model } = makeAndModel({ title: input.title, slug, year: input.year });
   await sql`insert into inventory (id, title, year, make, model, slug, price, status, sold_at, sold_price, sold_by, sold_note, last_seen)
     values (${`manual-${Date.now()}`}, ${input.title}, ${input.year}, ${make}, ${model}, ${slug}, ${input.price}, 'sold', ${input.soldOn}, ${input.price}, ${by}, 'Added by staff', now())`;
+}
+
+// ---- VIN and photos from each car's own page ----
+const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
+
+/** Opens a few cars' own pages on the website and saves each one's VIN and photos. Only cars on the lot that have no VIN yet.
+ *  A car whose page couldn't be read (or shows no VIN) is tried again after 24 hours, so a broken page isn't fetched every 5 minutes.
+ *  `deadline` is when the caller's time runs out; nothing new is started in the last 25 seconds. */
+export async function enrichInventory(opts: { max?: number; deadline?: number } = {}): Promise<{ saved: number; noVin: number; failed: number; waiting: number }> {
+  const sql = await readyDb();
+  if (!sql) return { saved: 0, noVin: 0, failed: 0, waiting: 0 };
+  const rows = await sql`select id, url, image_url from inventory
+    where status = 'available' and vin is null and url is not null and url <> '' and (details_at is null or details_at < now() - interval '24 hours')
+    order by details_at asc nulls first, first_seen desc limit ${opts.max ?? 3}`;
+  let saved = 0;
+  let noVin = 0;
+  let failed = 0;
+  for (const r of rows) {
+    if (opts.deadline && Date.now() > opts.deadline - 25_000) break;
+    try {
+      const { vin, images } = parseDetailPage(await getHtml(r.url as string), (r.image_url as string) ?? null);
+      await sql`update inventory set vin = ${vin}, images = ${sql.json(images)}, details_at = now(), updated_at = now() where id = ${r.id}`;
+      if (vin) saved++; else noVin++;
+    } catch (error) {
+      failed++;
+      console.error("[autodash:inventory] couldn't read a car's page:", error instanceof Error ? error.message : error);
+      await sql`update inventory set details_at = now() where id = ${r.id}`.catch(() => undefined);
+    }
+    await sleep(1_500);
+  }
+  const [{ n }] = await sql`select count(*)::int as n from inventory where status = 'available' and vin is null and url is not null and url <> ''`;
+  dropCached("inv:");
+  return { saved, noVin, failed, waiting: n as number };
 }
 
 // ---- numbers for the page ----

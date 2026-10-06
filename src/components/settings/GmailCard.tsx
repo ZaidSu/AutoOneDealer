@@ -3,10 +3,10 @@
 import { useState } from "react";
 
 type Connection = { mailbox: string; connectedAt: number; connectedBy: string } | null;
-type Props = { connection: Connection; canManage: boolean; expectedMailbox: string; notice: { tone: "ok" | "error"; text: string } | null; shared: boolean; canSend?: boolean };
+type Props = { connection: Connection; canManage: boolean; expectedMailbox: string; notice: { tone: "ok" | "error"; text: string } | null; shared: boolean; canSend?: boolean; canMarkRead?: boolean };
 type Result = { tone: "ok" | "error"; text: string; code?: string } | null;
 
-export default function GmailCard({ connection, canManage, expectedMailbox, notice, shared, canSend = false }: Props) {
+export default function GmailCard({ connection, canManage, expectedMailbox, notice, shared, canSend = false, canMarkRead = true }: Props) {
   const [busy, setBusy] = useState<"test" | "disconnect" | null>(null);
   const [result, setResult] = useState<Result>(notice);
   const [connected, setConnected] = useState(connection);
@@ -53,6 +53,12 @@ export default function GmailCard({ connection, canManage, expectedMailbox, noti
         <p className="mt-3 rounded-lg border border-lane/40 bg-[#fdf6e3] px-4 py-3 text-sm">
           <span className="font-semibold">Reconnect Gmail to turn on AI email replies.</span> AutoDash can read this inbox but doesn&apos;t
           have permission to send yet. Click Reconnect Gmail and allow sending. It only sends replies someone approves; it can&apos;t delete anything.
+        </p>
+      ) : null}
+      {connected && canSend && !canMarkRead ? (
+        <p className="mt-3 rounded-lg border border-lane/40 bg-[#fdf6e3] px-4 py-3 text-sm">
+          <span className="font-semibold">Reconnect Gmail so AutoDash can mark handled emails as read.</span> It can read and send now, but doesn&apos;t
+          have permission to mark the lead emails and customer replies it has handled as read yet. Click Reconnect Gmail and allow it. It never deletes or moves mail.
         </p>
       ) : null}
       {!connected && (

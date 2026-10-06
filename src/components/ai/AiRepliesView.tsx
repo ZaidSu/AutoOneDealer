@@ -79,7 +79,7 @@ export function EmailSettingsPanel({ setup, canWriteNow, autoSend, lastReport }:
         {canWriteNow && (
           <div className="flex flex-col items-end gap-1">
             <button type="button" className="btn" disabled={pending || !setup.ai} onClick={writeNow}>{pending ? "Writing…" : "Write replies now"}</button>
-            <p className="text-xs text-muted">Normally automatic, Mon to Sat 9 AM to 7 PM</p>
+            <p className="text-xs text-muted">Normally automatic, during the AI hours set under Automations</p>
           </div>
         )}
       </div>
@@ -228,7 +228,7 @@ function AutoSendToggle({ initial, canChange, canSend }: { initial: boolean; can
   const [pending, start] = useTransition();
   const flip = () => {
     const next = !on;
-    if (next && !window.confirm("Turn on automatic sending? The AI will email new leads by itself, Mon to Sat 9 AM to 7 PM, without anyone checking first. Everything it sends is listed below.")) return;
+    if (next && !window.confirm("Turn on automatic sending? The AI will email new leads by itself during the AI hours (set under Automations), without anyone checking first. Everything it sends is listed below.")) return;
     start(async () => {
       const r = await setAutoSendAction(next);
       if (r.ok) setOn(next);

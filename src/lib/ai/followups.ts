@@ -7,10 +7,12 @@ import { getAiTraining, getDealershipInfo } from "@/lib/ai/settings";
 import { canSendFrom } from "@/lib/auth/google";
 import { logActivity } from "@/lib/crm/queries";
 import { readyDb, trace } from "@/lib/db";
-import { aiStartDate, dealership, inAiHours } from "@/lib/dealership";
+import { aiStartDate, dealership } from "@/lib/dealership";
+import { aiHoursOpen } from "@/lib/ai/schedule";
 import { mapLimit, withGmail, type GmailClient } from "@/lib/gmail";
 import { loadGmailConnection } from "@/lib/gmail/connection";
 import { newPartOnly } from "@/lib/gmail/email";
+import { parseOfferUp } from "@/lib/parsers/offerup";
 import { channelOn } from "@/lib/ai/switches";
 import { wantsNoMoreEmail } from "@/lib/ai/unsubscribe";
 import { availabilityNote } from "@/lib/inventory";
@@ -29,6 +31,7 @@ export async function checkCustomerReplies(gmail: GmailClient): Promise<number> 
   const seen = new Set((await sql`select gmail_id from email_seen where gmail_id = any(${ids})`).map((r) => r.gmail_id));
   const fresh = ids.filter((id) => !seen.has(id));
   let found = 0;
+  const handled: string[] = [];
   await mapLimit(fresh, 4, async (id) => {
     const m = await gmail.full(id);
     const from = emailOf(m.from);
@@ -36,12 +39,13 @@ export async function checkCustomerReplies(gmail: GmailClient): Promise<number> 
     const [customer] = from && from !== gmail.mailbox.toLowerCase()
       ? await sql`select key from customers where lower(email) = ${from} order by last_seen desc nulls last limit 1` : [];
     if (customer) {
-      const body = newPartOnly(m.text || m.snippet);
+      const body = parseOfferUp({ from: m.from, subject: m.subject, text: m.text, html: m.html })?.message ?? newPartOnly(m.text || m.snippet);
       const inserted = await sql`insert into customer_replies (gmail_id, thread_id, customer_key, from_email, from_name, subject, body, message_id, references_header, received_at)
         values (${m.id}, ${m.threadId}, ${customer.key}, ${from}, ${m.fromName}, ${m.subject}, ${body}, ${m.messageIdHeader ?? null}, ${m.referencesHeader ?? null}, ${new Date(m.receivedAt)})
         on conflict (gmail_id) do nothing returning gmail_id`;
       if (inserted.length) {
         found++;
+        handled.push(id);
         await sql`update customers set last_seen = greatest(last_seen, ${new Date(m.receivedAt)}) where key = ${customer.key}`;
         await logActivity(customer.key, "email", `Replied by email: ${body.slice(0, 160) || m.subject}`, null).catch(() => undefined);
         // "Unsubscribe": no more AI emails to this customer, from now on.
@@ -53,6 +57,7 @@ export async function checkCustomerReplies(gmail: GmailClient): Promise<number> 
     }
     await sql`insert into email_seen (gmail_id) values (${id}) on conflict do nothing`;
   });
+  if (handled.length) await gmail.markRead(handled).catch(() => undefined); // AutoDash has these now: mark them read in Gmail
   if (found) trace("ai", `found ${found} customer email replies`);
   return found;
 }
@@ -60,7 +65,7 @@ export async function checkCustomerReplies(gmail: GmailClient): Promise<number> 
 /** Writes the AI's answer to each new customer reply (and sends it, if automatic sending is on). */
 export async function draftFollowups({ max = 3, force = false } = {}): Promise<{ drafted: number; sent: number; skipped: number }> {
   const none = { drafted: 0, sent: 0, skipped: 0 };
-  if (!aiConfigured() || (!force && !inAiHours())) return none;
+  if (!aiConfigured() || (!force && !(await aiHoursOpen()))) return none;
   if (!force && !(await channelOn("email"))) return none;
   const sql = await readyDb();
   if (!sql) return none;
@@ -71,7 +76,7 @@ export async function draftFollowups({ max = 3, force = false } = {}): Promise<{
     order by r.received_at asc limit ${max}`;
   if (!pending.length) return none;
   const [info, training, connection, autoSend] = await Promise.all([getDealershipInfo(), getAiTraining(), loadGmailConnection(undefined), getAutoSend()]);
-  const sendNow = autoSend && canSendFrom(connection) && inAiHours();
+  const sendNow = autoSend && canSendFrom(connection) && (await aiHoursOpen());
   const out = { ...none };
 
   for (const reply of pending) {

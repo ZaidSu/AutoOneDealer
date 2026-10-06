@@ -4,12 +4,13 @@
 import { timingSafeEqual } from "node:crypto";
 import { after, NextResponse, type NextRequest } from "next/server";
 import { checkCustomerReplies, draftFollowups } from "@/lib/ai/followups";
+import { sendDigestIfDue } from "@/lib/ai/digest";
 import { draftNewReplies } from "@/lib/ai/replies";
 import { setSetting } from "@/lib/db/data";
 import { chargeDueBillsByCard, collectOpenBills, ensureInvoice } from "@/lib/billing";
 import { withGmail } from "@/lib/gmail";
 import { syncLeads } from "@/lib/leads/sync";
-import { seedInventoryOnce, syncInventory } from "@/lib/inventory/store";
+import { enrichInventory, seedInventoryOnce, syncInventory } from "@/lib/inventory/store";
 import { syncReviews } from "@/lib/reviews/store";
 import { sendPurchaseFollowups } from "@/lib/sms";
 
@@ -41,6 +42,8 @@ export async function GET(req: NextRequest) {
   after(async () => {
     try { await syncReviews().catch(() => undefined); } catch { /* reviews can wait */ }
     try { await seedInventoryOnce().catch(() => undefined); await syncInventory(); } catch (error) { console.error("[autodash:inventory] sync failed:", error instanceof Error ? error.message : error); }
+    // A few cars per run get their VIN and photos from their own page (only if there's time left in this run).
+    try { await enrichInventory({ max: 3, deadline: started + 55_000 }); } catch (error) { console.error("[autodash:inventory] VIN/photo read failed:", error instanceof Error ? error.message : error); }
   });
   try {
     // Customers who wrote back by email (answered in the same thread).
@@ -54,6 +57,13 @@ export async function GET(req: NextRequest) {
     report.ai = await draftNewReplies({ max: 4 });
   } catch (error) {
     report.ai = `failed: ${error instanceof Error ? error.message : "unknown"}`;
+  }
+  try {
+    // The "here's what happened, contact these people" email to the dealership inbox.
+    const digest = await sendDigestIfDue();
+    if (digest.sent) report.digest = digest.reason;
+  } catch (error) {
+    report.digest = `failed: ${error instanceof Error ? error.message : "unknown"}`;
   }
   try {
     report.purchaseFollowups = await sendPurchaseFollowups({ max: 3 });

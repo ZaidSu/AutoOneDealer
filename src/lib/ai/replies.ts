@@ -7,7 +7,8 @@ import { canSendFrom } from "@/lib/auth/google";
 import { logActivity } from "@/lib/crm/queries";
 import { readyDb, trace } from "@/lib/db";
 import { getSetting, setSetting } from "@/lib/db/data";
-import { aiStartDate, dataStartDate, dealership, inAiHours } from "@/lib/dealership";
+import { aiStartDate, dataStartDate, dealership } from "@/lib/dealership";
+import { aiHoursOpen, aiHoursText, aiNextOpening } from "@/lib/ai/schedule";
 import { withGmail } from "@/lib/gmail";
 import { loadGmailConnection } from "@/lib/gmail/connection";
 import { channelOn } from "@/lib/ai/switches";
@@ -48,7 +49,7 @@ export async function setAutoSend(on: boolean) {
 /** Writes drafts for new leads that have an email address. Called by the timer and the "Check now" button. */
 export async function draftNewReplies({ max = 4, force = false } = {}): Promise<{ drafted: number; sent: number; skipped: number; waiting: string | null }> {
   if (!aiConfigured()) return { drafted: 0, sent: 0, skipped: 0, waiting: "The AI key isn't set up in Vercel yet." };
-  if (!force && !inAiHours()) return { drafted: 0, sent: 0, skipped: 0, waiting: "Outside AI hours (Mon to Sat, 9 AM to 7 PM). New leads get replies at 9 AM." };
+  if (!force && !(await aiHoursOpen())) return { drafted: 0, sent: 0, skipped: 0, waiting: `Outside AI hours (${await aiHoursText()}). New leads get replies ${await aiNextOpening()}.` };
   if (!force && !(await channelOn("email"))) return { drafted: 0, sent: 0, skipped: 0, waiting: "AI emails are switched off (turn them on at the top of this page)." };
   const sql = await readyDb();
   if (!sql) return { drafted: 0, sent: 0, skipped: 0, waiting: "The database isn't connected." };
@@ -68,7 +69,7 @@ export async function draftNewReplies({ max = 4, force = false } = {}): Promise<
 
   const [info, training, connection, autoSend] = await Promise.all([getDealershipInfo(), getAiTraining(), loadGmailConnection(undefined), getAutoSend()]);
   // Only sends by itself during AI hours (never from "Write replies now" at night) and only if Gmail may send.
-  const sendNow = autoSend && canSendFrom(connection) && inAiHours();
+  const sendNow = autoSend && canSendFrom(connection) && (await aiHoursOpen());
   let drafted = 0;
   let sent = 0;
   let skipped = 0;
@@ -140,6 +141,7 @@ Write like a friendly, professional salesperson at the dealership. Rules:
 - End by inviting them to come see the car, with a clear next step (reply with a time that works, or call).
 - Sign off as "The team at ${dealership.name}" with the dealership phone number if you have it.
 - If the customer wrote in Spanish, reply in Spanish.
+- If the lead is from OfferUp, the customer is chatting inside the OfferUp app: answer their question directly in 40 to 90 words, in a conversational tone, with no "thank you for your inquiry" opening.
 - If the lead is a financing pre-qualification (for example from Westlake Financial): congratulate them on being pre-qualified for that car, invite them to come in to finish the deal and see the car, and list what to bring if it's given. You may mention the down payment and monthly payment it shows, but always as pre-qualified estimates, never as a final approval, and don't mention the APR. For availability, follow the LIVE INVENTORY CHECK; if there is none, say the team will confirm.
 - Follow the dealership's own instructions below over these defaults when they conflict, except never invent facts.
 Reply with only JSON: {"subject": "...", "body": "..."}`;
@@ -236,7 +238,9 @@ export async function recentLeadOutcomes(): Promise<LeadOutcome[]> {
     from leads l left join ai_replies r on r.lead_id = l.message_id
     where not l.ignored and l.received_at >= ${since}
     order by l.received_at desc limit 40`;
-  const hours = inAiHours();
+  const hours = await aiHoursOpen();
+  const hoursText = await aiHoursText();
+  const opening = await aiNextOpening();
   const configured = aiConfigured();
   return rows.map((r) => {
     const base = { leadId: r.message_id, name: r.name, email: r.email, vehicle: r.vehicle, provider: r.provider, receivedAt: new Date(r.received_at).getTime() };
@@ -246,7 +250,7 @@ export async function recentLeadOutcomes(): Promise<LeadOutcome[]> {
     if (r.reply_status === "discarded") return { ...base, outcome: "discarded" as const, reason: r.reply_error ?? "Discarded" };
     if (!r.email) return { ...base, outcome: "no_email" as const, reason: "No email address in this lead (often a phone-call or history-report lead), so there's no one to email" };
     if (!configured) return { ...base, outcome: "waiting" as const, reason: "The AI key isn't set up in Vercel" };
-    if (!hours) return { ...base, outcome: "waiting" as const, reason: "Arrived outside AI hours (Mon to Sat, 9 AM to 7 PM); the reply is written at 9 AM" };
+    if (!hours) return { ...base, outcome: "waiting" as const, reason: `Arrived outside AI hours (${hoursText}); the reply is written ${opening}` };
     return { ...base, outcome: "waiting" as const, reason: "Will be written on the next check (every 5 minutes)" };
   });
 }

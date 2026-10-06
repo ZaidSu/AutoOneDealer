@@ -2,7 +2,7 @@
 // has the AI write a reply and refreshes the customer's summary.
 import { after, NextResponse, type NextRequest } from "next/server";
 import { refreshSummarySoon } from "@/lib/ai/summary";
-import { inAiHours } from "@/lib/dealership";
+import { aiHoursOpen } from "@/lib/ai/schedule";
 import { aiReplyToText, receiveText } from "@/lib/sms";
 import { publicUrl, validTwilioSignature } from "@/lib/sms/twilio";
 
@@ -21,7 +21,7 @@ export async function POST(req: NextRequest) {
   if (result && !result.keyword) {
     after(async () => {
       // During AI hours the AI answers right away; outside them, staff see the text and can ask the AI for a draft.
-      if (inAiHours()) await aiReplyToText(result.customerKey, result.phone).catch((e) => console.error("[autodash:sms] AI reply failed:", e instanceof Error ? e.message : e));
+      if (await aiHoursOpen()) await aiReplyToText(result.customerKey, result.phone).catch((e) => console.error("[autodash:sms] AI reply failed:", e instanceof Error ? e.message : e));
       await refreshSummarySoon(result.customerKey);
     });
   }

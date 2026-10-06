@@ -38,6 +38,12 @@ export async function checkAvailability(vehicle: string | null | undefined, { vi
 
   const candidates = sameModel(vehicle, live);
   const wanted = String(vin ?? "").replace(/\s/g, "");
+  // Saved VINs settle it without asking the website: the lead's full VIN or last 6 against the cars' own VINs.
+  if (wanted.length === 17 || wanted.length === 6) {
+    const known = live.filter((l) => l.vin);
+    const byVin = known.find((l) => (wanted.length === 17 ? l.vin!.toUpperCase() === wanted.toUpperCase() : l.vin!.toUpperCase().endsWith(wanted.toUpperCase())));
+    if (byVin) return { status: "available", match: byVin, exact: true };
+  }
   // A VIN pins down the exact car: look at the candidates' own pages for it.
   if (candidates.length && (wanted.length === 17 || wanted.length === 6)) {
     const checks = await Promise.allSettled(candidates.slice(0, 6).map(async (l) => ({ l, shows: pageShowsVin(await getHtml(l.url), wanted) })));

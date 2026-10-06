@@ -5,6 +5,7 @@ import { containsAdf, parseAdf } from "./adf.ts";
 import { parseFinanceApplication, parseWebsiteLead } from "./carsforsale.ts";
 import { findEmail, findPhone, readContact } from "./contact.ts";
 import { htmlToLines, htmlToText } from "./html.ts";
+import { parseOfferUp } from "./offerup.ts";
 
 export type LeadKind = "application" | "inquiry";
 
@@ -102,6 +103,12 @@ function empty(kind: LeadKind, provider: string, type: string): ParsedLead {
 }
 
 export function parseLead(email: LeadEmail): ParsedLead | null {
+  // 0. OfferUp: a buyer's message about a car. Its subject is "Re: <car>", which would otherwise be skipped as a reply.
+  //    The buyer's contact is OfferUp's private reply address: answering there reaches them inside OfferUp.
+  const offer = parseOfferUp(email);
+  if (offer) {
+    return { ...empty("inquiry", "OfferUp", "OfferUp message"), name: offer.name, email: offer.replyAddress, vehicle: offer.vehicle || null, comments: offer.message };
+  }
   const kind = leadKind(email.subject);
   if (!kind) return null;
   const provider = providerFor(email.from, email.subject);

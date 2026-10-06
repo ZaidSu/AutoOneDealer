@@ -9,9 +9,8 @@ export const dealership = {
   dataStart: process.env.DATA_START || "2026-09-30",
   // The Dashboard counts "since last night" from this time the day before (the store closes at 7 PM).
   overnightFrom: "18:00",
-  // When the AI writes email replies: Monday to Saturday, 9 AM to 7 PM Dallas time (1 = Monday ... 7 = Sunday).
-  // Leads that arrive outside these hours get their reply written at 9 AM the next working day.
-  aiHours: { days: [1, 2, 3, 4, 5, 6], from: "09:00", to: "19:00" },
+  // When the AI works is no longer set here: staff choose the days and hours under AI > Automations (see lib/ai/schedule.ts).
+  // The default is every day, 9 AM to 8 PM Dallas time.
   // The AI only replies to leads that arrived on or after this day (Dallas time), and never to leads older than
   // 2 days, so customers don't get a reply to something they sent last week.
   aiStart: process.env.AI_REPLIES_START || "2026-09-30",
@@ -20,15 +19,6 @@ export const dealership = {
 /** The first moment of the AI start day, Dallas time. */
 export function aiStartDate(): Date {
   return zonedToUtc(dealership.aiStart, "00:00", dealership.timeZone) ?? new Date();
-}
-
-/** True during the hours the AI writes replies. */
-export function inAiHours(now = new Date()): boolean {
-  const parts = new Intl.DateTimeFormat("en-US", { timeZone: dealership.timeZone, weekday: "short", hour: "2-digit", minute: "2-digit", hour12: false }).formatToParts(now);
-  const get = (t: string) => parts.find((p) => p.type === t)?.value ?? "";
-  const day = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"].indexOf(get("weekday")) + 1;
-  const time = `${get("hour").replace(/^24$/, "00")}:${get("minute")}`;
-  return dealership.aiHours.days.includes(day) && time >= dealership.aiHours.from && time < dealership.aiHours.to;
 }
 
 /** The first moment AutoDash shows data from (midnight Dallas time on dataStart). */

@@ -195,3 +195,39 @@ test("the starter inventory matches the website: 82 cars, 4 sold, and the websit
   // and the total of the asking prices on the 78 for sale is a number that can be checked against the website
   assert.equal(cars.filter((c) => !c.sold).length, 78);
 });
+
+// ---- photos and VIN (update 51) ----
+import { parseDetailPage as detailPage, parseInventoryPage as listPage } from "../../src/lib/inventory/match.ts";
+
+test("list page: the car's photo is read from its card, not the dealership logo", () => {
+  const html = `<img src="https://cdn07.carsforsale.com/dealerlogos/1041217/logo.png">
+    <li><a href="https://www.autoonemotorstx.com/details/used-2023-acura-integra/130457967"><img alt="2023 Acura Integra for sale" src="https://cdn05.carsforsale.com/00feae2b/480x360/2023-acura-integra.jpg"></a>
+    <h3><a href="https://www.autoonemotorstx.com/details/used-2023-acura-integra/130457967">2023 Acura Integra w/A-SPEC</a></h3> Price $18,995 Mileage 53,827</li>`;
+  const [car] = listPage(html).listings;
+  assert.equal(car.image, "https://cdn05.carsforsale.com/00feae2b/480x360/2023-acura-integra.jpg");
+  assert.equal(car.price, 18995);
+});
+
+test("car page: VIN from structured data, a VIN label or the page text; photos from the car's own folder, biggest size once each", () => {
+  const photos = `<img src="https://cdn05.carsforsale.com/h1/1024x768/a.jpg"><img src="https://cdn05.carsforsale.com/h1/480x360/a.jpg"><img src="https://cdn05.carsforsale.com/h1/1024x768/b.jpg"><img src="https://cdn05.carsforsale.com/other/1024x768/z.jpg"><img src="https://cdn07.carsforsale.com/dealerlogos/1/logo.png">`;
+  const thumb = "https://cdn05.carsforsale.com/h1/480x360/a.jpg";
+  const a = detailPage(`<script>{"vin":"1HGCM82633A004352"}</script>${photos}`, thumb);
+  assert.equal(a.vin, "1HGCM82633A004352");
+  assert.deepEqual(a.images, ["https://cdn05.carsforsale.com/h1/1024x768/a.jpg", "https://cdn05.carsforsale.com/h1/1024x768/b.jpg"]);
+  assert.equal(detailPage("<body><li>VIN: 2t1br32e84c123456</li></body>", null).vin, "2T1BR32E84C123456");
+  assert.equal(detailPage("<body>Stock 55 2T1BR32E84C123456</body>", null).vin, "2T1BR32E84C123456");
+  const none = detailPage("<body>No numbers here</body>", thumb);
+  assert.equal(none.vin, null);
+  assert.deepEqual(none.images, [thumb], "falls back to the list photo");
+});
+
+// ---- VIN last 6 (update 53) ----
+import { vinTail } from "../../src/lib/inventory/match.ts";
+test("the last 6 of the VIN tells two cars of the same model apart in what the AI is given", () => {
+  assert.equal(vinTail("1hgcm82633a004352"), "004352");
+  assert.equal(vinTail(null), null);
+  assert.equal(vinTail("12345"), null);
+  const base = { id: "1", financeId: null, url: "https://www.autoonemotorstx.com/details/used-2019-honda-accord/1", year: 2019, slug: "honda-accord", title: "2019 Honda Accord", price: 21000, mileage: 40000, sold: false };
+  assert.match(describeListing({ ...base, vin: "1HGCV1F34KA123456" }), /40,000 miles, VIN ending 123456 \(https:/);
+  assert.doesNotMatch(describeListing(base), /VIN/, "no VIN known yet: nothing is made up");
+});

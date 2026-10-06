@@ -15,6 +15,10 @@ export type Listing = {
   mileage: number | null;
   /** True only if the listing card itself says Sold. */
   sold: boolean;
+  /** The car's photo on the list page (a small version). */
+  image?: string | null;
+  /** The car's VIN, once its own page has been read. */
+  vin?: string | null;
 };
 
 export type Page = { listings: Listing[]; total: number | null; pages: number | null };
@@ -22,6 +26,10 @@ export type Page = { listings: Listing[]; total: number | null; pages: number | 
 const SITE = "https://www.autoonemotorstx.com";
 const text = (html: string) => html.replace(/<(script|style)[\s\S]*?<\/\1>/gi, " ").replace(/<[^>]+>/g, " ").replace(/&nbsp;/g, " ").replace(/&amp;/g, "&").replace(/\s+/g, " ").trim();
 const num = (s: string | undefined) => (s ? Number(s.replace(/[^\d]/g, "")) || null : null);
+
+const PHOTO = /https?:\/\/cdn\d+\.carsforsale\.com\/(?!dealerlogos)[^"'\s)\\]+?\.(?:jpe?g|png|webp)/i;
+/** The first car photo in a piece of page HTML (not the dealership logo). */
+const imageIn = (html: string): string | null => PHOTO.exec(html)?.[0] ?? null;
 
 /** Pulls every car out of one inventory page. */
 export function parseInventoryPage(html: string): Page {
@@ -52,7 +60,9 @@ export function parseInventoryPage(html: string): Page {
       price: num(/Price\s+\$\s*([\d,]+)/i.exec(cardText)?.[1]),
       mileage: num(/Mileage\s+([\d,]+)/i.exec(cardText)?.[1]),
       sold: /\bsold\b/i.test(cardText),
+      image: null,
     };
+    if (!listing.image) listing.image = imageIn(card);
     if (hit.label && hit.label.length > listing.title.length) listing.title = hit.label;
     byId.set(hit.id, listing);
   });
@@ -112,10 +122,39 @@ export function pageShowsVin(html: string, vin: string): "yes" | "no" | "cannot 
   return "cannot tell";
 }
 
+/** Reads one car's own page: its VIN and all of its photos. The website's page layout wasn't available when this was written,
+ *  so the VIN is looked for in three places (structured data, a "VIN" label, any 17-character VIN printed on the page) and the
+ *  photos are the ones in the same image folder as the car's photo on the list page. */
+export function parseDetailPage(html: string, listImage: string | null): { vin: string | null; images: string[] } {
+  const VIN = "[A-HJ-NPR-Z0-9]{17}";
+  const plain = text(html);
+  const vin =
+    new RegExp(`"(?:vin|vehicleIdentificationNumber)"\\s*:\\s*"(${VIN})"`, "i").exec(html)?.[1]?.toUpperCase() ??
+    new RegExp(`\\bVIN\\b[^A-Za-z0-9]{0,12}(${VIN})\\b`, "i").exec(plain)?.[1]?.toUpperCase() ??
+    (plain.toUpperCase().match(new RegExp(`\\b${VIN}\\b`, "g")) ?? []).find((v) => /\d/.test(v) && /[A-Z]/.test(v)) ??
+    null;
+  let folder: string | null = null;
+  try { folder = listImage ? new URL(listImage).pathname.split("/")[1] || null : null; } catch { /* no folder to match on */ }
+  const byKey = new Map<string, string>();
+  for (const u of html.match(new RegExp(PHOTO.source, "gi")) ?? []) {
+    if (folder && !u.includes(`/${folder}/`)) continue;
+    const key = u.replace(/\/\d+x\d+\//, "/"); // the same photo in different sizes counts once
+    const have = byKey.get(key);
+    const size = (s: string) => Number(/\/(\d+)x\d+\//.exec(s)?.[1] ?? 0);
+    if (!have || size(u) > size(have)) byKey.set(key, u); // keep the biggest version
+  }
+  let images = [...byKey.values()].slice(0, 25);
+  if (images.length === 0 && listImage) images = [listImage];
+  return { vin, images };
+}
+
 export const SITE_PAGE = "https://www.autoonemotorstx.com/cars-for-sale";
 
+/** The last 6 characters of a VIN, enough to tell two cars of the same model apart. */
+export const vinTail = (vin: string | null | undefined) => (vin && vin.length >= 6 ? vin.slice(-6).toUpperCase() : null);
+
 export function describeListing(l: Listing): string {
-  return `${l.title || `${l.year ?? ""} ${l.slug.replace(/-/g, " ")}`.trim()}${l.price ? `, $${l.price.toLocaleString("en-US")}` : ""}${l.mileage ? `, ${l.mileage.toLocaleString("en-US")} miles` : ""} (${l.url || SITE_PAGE})`;
+  return `${l.title || `${l.year ?? ""} ${l.slug.replace(/-/g, " ")}`.trim()}${l.price ? `, $${l.price.toLocaleString("en-US")}` : ""}${l.mileage ? `, ${l.mileage.toLocaleString("en-US")} miles` : ""}${vinTail(l.vin) ? `, VIN ending ${vinTail(l.vin)}` : ""} (${l.url || SITE_PAGE})`;
 }
 
 const MULTI_WORD_MAKES = ["Land Rover", "Alfa Romeo", "Aston Martin", "Rolls Royce", "Mercedes Benz"];

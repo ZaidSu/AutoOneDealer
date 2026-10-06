@@ -229,6 +229,11 @@ create index if not exists customer_replies_received on customer_replies (receiv
 alter table customer_replies enable row level security;
 create table if not exists email_seen (gmail_id text primary key, seen_at timestamptz not null default now());
 alter table email_seen enable row level security;
+-- v21: each car's photo, VIN and photos from its own page on the website
+alter table inventory add column if not exists image_url text;
+alter table inventory add column if not exists vin text;
+alter table inventory add column if not exists images jsonb not null default '[]'::jsonb;
+alter table inventory add column if not exists details_at timestamptz;
 `;
 
 export async function setupDatabase(): Promise<void> {

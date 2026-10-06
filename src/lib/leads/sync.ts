@@ -57,6 +57,9 @@ export async function syncLeads(gmail: GmailClient, { timeLimitMs = 20_000 } = {
   const backfill = previous?.backfill ?? { token: null, done: false, estimate: 0 };
   let added = 0;
   let failed = 0;
+  // Lead emails saved in this run that arrived in the last 3 days. They are marked read in Gmail once AutoDash has them
+  // (older emails from the first-time import are left alone, so the whole inbox isn't changed).
+  const handled: string[] = [];
 
   // Saves run one at a time (reading from Gmail stays parallel) so two emails from the same person can't collide.
   let saving: Promise<unknown> = Promise.resolve();
@@ -72,8 +75,17 @@ export async function syncLeads(gmail: GmailClient, { timeLimitMs = 20_000 } = {
       try {
         const lead = await readLead(gmail, id);
         await save(async () => {
-          if (lead) { if (await saveLead(lead, sql!)) added++; }
-          else await markIgnored(id, 0, "", sql!);
+          if (!lead) { await markIgnored(id, 0, "", sql!); return; }
+          // OfferUp: the first message from a buyer is the lead. Their later messages come from the same private address and are
+          // handled as email replies (the AI answers them in the thread), so they aren't saved as new leads.
+          if (lead.provider === "OfferUp" && lead.email) {
+            const [earlier] = await sql!`select 1 from leads where email = ${lead.email} and not ignored and message_id <> ${lead.messageId} limit 1`;
+            if (earlier) { await markIgnored(lead.messageId, lead.receivedAt, lead.subject, sql!); return; }
+          }
+          if (await saveLead(lead, sql!)) {
+            added++;
+            if (lead.receivedAt > Date.now() - 3 * 86400_000) handled.push(lead.messageId);
+          }
         });
       } catch (error) {
         failed++;
@@ -167,6 +179,7 @@ export async function syncLeads(gmail: GmailClient, { timeLimitMs = 20_000 } = {
     failed++;
     console.error("Lead sync stopped early:", error instanceof Error ? error.message : "unknown");
   } finally {
+    if (handled.length) await gmail.markRead(handled).catch(() => undefined);
     const [{ saved, checked }] = await sql`
       select count(*) filter (where not ignored)::int as saved, count(*) filter (where received_at > now() - interval '365 days')::int as checked
       from leads`.catch(() => [{ saved: previous?.saved ?? 0, checked: 0 }]);
