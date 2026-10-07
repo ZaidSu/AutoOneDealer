@@ -16,6 +16,7 @@ export async function getSyncState(): Promise<SyncState | null> {
 }
 
 const FRESH_MS = 30 * 60_000;
+const BACKOFF_MS = 30 * 60_000;
 /** A pasted copy stays trusted for a day (like a daily feed would). The website's own reads are only trusted for 30 minutes. */
 const PASTED_FRESH_MS = 24 * 3600_000;
 
@@ -25,6 +26,9 @@ export async function syncInventory(opts: { force?: boolean } = {}): Promise<Syn
   const prev = await getSyncState();
   // A copy sent from the dealership computer, or pasted by hand, is used instead of reading the website from here.
   if (!opts.force && prev?.ok && ((prev.via === "pushed" && Date.now() - prev.at < 40 * 60_000) || (prev.via === "pasted" && Date.now() - prev.at < PASTED_FRESH_MS))) return prev;
+  // Turned away last time? Don't keep asking every 5 minutes (that can get AutoDash blocked for longer): wait 30 minutes between tries.
+  // A person pressing "Check website now" always goes through.
+  if (!opts.force && prev && !prev.ok && Date.now() - prev.at < BACKOFF_MS) return prev;
   let inv: Inventory;
   const saved = await loadPageStore();
   // The timer reads page 1 plus the two pages most in need of a fresh copy. A manual "Check website now" reads everything.
