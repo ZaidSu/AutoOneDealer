@@ -1,64 +1,68 @@
 import type { Metadata } from "next";
 import Link from "next/link";
-import LegalPage, { Callout, H2, P, UL } from "@/components/site/LegalPage";
-import { SITE } from "@/lib/legal/config";
+import LegalPage, { H2, P, UL } from "@/components/legal/LegalPage";
+import { LEGAL as L } from "@/lib/legal/config";
 
-export const metadata: Metadata = {
-  title: "Privacy Policy",
-  description: "How Marketplace Wholesale LLC collects, uses and protects information, including phone numbers and text messages.",
-};
+export const metadata: Metadata = { title: "Privacy Policy", robots: { index: true, follow: true } };
 
 export default function PrivacyPage() {
   return (
-    <LegalPage title="Privacy Policy" updated="October 2, 2026">
-      <P>This policy explains how {SITE.company} (&ldquo;we&rdquo;, &ldquo;us&rdquo;) collects, uses and protects information through our website and the software we provide to our business clients, including email and text messaging (SMS) features.</P>
+    <LegalPage title="Privacy Policy">
+      <P>This policy explains how {L.dealerLegal}, doing business as {L.dealer} (&ldquo;we&rdquo;, &ldquo;us&rdquo;), collects and uses your information when you contact us about a vehicle, apply for financing through us, text us, email us, or buy a car from us. We are a used car dealership located at {L.address}.</P>
 
-      <H2>Information we collect</H2>
+      <H2>What we collect</H2>
       <UL>
-        <li><strong>Contact details you give us,</strong> such as your name, business name, email address and phone number, when you contact us or use our services.</li>
-        <li><strong>Customer information our clients store</strong> in software we build for them, such as inquiries from their customers, appointments and messages. Our clients control this information; we process it on their behalf.</li>
-        <li><strong>Messages</strong> sent and received through our software, including emails and text messages, so they can be delivered, shown to our client&rsquo;s team and kept as a record.</li>
-        <li><strong>Sign-in details.</strong> If you sign in with Google, we receive your name and email address from Google so we can identify your account. We do not receive your Google password, and signing in does not give us access to your Gmail, contacts or other Google data.</li>
-        <li><strong>Basic technical information</strong> such as browser type and pages visited, used to keep our website and software working and secure.</li>
+        <li><b>Contact details</b> you give us: name, phone number, email address, and city and state.</li>
+        <li><b>Your inquiry</b>: the vehicle you asked about, your message, and any trade-in details you shared.</li>
+        <li><b>Messages</b> you send us by text or email, and the replies we send you.</li>
+        <li><b>Financing applications</b>: when you apply for financing through a listing site such as CarsForSale.com, we get a notice with your name, phone number, city, the loan amount and down payment you entered, and the vehicle. The full application stays with that site and the lender. We do not collect your Social Security number or bank details through texts or emails, and we ask you not to send them.</li>
+        <li><b>Purchase details</b>: the vehicle you bought and the date, so we can follow up with you.</li>
+        <li><b>How you found us</b>: for example, which listing site your inquiry came from.</li>
       </UL>
 
-      <H2>How we use information</H2>
+      <H2>How we use it</H2>
       <UL>
-        <li>To provide, run, support and improve our services.</li>
-        <li>To respond to inquiries and communicate about our services.</li>
-        <li>To send and receive messages on behalf of our clients, such as replies to a customer&rsquo;s vehicle inquiry or appointment reminders.</li>
-        <li>To keep our services secure and meet legal requirements.</li>
+        <li>To answer your questions about vehicles and set up visits and test drives.</li>
+        <li>To text or email you about your inquiry, your appointment, or your purchase, including checking in after you buy.</li>
+        <li>To keep records of our conversations and run our dealership.</li>
+        <li>To meet legal and financing requirements.</li>
       </UL>
+      <P>We use an automated assistant (artificial intelligence) to help write some of our texts and emails. A team member may review them, and some are sent automatically. You can always ask to talk to a person by calling us at {L.phone}.</P>
 
-      <H2 id="sms">Text messaging (SMS) and mobile information</H2>
-      <Callout>
-        <p><strong>No mobile information will be shared with third parties or affiliates for marketing or promotional purposes.</strong> Text messaging originator opt-in data and consent will not be shared with any third parties. Information may be shared only with service providers that deliver messages for us (for example, our messaging provider), and only to deliver those messages.</p>
-      </Callout>
-      <P>Phone numbers are used only to communicate with customers who reached out to the business or agreed to be contacted. You can stop text messages at any time by replying <strong>STOP</strong>, and get help by replying <strong>HELP</strong>. Message frequency varies. Message and data rates may apply. See our <Link href="/terms#sms" className="underline">SMS Terms</Link>.</P>
+      <H2>Text messaging and your mobile number</H2>
+      <P><b>We do not share your mobile phone number, or your text message opt-in and consent, with third parties or affiliates for their marketing or promotional purposes.</b> We do not sell your information. The companies that help us deliver messages (listed below) may handle your number only to provide that service to us. See our <Link className="font-semibold text-signal hover:underline" href="/sms-terms">Text Message Terms</Link> for how to stop texts.</P>
 
-      <H2>How we share information</H2>
-      <P>We do not sell personal information. We share it only with service providers that help us run our services (such as hosting, database, email, messaging, AI and payment providers), under agreements that limit their use to providing those services; with the business client the information belongs to; or when required by law.</P>
+      <H2>Who handles your information for us</H2>
+      <P>We use these service providers to run our business. They may process your information only on our behalf and to provide their service:</P>
+      <UL>
+        <li>Twilio, to send and receive text messages.</li>
+        <li>Google (Gmail), to send, receive and store our emails.</li>
+        <li>Anthropic, whose AI service helps write replies. Your message and the details we use to answer it are sent to it for that purpose.</li>
+        <li>Supabase and Vercel, to store our records and run our software.</li>
+        <li>Listing sites such as CarsForSale.com, which send us your inquiry or application notice.</li>
+      </UL>
+      <P>We may also disclose information when the law requires it, to protect our rights, or to complete a sale you asked for (for example, to a lender you chose).</P>
 
-      <H2>AI features</H2>
-      <P>Some features use artificial intelligence to draft replies or summaries. Information is sent to our AI provider only to produce those results, and our clients can review AI-written messages before they are sent.</P>
-
-      <H2>How long we keep information</H2>
-      <P>We keep information as long as needed to provide our services to the client it belongs to, or as required by law, and then delete it.</P>
+      <H2>How long we keep it</H2>
+      <P>We keep customer records for as long as we need them to serve you and to meet our business, tax and legal obligations. We keep a record of anyone who opts out of texts or emails so that we honor it.</P>
 
       <H2>Security</H2>
-      <P>We use reasonable safeguards, including encrypted connections and limited access. No system is perfectly secure, but we work to protect your information.</P>
+      <P>We use reasonable safeguards, including sign-in controls and encrypted connections, to protect your information. No method of storage or transmission is completely secure, so we cannot guarantee absolute security. Please do not send sensitive information such as Social Security or bank account numbers by text or email.</P>
 
       <H2>Your choices</H2>
-      <P>You can ask to see, correct or delete your information by emailing us. If your information is held by one of our business clients, we will help them respond to your request.</P>
+      <UL>
+        <li>Reply <b>STOP</b> to any text, or reply &ldquo;unsubscribe&rdquo; to any email, and we will stop.</li>
+        <li>You may ask us to tell you what we have about you, correct it, or delete it by contacting us below. We will respond as the law requires. We may keep information we are required to keep.</li>
+      </UL>
 
       <H2>Children</H2>
-      <P>Our services are for businesses and are not directed to children under 13.</P>
+      <P>Our services are for adults. We do not knowingly collect information from anyone under 18.</P>
 
       <H2>Changes</H2>
-      <P>We may update this policy. The date at the top shows when it last changed.</P>
+      <P>We may update this policy and will change the date at the top when we do.</P>
 
-      <H2>Contact</H2>
-      <P>{SITE.company}, {SITE.location}. Email: <a href={`mailto:${SITE.email}`} className="underline">{SITE.email}</a></P>
+      <H2>Contact us</H2>
+      <P>{L.dealer}, {L.address}. Phone {L.phone}. Email {L.email}.</P>
     </LegalPage>
   );
 }

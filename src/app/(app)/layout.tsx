@@ -1,19 +1,13 @@
-// The page frame (sidebar). Each page also checks the sign-in itself, and so do the file and export routes.
-import type { Metadata } from "next";
-import { cookies } from "next/headers";
-import { redirect } from "next/navigation";
+// The page frame (sidebar, layout). Static, so it loads instantly; who's signed in comes from /api/me.
+// Each server page checks sign-in itself (lib/auth/guard.ts); the data endpoints check it too.
 import AppShell from "@/components/layout/AppShell";
-import { roleLabel } from "@/lib/auth/access";
-import { requirePageStaff } from "@/lib/auth/guard";
-import { PREVIEW_COOKIE, previewMode } from "@/lib/mode";
+import PerfReporter from "@/components/layout/PerfReporter";
 
-export const metadata: Metadata = { robots: { index: false, follow: false } };
-
-export default async function AppLayout({ children }: { children: React.ReactNode }) {
-  if (previewMode()) {
-    if (!(await cookies()).get(PREVIEW_COOKIE)) redirect("/login");
-    return <AppShell name="Preview" roleLabel="Preview mode" preview>{children}</AppShell>;
-  }
-  const staff = await requirePageStaff();
-  return <AppShell name={staff.name} roleLabel={roleLabel[staff.role]}>{children}</AppShell>;
+export default function AppLayout({ children }: { children: React.ReactNode }) {
+  return (
+    <>
+      <PerfReporter />
+      <AppShell>{children}</AppShell>
+    </>
+  );
 }

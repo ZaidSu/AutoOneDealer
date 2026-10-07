@@ -3,12 +3,9 @@ import type { NextConfig } from "next";
 const nextConfig: NextConfig = {
   poweredByHeader: false,
   experimental: {
-    // Invoice, receipt and certificate uploads go through server actions. Vercel allows about 4.5 MB per request.
-    serverActions: { bodySizeLimit: "4.5mb" },
-  },
-  // Old pages that are now part of Invoices.
-  async redirects() {
-    return ["/sales", "/purchases", "/quick-add", "/ledger"].map((source) => ({ source, destination: "/invoices", permanent: false }));
+    // Keep recently visited pages in the client router longer so normal back-and-forth navigation stays instant.
+    // Staff changes still clear this through revalidatePath in app/actions.ts.
+    staleTimes: { dynamic: 120, static: 300 },
   },
   async headers() {
     return [

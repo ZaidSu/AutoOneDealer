@@ -1,0 +1,24 @@
+<?xml version="1.0" encoding="UTF-8"?><?ADF version="1.0"?><adf>
+    <prospect>
+        <id sequence="1" source="Edmunds">1330000000</id>
+        <type>Contact Us</type>
+        <vehicle interest="buy" status="used">
+            <year>2024</year><make>Lexus</make><model>IS</model>
+            <vin>JTHBZ1B27R5000000</vin><stock>000000</stock>
+        </vehicle>
+        <customer>
+            <contact>
+                <name part="first">Sample</name>
+                <name part="last">Person</name>
+                <email>sample.person@example.com</email>
+                <phone type="voice">318-555-0142</phone>
+                <address><city>Pineville</city><regioncode>LA</regioncode></address>
+            </contact>
+            <comments><![CDATA[
+Customer is requesting pricing for the vehicle below.
+]]></comments>
+        </customer>
+        <vendor><vendorname>Auto One Motors</vendorname></vendor>
+        <provider><name part="full">Edmunds</name></provider>
+    </prospect>
+</adf>
