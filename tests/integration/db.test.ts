@@ -49,7 +49,7 @@ test("customer labels save and purchase date is recorded once", async () => {
 test("appointments: booking, double-booking check, and status", async () => {
   const zach = (await data.listReps()).find((r) => r.name === "Zach")!;
   const start = new Date(Date.now() + 86400000);
-  await data.createAppointment({ customerKey: "p-9725550177", customerName: "Pat Example", phone: "9725550177", vehicle: "2019 Toyota Camry", repId: zach.id, startsAt: start, durationMin: 60, notes: "" });
+  await data.createAppointment({ customerKey: "p-9725550177", customerName: "Pat Example", phone: "9725550177", vehicle: "2019 Toyota Camry", repId: zach.id, email: "", startsAt: start, durationMin: 60, notes: "" });
   const clash = await data.findConflict(zach.id, new Date(start.getTime() + 30 * 60000), 60);
   assert.equal(clash?.customerName, "Pat Example");
   assert.equal(await data.findConflict(zach.id, new Date(start.getTime() + 60 * 60000), 60), null, "back-to-back is fine");

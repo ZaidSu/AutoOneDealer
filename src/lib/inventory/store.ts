@@ -123,6 +123,7 @@ export async function applyInventory(inv: Inventory): Promise<SyncState> {
   }
   const state: SyncState = { at: Date.now(), ok: true, count: live.length, complete: inv.complete, added, sold: soldNow, error: null, via: inv.via, pagesRead: inv.pagesRead, pagesExpected: inv.pagesExpected };
   await setSetting(SYNC_KEY, JSON.stringify(state)).catch(() => undefined);
+  await setSetting("inventory_last_good", String(state.at)).catch(() => undefined);
   return state;
 }
 
@@ -154,14 +155,16 @@ export async function listCars(status: "available" | "sold" | "deleted", limit =
 
 const SNAPSHOT_MAX_AGE_MS = 30 * 60_000;
 /** A saved copy up to this old can still say "yes, that car is listed" (cars rarely vanish within hours), but never "it may be sold". */
-const SNAPSHOT_STALE_MS = 3 * 3600_000;
+const SNAPSHOT_STALE_MS = 12 * 3600_000;
 /** What the AI reads: the saved copy of the website. Fresh (30 minutes) it can say a car is gone; up to 3 hours old it can only say a car is listed. */
 export async function readSnapshot(): Promise<{ listings: Listing[]; sold: Listing[]; complete: boolean; fetchedAt: number } | null> {
   const sql = await readyDb();
   if (!sql) return null;
   const state = await getSyncState();
-  const age = state ? Date.now() - state.at : Infinity;
-  if (!state?.ok || age > (state.via === "pasted" ? PASTED_FRESH_MS : SNAPSHOT_STALE_MS)) return null;
+  // A failed read doesn't erase the copy we already have: the last good read still counts for as long as it's recent enough.
+  const lastGood = state?.ok ? state.at : Number(await getSetting("inventory_last_good").catch(() => null)) || null;
+  const age = lastGood ? Date.now() - lastGood : Infinity;
+  if (!state || !lastGood || age > (state.via === "pasted" && state.ok ? PASTED_FRESH_MS : SNAPSHOT_STALE_MS)) return null;
   const [avail, sold] = await Promise.all([
     sql`select * from inventory where status = 'available'`,
     sql`select * from inventory where status = 'sold' and (sold_at is null or sold_at > now() - interval '90 days') and slug is not null`,
@@ -172,8 +175,8 @@ export async function readSnapshot(): Promise<{ listings: Listing[]; sold: Listi
     title: (r.title as string) ?? "", price: (r.price as number) ?? null, mileage: (r.mileage as number) ?? null, sold: isSold,
     vin: (r.vin as string) ?? null,
   });
-  const fresh = state.via === "pasted" || age <= SNAPSHOT_MAX_AGE_MS;
-  return { listings: avail.map((r) => toListing(r, false)), sold: sold.map((r) => toListing(r, true)), complete: state.complete && fresh, fetchedAt: state.at };
+  const fresh = state.ok && (state.via === "pasted" || age <= SNAPSHOT_MAX_AGE_MS);
+  return { listings: avail.map((r) => toListing(r, false)), sold: sold.map((r) => toListing(r, true)), complete: state.complete && fresh, fetchedAt: lastGood };
 }
 
 /** In plain words: what the AI can use right now to say whether a car is available, and what's wrong if it can't. */
@@ -188,7 +191,9 @@ export async function aiViewOfInventory(): Promise<{ ok: boolean; text: string; 
   const age = Date.now() - state.at;
   const mins = Math.round(age / 60_000);
   const agoText = mins < 60 ? `${mins} minutes ago` : `${Math.round(mins / 60)} hours ago`;
-  if (!state.ok) return { ok: false, text: `The AI can't check cars: the last website read failed (${state.error ?? "no reason given"}). It tells customers a salesperson will confirm until this is fixed.`, noLink };
+  const lastGood = state.ok ? state.at : Number(await getSetting("inventory_last_good").catch(() => null)) || null;
+  if (!state.ok && !(lastGood && Date.now() - lastGood <= SNAPSHOT_STALE_MS && n > 0)) return { ok: false, text: `The AI can't check cars: the last website read failed (${state.error ?? "no reason given"}). It tells customers a salesperson will confirm until this is fixed.`, noLink };
+  if (!state.ok && lastGood) return { ok: true, text: `The last website read failed (${state.error ?? "no reason given"}), so the AI is using the copy of ${n} cars saved ${Math.round((Date.now() - lastGood) / 60_000) < 60 ? `${Math.round((Date.now() - lastGood) / 60_000)} minutes` : `${Math.round((Date.now() - lastGood) / 3600_000)} hours`} ago. It can say a car is listed but never that it may be sold.`, noLink };
   if (age > (state.via === "pasted" ? PASTED_FRESH_MS : SNAPSHOT_STALE_MS)) return { ok: false, text: `The AI can't check cars: the last good read of the website was ${agoText}, which is too old. It tells customers a salesperson will confirm. Click Check website now, or see whether the website is turning AutoDash away.`, noLink };
   if (n === 0) return { ok: false, text: "The AI can't check cars: no cars are on the lot in AutoDash.", noLink };
   const partial = !state.complete ? " Only part of the website was read, so it can say a car is available but never that it may be sold." : age > SNAPSHOT_MAX_AGE_MS && state.via !== "pasted" ? " The copy is a little old, so it can say a car is available but not that it may be sold." : "";

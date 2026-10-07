@@ -4,6 +4,7 @@
 import { timingSafeEqual } from "node:crypto";
 import { after, NextResponse, type NextRequest } from "next/server";
 import { checkCustomerReplies, draftFollowups } from "@/lib/ai/followups";
+import { runAlerts } from "@/lib/ai/alerts";
 import { sendDigestIfDue } from "@/lib/ai/digest";
 import { draftNewReplies } from "@/lib/ai/replies";
 import { setSetting } from "@/lib/db/data";
@@ -37,6 +38,20 @@ export async function GET(req: NextRequest) {
   } catch (error) {
     report.leads = `failed: ${error instanceof Error ? error.message : "unknown"}`;
   }
+  // The update emails come right after the lead import and BEFORE the slow AI-writing steps below. Those can take most of this
+  // run's 60 seconds, and a timer run that is cut off never reaches anything after them (which is why updates went missing).
+  try {
+    const digest = await sendDigestIfDue();
+    report.digest = digest.sent ? digest.reason : `not sent: ${digest.reason}`;
+  } catch (error) {
+    report.digest = `failed: ${error instanceof Error ? error.message : "unknown"}`;
+  }
+  try {
+    const extra = await runAlerts();
+    if (Object.keys(extra).length) report.alerts = extra;
+  } catch (error) {
+    report.alerts = `failed: ${error instanceof Error ? error.message : "unknown"}`;
+  }
   // Copy the website's inventory into the database. Runs after the timer has answered, so a slow website can't hold up
   // or break the rest of the timer. The result shows on the Inventory page.
   after(async () => {
@@ -57,13 +72,6 @@ export async function GET(req: NextRequest) {
     report.ai = await draftNewReplies({ max: 4 });
   } catch (error) {
     report.ai = `failed: ${error instanceof Error ? error.message : "unknown"}`;
-  }
-  try {
-    // The "here's what happened, contact these people" email to the dealership inbox.
-    const digest = await sendDigestIfDue();
-    if (digest.sent) report.digest = digest.reason;
-  } catch (error) {
-    report.digest = `failed: ${error instanceof Error ? error.message : "unknown"}`;
   }
   try {
     report.purchaseFollowups = await sendPurchaseFollowups({ max: 3 });

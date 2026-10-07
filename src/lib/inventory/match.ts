@@ -31,6 +31,10 @@ const PHOTO = /https?:\/\/cdn\d+\.carsforsale\.com\/(?!dealerlogos)[^"'\s)\\]+?\
 /** The first car photo in a piece of page HTML (not the dealership logo). */
 const imageIn = (html: string): string | null => PHOTO.exec(html)?.[0] ?? null;
 
+/** True only if the card itself carries a Sold marker: the price reads "Sold", or a badge whose whole text is "Sold".
+ *  The word appearing anywhere else (a description, "sold as-is", the footer after the last car) doesn't count. */
+const soldBadge = (card: string, cardText: string) => /\bPrice\s+Sold\b/i.test(cardText) || /<[^>]+>\s*Sold(?:\s+Out)?\s*<\//i.test(card);
+
 /** Pulls every car out of one inventory page. */
 export function parseInventoryPage(html: string): Page {
   const plain = text(html);
@@ -59,7 +63,7 @@ export function parseInventoryPage(html: string): Page {
       title: "",
       price: num(/Price\s+\$\s*([\d,]+)/i.exec(cardText)?.[1]),
       mileage: num(/Mileage\s+([\d,]+)/i.exec(cardText)?.[1]),
-      sold: /\bsold\b/i.test(cardText),
+      sold: soldBadge(card, cardText),
       image: null,
     };
     if (!listing.image) listing.image = imageIn(card);

@@ -98,6 +98,16 @@ AutoDash sends it from the dealership Gmail to the customer (never back to the l
 - Needs `ANTHROPIC_API_KEY` in Vercel, Gmail reconnected once so it can send, and the timer below.
 - Code: `src/lib/ai/replies.ts` (drafting, sending), `src/lib/ai/claude.ts` (API call), table `ai_replies`.
 
+### Update emails and other alerts (AI > Automations)
+
+All go to the dealership inbox (or any address set there), only need Gmail reconnected once so it can send, and each has its own switch:
+
+- **Update email** (default every 1 h 30 min): who to contact, what the AI emailed, drafts waiting. Options: also send outside AI hours, include appointments, include new/sold cars. The page shows why the last timer check did or didn't send.
+- **Customer waiting**: a new customer nobody has contacted after 30 min to 4 h.
+- **Morning briefing**: once a day at 5 to 12 AM: today's appointments, who is waiting, drafts waiting.
+- **Inventory problem**: the website's cars couldn't be read for 2 to 12 hours (the AI then can't check cars).
+- Code: `src/lib/ai/digest.ts`, `src/lib/ai/alerts.ts`. They run early in `/api/cron/tick`, before the slow AI-writing steps.
+
 ### The timer (cron-job.org)
 
 `/api/cron/tick` pulls new leads and writes AI drafts. cron-job.org calls it every 5 minutes so this happens even

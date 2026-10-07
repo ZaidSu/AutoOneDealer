@@ -116,7 +116,6 @@ alter table reviews enable row level security;
 update reviews set status = 'removed' where source = 'Google' and rating = 1 and lower(reviewer) like 'craig%' and reviewed_at < timestamptz '2026-07-09 00:00:00+00';
 delete from app_settings where key in ('reviews_last_sync', 'reviews_removed_seen');
 -- v20: speeds up the To do list's customer replies
-create index if not exists customer_replies_customer on customer_replies (customer_key, received_at desc);
 create index if not exists customers_status_seen on customers (status, last_seen desc);
 create index if not exists customers_follow_up on customers (follow_up_at) where follow_up_at is not null;
 create index if not exists leads_kind_received on leads (kind, received_at desc) where not ignored;
@@ -226,6 +225,7 @@ create table if not exists customer_replies (
   created_at timestamptz not null default now()
 );
 create index if not exists customer_replies_received on customer_replies (received_at desc);
+create index if not exists customer_replies_customer on customer_replies (customer_key, received_at desc);
 alter table customer_replies enable row level security;
 create table if not exists email_seen (gmail_id text primary key, seen_at timestamptz not null default now());
 alter table email_seen enable row level security;

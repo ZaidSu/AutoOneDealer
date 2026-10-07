@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import AiScheduleForm from "@/components/ai/AiScheduleForm";
+import AlertSettings from "@/components/ai/AlertSettings";
 import DigestSettings from "@/components/ai/DigestSettings";
 import PurchaseFollowupSettings from "@/components/ai/PurchaseFollowupSettings";
 import DbNotice from "@/components/ui/DbNotice";
@@ -8,7 +9,8 @@ import PageHeader from "@/components/ui/PageHeader";
 import { can } from "@/lib/auth/access";
 import { canSendFrom } from "@/lib/auth/google";
 import { requirePageStaff } from "@/lib/auth/guard";
-import { getDigestSettings } from "@/lib/ai/digest";
+import { getAlertSettings } from "@/lib/ai/alerts";
+import { getDigestSettings, getDigestStatus } from "@/lib/ai/digest";
 import { describeSchedule, getAiSchedule } from "@/lib/ai/schedule";
 import { getGmailConnection } from "@/lib/gmail/connection";
 import { dbState, fresh } from "@/lib/db";
@@ -29,7 +31,8 @@ export default async function AutomationsPage() {
   const state = await dbState();
   if (state !== "ready") return <>{header}<DbNotice state={state} what="Automations" /></>;
   const settings = await fresh("Automations", () => getPurchaseFollowup());
-  const [purchases, autoText, schedule, digest, connection] = await Promise.all([listPurchases(settings.days), getAutoText(), getAiSchedule(), getDigestSettings(), getGmailConnection()]);
+  const [purchases, autoText, schedule, digest, connection, digestStatus, alerts] = await Promise.all([listPurchases(settings.days), getAutoText(), getAiSchedule(), getDigestSettings(), getGmailConnection(), getDigestStatus(), getAlertSettings()]);
+  const statusText = digestStatus ? `${digestStatus.sent ? "sent" : "not sent"} (${digestStatus.reason}), ${new Date(digestStatus.at).toLocaleString("en-US", { timeZone: "America/Chicago", month: "short", day: "numeric", hour: "numeric", minute: "2-digit" })}` : "the timer hasn't checked yet. If this stays empty, the timer (cron-job.org) isn't calling AutoDash.";
   const canChange = can.editAiSettings(staff.role);
 
   return (
@@ -50,7 +53,13 @@ export default async function AutomationsPage() {
           While the AI is working, AutoDash emails a short update (default every 1 hour 30 minutes): who needs to be contacted, what they asked about, what the AI already emailed, and what&apos;s waiting for approval.
           Nothing is sent when nothing happened.
         </p>
-        <div className="mt-4 border-t border-line pt-4"><DigestSettings initial={digest} mailbox={connection?.mailbox ?? ""} canChange={canChange} canSend={canSendFrom(connection)} /></div>
+        <div className="mt-4 border-t border-line pt-4"><DigestSettings initial={digest} mailbox={connection?.mailbox ?? ""} canChange={canChange} canSend={canSendFrom(connection)} status={statusText} /></div>
+      </section>
+
+      <section aria-labelledby="alerts" className="panel mt-8 p-5">
+        <h2 id="alerts" className="text-lg font-semibold">More alerts to the dealership inbox</h2>
+        <p className="mt-1 text-sm text-muted">Short emails for things that need a person. Each one can be turned off or changed.</p>
+        <div className="mt-4 border-t border-line pt-4"><AlertSettings initial={alerts} mailbox={connection?.mailbox ?? ""} canChange={canChange} /></div>
       </section>
 
       <section aria-labelledby="pf" className="panel mt-8 p-5">

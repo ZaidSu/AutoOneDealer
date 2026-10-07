@@ -488,7 +488,7 @@ export async function saveAiScheduleAction(input: { days: number[]; from: string
   } catch { return NO_DB; }
 }
 
-export async function saveDigestSettingsAction(input: { on: boolean; everyMin: number; to: string }): Promise<ActionResult> {
+export async function saveDigestSettingsAction(input: { on: boolean; everyMin: number; to: string; anyTime?: boolean; appointments?: boolean; inventory?: boolean }): Promise<ActionResult> {
   const staff = await requireStaff();
   if (!staff) return fail("Your session ended. Sign in again.");
   if (!can.editAiSettings(staff.role)) return fail(AI_EDIT_DENIED);
@@ -497,7 +497,7 @@ export async function saveDigestSettingsAction(input: { on: boolean; everyMin: n
   if (!(DIGEST_EVERY as readonly number[]).includes(everyMin)) return fail("Pick how often from the list.");
   const to = String(input?.to ?? "").trim().toLowerCase();
   if (to && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(to)) return fail("That email address doesn't look right.");
-  try { await saveDigestSettings({ on: Boolean(input?.on), everyMin, to }); } catch { return NO_DB; }
+  try { await saveDigestSettings({ on: Boolean(input?.on), everyMin, to, anyTime: Boolean(input?.anyTime), appointments: input?.appointments !== false, inventory: input?.inventory !== false }); } catch { return NO_DB; }
   revalidatePath("/ai/automations");
   return { ok: true, message: input?.on ? `Saved. An update goes out about every ${everyMin} minutes while the AI is working, if anything happened.` : "Saved. Update emails are off." };
 }
@@ -509,8 +509,31 @@ export async function sendDigestNowAction(): Promise<ActionResult> {
   const { sendDigestIfDue } = await import("@/lib/ai/digest");
   try {
     const r = await sendDigestIfDue({ force: true });
+    revalidatePath("/ai/automations");
     return r.sent ? { ok: true, message: `Update email ${r.reason}. Check the inbox.` } : fail(`Couldn't send it: ${r.reason}.`);
   } catch (error) { return fail(error instanceof Error ? error.message : "Couldn't send the update."); }
+}
+
+export async function saveAlertSettingsAction(input: unknown): Promise<ActionResult> {
+  const staff = await requireStaff();
+  if (!staff) return fail("Your session ended. Sign in again.");
+  if (!can.editAiSettings(staff.role)) return fail(AI_EDIT_DENIED);
+  const { cleanAlertSettings, saveAlertSettings } = await import("@/lib/ai/alerts");
+  try { await saveAlertSettings(cleanAlertSettings(input)); } catch { return NO_DB; }
+  revalidatePath("/ai/automations");
+  return { ok: true, message: "Saved." };
+}
+
+export async function sendMorningBriefingNowAction(): Promise<ActionResult> {
+  const staff = await requireStaff();
+  if (!staff) return fail("Your session ended. Sign in again.");
+  if (!can.editAiSettings(staff.role)) return fail(AI_EDIT_DENIED);
+  const { runAlerts } = await import("@/lib/ai/alerts");
+  try {
+    const r = await runAlerts({ forceMorning: true });
+    revalidatePath("/ai/automations");
+    return r.morning ? { ok: true, message: `Sent: ${r.morning}` } : fail("Couldn't send it. Gmail may not be able to send yet.");
+  } catch (error) { return fail(error instanceof Error ? error.message : "Couldn't send."); }
 }
 
 export async function acceptAgreementAction(): Promise<ActionResult> {

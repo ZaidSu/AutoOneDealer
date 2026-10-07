@@ -20,14 +20,16 @@ const ago = (ms: number) => {
   return min < 1 ? "just now" : min < 60 ? `${min} min ago` : min < 1440 ? `${Math.round(min / 60)} hours ago` : `${Math.round(min / 1440)} days ago`;
 };
 
-export default async function InventoryPage() {
+export default async function InventoryPage({ searchParams }: { searchParams?: Promise<{ q?: string }> }) {
   await requirePageStaff();
+  const q = String((await searchParams)?.q ?? "").trim().toLowerCase().slice(0, 60);
   const header = <PageHeader title="Inventory" description="The cars on your website, what sold, and what sells best. The AI reads this to answer “is it still available?”." action={<CheckNowButton />} />;
   const state = await dbState();
   if (state !== "ready") return <>{header}<DbNotice state={state} what="Inventory" /></>;
   await seedInventoryOnce().catch(() => undefined); // the first time, loads the cars from the website text sent on Oct 2
   const [sync, stats, lot, sold, deleted, aiView] = await fresh("Inventory", () => Promise.all([getSyncState(), inventoryStats(TZ), listCars("available"), listCars("sold", 100), listCars("deleted", 100), aiViewOfInventory()]));
 
+  const shown = q ? lot.filter((c) => `${c.title} ${c.vin ?? ""} ${c.make ?? ""} ${c.model ?? ""}`.toLowerCase().includes(q)) : lot;
   const best = stats.byMonth.length ? [...stats.byMonth].sort((a, b) => b.n - a.n)[0] : null;
   const bestMake = stats.byMake[0] ?? null;
 
@@ -58,7 +60,9 @@ export default async function InventoryPage() {
         <p className="mt-4 text-sm text-muted">{stats.soldUnknown} car{stats.soldUnknown === 1 ? " was" : "s were"} already marked Sold on the website when AutoDash first saw {stats.soldUnknown === 1 ? "it" : "them"}, so there's no sale date or price. They're listed under Sold but left out of the charts below. Click Not sold to put one back on the lot, or add its real sale with Add a past sale.</p>
       )}
 
+      {stats.sold - stats.soldUnknown === 0 && <p className="mt-6 panel p-5 text-muted">Sales charts fill in once cars sell (or add past sales under Sold below). Until then, here is what is on the lot.</p>}
       <div className="mt-6 grid gap-6 lg:grid-cols-2">
+        {stats.sold - stats.soldUnknown > 0 && <>
         <Panel title="Sales by month" note={best ? `Best month so far: ${monthLabel(best.month)} with ${best.n} sold.` : "Fills in as cars sell. Add past sales below to include earlier months."}>
           <Columns items={stats.byMonth.map((m) => ({ label: monthLabel(m.month), value: m.n }))} emptyText="No sales recorded yet." color="#c8102e" highlightLast />
         </Panel>
@@ -68,20 +72,26 @@ export default async function InventoryPage() {
         <Panel title="What price range sells" note="Cars sold, grouped by what they sold for.">
           <BarList items={stats.byPrice.map((p) => ({ label: p.label, value: p.n }))} emptyText="No sales recorded yet." />
         </Panel>
+        </>}
         <Panel title="What's on the lot now" note="Cars on your website, by make.">
           <BarList items={stats.lotByMake.map((m) => ({ label: m.make, value: m.n }))} emptyText="Nothing read from the website yet." highlightFirst={false} />
         </Panel>
       </div>
 
       <section aria-labelledby="lot" className="mt-10">
-        <h2 id="lot" className="mb-1 text-lg font-semibold">On the lot <span className="text-muted">{lot.length}</span></h2>
+        <h2 id="lot" className="mb-1 text-lg font-semibold">On the lot <span className="text-muted">{q ? `${shown.length} of ${lot.length}` : lot.length}</span></h2>
         <p className="mb-3 text-sm text-muted">Copied from your website. When a car disappears from the website it moves to Sold on its own. Sold by hand sooner? Use Mark sold. A car that isn't yours (it's on the website for someone else)? Use Delete.</p>
-        {lot.length === 0 ? <p className="panel p-5 text-muted">No cars yet.</p> : (
+        <form method="get" className="mb-3 flex gap-2">
+          <input name="q" defaultValue={q} placeholder="Search by make, model, year or VIN" className="h-10 w-72 max-w-full rounded-md border border-line bg-white px-3 text-[15px]" />
+          <button className="btn" type="submit">Search</button>
+          {q && <a href="/inventory" className="btn">Clear</a>}
+        </form>
+        {shown.length === 0 ? <p className="panel p-5 text-muted">{q ? "No cars match that search." : "No cars yet."}</p> : (
           <div className="panel overflow-x-auto">
             <table className="w-full min-w-[760px] text-left text-[15px]">
               <thead className="border-b border-line text-sm text-muted"><tr><th className="px-4 py-2.5 font-semibold">Car</th><th className="px-4 py-2.5 font-semibold">Price</th><th className="px-4 py-2.5 font-semibold">Miles</th><th className="px-4 py-2.5 font-semibold">VIN</th><th className="px-4 py-2.5 font-semibold">First seen</th><th className="px-4 py-2.5" /></tr></thead>
               <tbody className="divide-y divide-line">
-                {lot.map((c) => (
+                {shown.map((c) => (
                   <tr key={c.id}>
                     <td className="px-4 py-2.5 font-medium">
                       <span className="flex items-center gap-3">
@@ -94,7 +104,7 @@ export default async function InventoryPage() {
                     </td>
                     <td className="px-4 py-2.5 tabular-nums">{usd(c.price)}</td>
                     <td className="px-4 py-2.5 tabular-nums">{c.mileage ? c.mileage.toLocaleString("en-US") : ""}</td>
-                    <td className="px-4 py-2.5 font-mono text-sm text-muted" title={c.vin ?? undefined}>{c.vin ? <><span>{c.vin.slice(0, -6)}</span><span className="font-semibold text-ink">{c.vin.slice(-6)}</span></> : "…"}</td>
+                    <td className="px-4 py-2.5 font-mono text-sm text-muted" title={c.vin ?? undefined}>{c.vin ? <><span>{c.vin.slice(0, -6)}</span><span className="font-semibold text-ink">{c.vin.slice(-6)}</span></> : <span title="Read from the car's own page a few cars at a time">not read yet</span>}</td>
                     <td className="px-4 py-2.5 text-muted">{day(c.firstSeen)}</td>
                     <td className="px-4 py-2.5 text-right"><span className="inline-flex flex-wrap items-center justify-end gap-2"><MarkSold id={c.id} price={c.price} /><RemoveCar id={c.id} /></span></td>
                   </tr>

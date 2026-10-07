@@ -231,3 +231,11 @@ test("the last 6 of the VIN tells two cars of the same model apart in what the A
   assert.match(describeListing({ ...base, vin: "1HGCV1F34KA123456" }), /40,000 miles, VIN ending 123456 \(https:/);
   assert.doesNotMatch(describeListing(base), /VIN/, "no VIN known yet: nothing is made up");
 });
+
+test("a car is only Sold if its own card says so, not if the word appears elsewhere", async () => {
+  const { parseInventoryPage } = await import("../../src/lib/inventory/match.ts");
+  const card = (id: number, price: string, extra = "") => `<div><a href="/details/used-2020-honda-civic/${id}">2020 Honda Civic</a> Price ${price} Mileage 50,000 ${extra}</div>`;
+  const html = `Results 1 - 3 of 3 Page 1 of 1 ${card(111111111, "$12,000", "Sold as-is, no warranty")}${card(222222222, "Sold")}${card(333333333, "$9,000", "<p>Visit us. Cars sold daily.</p>")}`;
+  const cars = parseInventoryPage(html).listings;
+  assert.deepEqual(cars.map((c) => [c.id, c.sold]), [["111111111", false], ["222222222", true], ["333333333", false]]);
+});

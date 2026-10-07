@@ -9,24 +9,38 @@ import { withGmail } from "@/lib/gmail";
 import { loadGmailConnection } from "@/lib/gmail/connection";
 import { digestBody, digestIsEmpty, digestSubject, type DigestData } from "./digest-format";
 
-export type DigestSettings = { on: boolean; everyMin: number; to: string };
+export type DigestSettings = { on: boolean; everyMin: number; to: string; anyTime: boolean; appointments: boolean; inventory: boolean };
 export const DIGEST_EVERY = [30, 60, 90, 120, 180] as const;
 const EMAIL = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
 export async function getDigestSettings(): Promise<DigestSettings> {
-  const [on, every, to] = await Promise.all([getSetting("digest_on"), getSetting("digest_every"), getSetting("digest_to")].map((p) => p.catch(() => null)));
+  const [on, every, to, anyTime, appts, inv] = await Promise.all(["digest_on", "digest_every", "digest_to", "digest_any_time", "digest_appointments", "digest_inventory"].map((k) => getSetting(k).catch(() => null)));
   const n = Number(every);
-  return { on: on !== "off", everyMin: (DIGEST_EVERY as readonly number[]).includes(n) ? n : 90, to: to && EMAIL.test(to) ? to : "" };
+  return { on: on !== "off", everyMin: (DIGEST_EVERY as readonly number[]).includes(n) ? n : 90, to: to && EMAIL.test(to) ? to : "", anyTime: anyTime === "on", appointments: appts !== "off", inventory: inv !== "off" };
 }
 export async function saveDigestSettings(s: DigestSettings) {
   await setSetting("digest_on", s.on ? "on" : "off");
   await setSetting("digest_every", String(s.everyMin));
   await setSetting("digest_to", s.to.trim().toLowerCase());
+  await setSetting("digest_any_time", s.anyTime ? "on" : "off");
+  await setSetting("digest_appointments", s.appointments ? "on" : "off");
+  await setSetting("digest_inventory", s.inventory ? "on" : "off");
+}
+
+export type DigestStatus = { at: number; sent: boolean; reason: string };
+/** What happened the last time the timer looked at the update email (shown on the Automations page, so "nothing arrived" always has a reason). */
+export async function getDigestStatus(): Promise<DigestStatus | null> {
+  try { const raw = await getSetting("digest_status"); return raw ? (JSON.parse(raw) as DigestStatus) : null; } catch { return null; }
+}
+async function remember(result: DigestResult): Promise<DigestResult> {
+  // "not due yet" happens on most timer runs; keeping it would hide the real reason from the last real check.
+  if (result.reason !== "not due yet") await setSetting("digest_status", JSON.stringify({ at: Date.now(), ...result })).catch(() => undefined);
+  return result;
 }
 
 const n = (v: unknown) => (v ? new Date(v as string).getTime() : 0);
 
-async function gather(from: number, to: number): Promise<DigestData | null> {
+export async function gatherDigest(from: number, to: number): Promise<DigestData | null> {
   const sql = await readyDb();
   if (!sql) return null;
   const since = new Date(Math.max(from, dataStartDate().getTime()));
@@ -74,14 +88,18 @@ export type DigestResult = { sent: boolean; reason: string };
 
 /** Called by the timer every 5 minutes. Sends at most one update per interval, only in the AI's working hours, only if something happened.
  *  `force` (the "Send one now" button) skips the schedule and the interval and sends even if nothing happened. */
-export async function sendDigestIfDue({ force = false } = {}): Promise<DigestResult> {
+export async function sendDigestIfDue(opts: { force?: boolean } = {}): Promise<DigestResult> {
+  return remember(await runDigest(opts));
+}
+
+async function runDigest({ force = false } = {}): Promise<DigestResult> {
   const settings = await getDigestSettings();
   if (!settings.on && !force) return { sent: false, reason: "off" };
   const sql = await readyDb();
   if (!sql) return { sent: false, reason: "no database" };
   const connection = await loadGmailConnection(undefined);
   if (!connection || !canSendFrom(connection)) return { sent: false, reason: "Gmail can't send yet (reconnect Gmail in Settings)" };
-  if (!force && !(await aiHoursOpen())) return { sent: false, reason: "outside working hours" };
+  if (!force && !settings.anyTime && !(await aiHoursOpen())) return { sent: false, reason: "outside working hours" };
 
   const now = Date.now();
   const everyMs = settings.everyMin * 60_000;
@@ -90,7 +108,9 @@ export async function sendDigestIfDue({ force = false } = {}): Promise<DigestRes
   if (!force && prev && now - prev < everyMs) return { sent: false, reason: "not due yet" };
   const from = Math.max(prev ?? now - everyMs, now - 24 * 3600_000);
 
-  const data = await gather(from, now);
+  const data = await gatherDigest(from, now);
+  if (data && !settings.appointments) data.appointments = [];
+  if (data && !settings.inventory) { data.newCars = []; data.soldCars = []; }
   if (!data) return { sent: false, reason: "no database" };
   if (!force && digestIsEmpty(data)) return { sent: false, reason: "nothing new" };
 
