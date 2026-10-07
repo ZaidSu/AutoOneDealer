@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import BillingSettingsForm from "@/components/billing/BillingSettingsForm";
+import StripePricesForm from "@/components/billing/StripePricesForm";
 import AcceptAgreement from "@/components/legal/AcceptAgreement";
 import { getAcceptance, isCurrent } from "@/lib/legal/accept";
 import { CreateBillButton, DisconnectBankButton, ManageCardButton, RetryBankButton, TurnOffAutopayButton, VoidBillButton } from "@/components/billing/DeveloperButtons";
@@ -13,7 +14,7 @@ import {
 } from "@/lib/billing";
 import { gocardlessConfigured, gocardlessSandbox } from "@/lib/billing/gocardless";
 import { stripeConfigured, stripeTestMode } from "@/lib/billing/stripe";
-import { stripeBillingOn, stripeDashboardUrl, stripeEmptyReason, stripeUpcoming } from "@/lib/billing/stripe-sync";
+import { stripeBillingOn, stripeDashboardUrl, stripeEmptyReason, stripePendingCharges, stripeSubscription, stripeUpcoming } from "@/lib/billing/stripe-sync";
 import { money, periodLabel, totals, type Invoice } from "@/lib/billing/types";
 import { dbState, fresh } from "@/lib/db";
 
@@ -57,6 +58,7 @@ export default async function BillingPage({ searchParams }: { searchParams: Prom
   const manage = can.manageBilling(staff.role);
   const upcoming = inStripe && !current ? await stripeUpcoming().catch(() => null) : null;
   const stripeWhy = inStripe && !current && !upcoming && manage ? await stripeEmptyReason().catch(() => null) : null;
+  const editor = inStripe && manage ? await Promise.all([stripeSubscription().catch(() => null), stripePendingCharges().catch(() => [])]) : null;
   const previewItems = current || inStripe ? null : await fresh("Bill preview", () => draftItems(period, settings));
   const preview = upcoming ? { items: upcoming.items, subtotal: upcoming.subtotal, tax: upcoming.tax, total: upcoming.total }
     : previewItems ? { items: previewItems, ...totals(previewItems, settings) } : null;
@@ -212,13 +214,14 @@ export default async function BillingPage({ searchParams }: { searchParams: Prom
         )}
       </section>
 
-      {manage && inStripe && (
-        <section aria-labelledby="prices" className="mt-10 rounded-xl border border-line bg-paper p-5">
+      {manage && inStripe && editor && (
+        <section aria-labelledby="prices" className="mt-10">
           <h2 id="prices" className="text-lg font-semibold">Prices and billing <span className="text-sm font-normal text-muted">(only you, the developer, see this)</span></h2>
-          <p className="mt-1 text-[15px]">Prices, bills, discounts, refunds and the card are all managed in Stripe. Change them there and this page updates by itself within a minute.</p>
-          <a href={stripeDashboardUrl()} target="_blank" rel="noopener noreferrer" className="btn btn-sm mt-3 inline-flex">Open in Stripe</a>
+          <p className="mb-3 text-sm text-muted">Changes are saved in Stripe, and the bill above updates right after.</p>
+          <StripePricesForm monthly={editor[0]?.amountCents ?? null} charges={editor[1]} dashboardUrl={stripeDashboardUrl()} nextDate={upcoming?.date ?? null} />
         </section>
       )}
+      {inStripe && <Receipts invoices={invoices} />}
       {manage && !inStripe && (
         <section aria-labelledby="prices" className="mt-10">
           <h2 id="prices" className="text-lg font-semibold">Prices and settings <span className="text-sm font-normal text-muted">(only you, the developer, see this)</span></h2>
@@ -303,5 +306,36 @@ function Usage({ label, used, included, range, extra }: { label: string; used: n
       <div className="mt-1.5 h-2 overflow-hidden rounded-full bg-paper" aria-hidden><div className={`h-full rounded-full ${pct >= 90 ? "bg-signal" : "bg-go"}`} style={{ width: `${Math.max(pct, used ? 2 : 0)}%` }} /></div>
       <p className="mt-1.5 text-sm text-muted">A normal month is about {range || "n/a"}. Past the included amount, each is {money(extra)}.</p>
     </div>
+  );
+}
+
+/** A list of every payment received, one row per month, each opening a printable receipt. */
+function Receipts({ invoices }: { invoices: Invoice[] }) {
+  const paid = invoices.filter((i) => i.status === "paid");
+  const sum = paid.reduce((n, i) => n + i.total, 0);
+  return (
+    <section aria-labelledby="receipts" className="mt-10">
+      <h2 id="receipts" className="mb-3 text-lg font-semibold">Payment receipts</h2>
+      {paid.length === 0 ? <p className="panel p-5 text-muted">Receipts appear here after each payment.</p> : (
+        <div className="panel overflow-x-auto">
+          <table className="w-full min-w-[520px] text-left text-[15px]">
+            <thead className="text-sm text-muted"><tr className="border-b border-line">
+              <th className="px-5 py-3 font-medium">Month</th><th className="px-3 py-3 font-medium">Paid on</th><th className="px-3 py-3 font-medium">Amount paid</th><th className="px-5 py-3 font-medium">Receipt</th>
+            </tr></thead>
+            <tbody className="divide-y divide-line">
+              {paid.map((i) => (
+                <tr key={i.number}>
+                  <td className="px-5 py-3 font-medium">{periodLabel(i.period)}</td>
+                  <td className="px-3 py-3 text-muted">{i.paidAt ? date(i.paidAt) : "—"}</td>
+                  <td className="px-3 py-3 tabular-nums">{money(i.total)}</td>
+                  <td className="px-5 py-3">{i.stripeId ? <a className="panel-link" href={`/billing/receipt/${i.stripeId}`}>View receipt</a> : null}</td>
+                </tr>
+              ))}
+            </tbody>
+            <tfoot><tr className="border-t border-line font-semibold"><td className="px-5 py-3" colSpan={2}>Total paid</td><td className="px-3 py-3 tabular-nums">{money(sum)}</td><td /></tr></tfoot>
+          </table>
+        </div>
+      )}
+    </section>
   );
 }

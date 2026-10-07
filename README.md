@@ -207,3 +207,9 @@ One-time setup in Stripe:
 6. Add `STRIPE_CUSTOMER_ID` in Vercel and redeploy.
 
 Prices, discounts, refunds, credit notes, pausing or cancelling are all done in Stripe. Once a month AutoDash adds any extra AI email or text charges (past the monthly allowance) to the customer in Stripe as invoice items, so they land on the next invoice and can be edited or removed there first. Leave `STRIPE_CUSTOMER_ID` empty to keep the older built-in billing.
+
+### Developer-only price editing (saved in Stripe)
+
+Sign in with an account listed as `developer` in `STAFF_ACCESS`. On the Billing page you get a "Prices and billing" section where you can change the monthly price and add or remove one-time charges (or credits, with a minus sign). Each change is written to Stripe and the bill on the page updates right after. The dealership owner never sees this section or the Developer page. The page also lists every payment received, one row per month, each opening a printable receipt that shows only the business name (no street address). Payouts to your bank stay in Stripe.
+
+The restricted Stripe key needs: Customers (read), Subscriptions (write), Invoices (write, which covers invoice items), Prices and Products (write), PaymentMethods (read), Customer portal (write), Checkout Sessions (write), PaymentIntents (write).

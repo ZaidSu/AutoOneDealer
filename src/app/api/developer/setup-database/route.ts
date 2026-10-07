@@ -15,7 +15,7 @@ export async function POST(req: NextRequest) {
   try {
     if (!isSameOrigin(req)) return reply(false, "Request blocked.", 403);
     const staff = validateStaff(req.cookies.get(STAFF_COOKIE)?.value);
-    if (!staff || !can.useDeveloperTools(staff.role)) return reply(false, "Only owners and developers can do this.", 403);
+    if (!staff || !can.useDeveloperTools(staff.role)) return reply(false, "Only the developer can do this.", 403);
     if ((await dbState()) === "not_configured") return reply(false, "Add DATABASE_URL in Vercel first, then redeploy.");
 
     await setupDatabase();

@@ -12,6 +12,7 @@ test("a Stripe invoice becomes a bill with a Pay link and its line items", () =>
   assert.equal(b.status, "open");
   assert.equal(b.hostedUrl, "https://invoice.stripe.com/i/x");
   assert.equal(b.source, "stripe");
+  assert.equal(b.stripeId, "in_1", "so the receipt page can find it");
 });
 
 test("paid shows as paid, drafts and voids are hidden, a discount is its own line", () => {

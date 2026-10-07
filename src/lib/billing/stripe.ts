@@ -9,11 +9,13 @@ export const stripeTestMode = () => /^(sk|rk)_test_/.test(String(process.env.STR
 
 export async function stripeApi<T>(path: string, form?: Record<string, string>, idempotencyKey?: string): Promise<T> { return stripe<T>(path, form, idempotencyKey); }
 
-async function stripe<T>(path: string, form?: Record<string, string>, idempotencyKey?: string): Promise<T> {
+export async function stripeDelete<T>(path: string): Promise<T> { return stripe<T>(path, undefined, undefined, "DELETE"); }
+
+async function stripe<T>(path: string, form?: Record<string, string>, idempotencyKey?: string, method?: "DELETE"): Promise<T> {
   const key = process.env.STRIPE_SECRET_KEY;
   if (!key) throw new Error("Stripe isn't set up yet (STRIPE_SECRET_KEY).");
   const response = await fetch(`${process.env.STRIPE_BASE_URL || "https://api.stripe.com"}/v1/${path}`, {
-    method: form ? "POST" : "GET",
+    method: method ?? (form ? "POST" : "GET"),
     cache: "no-store",
     headers: {
       Authorization: `Bearer ${key}`,

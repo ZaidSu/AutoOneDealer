@@ -43,7 +43,7 @@ export function mapStripeInvoice(raw: StripeInvoice, tz = DEFAULT_TZ): Invoice |
     paidAt: raw.status_transitions?.paid_at ? raw.status_transitions.paid_at * 1000 : null, createdAt: raw.created * 1000,
     method: status === "paid" ? (raw.paid_out_of_band ? "other" : "card") : null,
     note: failed ? "The last payment attempt didn't go through. Pay with the button below, or change the card." : null,
-    hostedUrl: raw.hosted_invoice_url ?? null, source: "stripe",
+    hostedUrl: raw.hosted_invoice_url ?? null, source: "stripe", stripeId: raw.id,
   };
 }
 

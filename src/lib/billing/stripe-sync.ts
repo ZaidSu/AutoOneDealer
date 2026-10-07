@@ -6,7 +6,7 @@ import { dayKey } from "@/lib/utils/time";
 import { cached, dropCached } from "@/lib/utils/cache";
 import { getSetting, setSetting } from "@/lib/db/data";
 import { dealership } from "@/lib/dealership";
-import { stripeApi, stripeConfigured } from "./stripe";
+import { stripeApi, stripeConfigured, stripeDelete } from "./stripe";
 import { day, mapStripeInvoice, usageCharges, type StripeInvoice } from "./stripe-map";
 import type { BillingSettings, Invoice, InvoiceItem } from "./types";
 
@@ -107,4 +107,46 @@ export function stripeEmptyReason(): Promise<string> {
       return `Couldn't read subscriptions from Stripe: ${e instanceof Error ? e.message : "unknown error"}. The API key may be missing the permission to read subscriptions.`;
     }
   });
+}
+
+
+// ---- Changes made from AutoDash (developer only). Everything is saved in Stripe; the Billing page then mirrors it. ----
+export type StripeSub = { id: string; itemId: string; productId: string; amountCents: number; status: string };
+/** The customer's current subscription (the first active one, otherwise the most recent). */
+export async function stripeSubscription(): Promise<StripeSub | null> {
+  type Sub = { id: string; status: string; items: { data: { id: string; price: { unit_amount: number | null; product: string | { id: string } } }[] } };
+  const r = await stripeApi<{ data: Sub[] }>(`subscriptions?customer=${encodeURIComponent(stripeCustomerId())}&status=all&limit=5`);
+  const sub = r.data.find((x) => x.status === "active" || x.status === "trialing" || x.status === "past_due") ?? r.data[0];
+  const item = sub?.items.data[0];
+  if (!sub || !item) return null;
+  return { id: sub.id, itemId: item.id, productId: typeof item.price.product === "string" ? item.price.product : item.price.product.id, amountCents: item.price.unit_amount ?? 0, status: sub.status };
+}
+
+/** One-time charges (and credits) waiting to go on the next invoice. */
+export async function stripePendingCharges(): Promise<{ id: string; label: string; cents: number }[]> {
+  const r = await stripeApi<{ data: { id: string; description?: string | null; amount: number }[] }>(`invoiceitems?customer=${encodeURIComponent(stripeCustomerId())}&pending=true&limit=30`);
+  return r.data.map((i) => ({ id: i.id, label: i.description || "Charge", cents: i.amount }));
+}
+
+/** Changes the monthly price from the next invoice on (no refunds or extra charges for the current period). */
+export async function setStripeMonthlyPrice(cents: number): Promise<void> {
+  const sub = await stripeSubscription();
+  if (!sub) throw new Error("There's no subscription in Stripe yet. Create it in Stripe first.");
+  const price = await stripeApi<{ id: string }>("prices", {
+    unit_amount: String(cents), currency: "usd", product: sub.productId, "recurring[interval]": "month", nickname: "AutoDash monthly",
+  });
+  await stripeApi(`subscriptions/${sub.id}`, { "items[0][id]": sub.itemId, "items[0][price]": price.id, proration_behavior: "none" });
+  refreshStripeBilling();
+}
+
+/** Adds a one-time charge (or a credit, if negative) to the next invoice. */
+export async function addStripeCharge(label: string, cents: number): Promise<void> {
+  await stripeApi("invoiceitems", { customer: stripeCustomerId(), amount: String(cents), currency: "usd", description: label });
+  refreshStripeBilling();
+}
+
+export async function removeStripeCharge(id: string): Promise<void> {
+  if (!/^ii_\w+$/.test(id)) throw new Error("That isn't a charge.");
+  await stripeDelete(`invoiceitems/${id}`);
+  refreshStripeBilling();
 }

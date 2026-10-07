@@ -44,4 +44,5 @@ test("role permissions", () => {
   assert.equal(can.manageIntegrations("salesperson"), false);
   assert.equal(can.useDeveloperTools("developer"), true);
   assert.equal(can.useDeveloperTools("manager"), false);
+  assert.equal(can.useDeveloperTools("owner"), false, "the dealership owner never sees developer tools");
 });

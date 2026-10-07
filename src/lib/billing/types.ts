@@ -65,6 +65,8 @@ export type Invoice = {
   /** Set when the bill lives in Stripe (Stripe mode): its own payment page. */
   hostedUrl?: string | null;
   source?: "stripe";
+  /** The Stripe invoice id (in_...), used to open our own receipt page. */
+  stripeId?: string;
 };
 
 export const money = (cents: number) => (cents / 100).toLocaleString("en-US", { style: "currency", currency: "USD" });

@@ -376,6 +376,40 @@ export async function voidInvoiceAction(id: number): Promise<ActionResult> {
   return { ok: true, message: "Bill canceled. Click Create this month's bill to make it again with the current prices." };
 }
 
+// ---- Prices, saved to Stripe (developer only) ----
+async function stripeEdit(work: (s: typeof import("@/lib/billing/stripe-sync"), m: typeof import("@/lib/billing/money-input")) => Promise<string>): Promise<ActionResult> {
+  const staff = await requireStaff();
+  if (!staff || !can.manageBilling(staff.role)) return fail("Only the developer can change prices.");
+  const sync = await import("@/lib/billing/stripe-sync");
+  if (!sync.stripeBillingOn()) return fail("Billing isn't connected to Stripe yet (STRIPE_CUSTOMER_ID).");
+  try {
+    const message = await work(sync, await import("@/lib/billing/money-input"));
+    revalidatePath("/billing");
+    return { ok: true, message };
+  } catch (e) { return fail(`Stripe said: ${e instanceof Error ? e.message : "it didn't work"}`); }
+}
+export async function setMonthlyPriceAction(dollars: string): Promise<ActionResult> {
+  return stripeEdit(async (s, m) => {
+    const cents = m.parseDollars(dollars);
+    if (!m.monthlyOk(cents)) throw new Error("Enter the monthly price like 379 or 379.00 (between $1 and $10,000).");
+    await s.setStripeMonthlyPrice(cents);
+    return `Saved in Stripe. The monthly price is now $${(cents / 100).toFixed(2)}, starting with the next invoice.`;
+  });
+}
+export async function addChargeAction(label: string, dollars: string): Promise<ActionResult> {
+  return stripeEdit(async (s, m) => {
+    const cents = m.parseDollars(dollars);
+    const name = m.cleanLabel(label);
+    if (!name) throw new Error("Give the charge a name, like \"Setup fee\".");
+    if (!m.chargeOk(cents)) throw new Error("Enter an amount like 99 (use a minus sign for a credit, like -20). Up to $10,000.");
+    await s.addStripeCharge(name, cents);
+    return `Added "${name}" (${cents < 0 ? "credit of " : ""}$${(Math.abs(cents) / 100).toFixed(2)}) to the next invoice.`;
+  });
+}
+export async function removeChargeAction(id: string): Promise<ActionResult> {
+  return stripeEdit(async (s) => { await s.removeStripeCharge(String(id)); return "Removed from the next invoice."; });
+}
+
 /** Returns the address of Stripe's page for changing the saved card (in `message`). */
 export async function openCardPortalAction(): Promise<ActionResult> {
   const staff = await requireStaff();

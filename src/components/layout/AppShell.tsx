@@ -120,7 +120,7 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
         </nav>
         <div className="shrink-0 border-t border-line px-3 py-3">
           <ul className="space-y-0.5">
-            {FOOTER.filter((item) => item.href !== "/billing" || me?.role === "owner" || me?.role === "developer")
+            {FOOTER.filter((item) => (item.href !== "/billing" || me?.role === "owner" || me?.role === "developer") && (item.href !== "/developer" || me?.role === "developer"))
               .map((item) => <li key={item.href}><NavLink item={item} active={isActive(pathname, item.href)} /></li>)}
           </ul>
           <div className="mt-3 flex items-center gap-3 rounded-lg bg-paper px-3 py-2.5">
