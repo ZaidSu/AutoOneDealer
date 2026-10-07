@@ -153,6 +153,15 @@ export async function listCars(status: "available" | "sold" | "deleted", limit =
   return rows.map(toCar);
 }
 
+/** When the lot was last copied successfully: the saved time of the last good read, or (for copies made before that was saved)
+ *  the newest time any car on the lot was seen. Pasted text and the dealership computer's pushes count too. */
+async function lastGoodAt(sql: NonNullable<Awaited<ReturnType<typeof readyDb>>>): Promise<number | null> {
+  const saved = Number(await getSetting("inventory_last_good").catch(() => null)) || null;
+  if (saved) return saved;
+  const [r] = await sql`select max(last_seen) as at from inventory where status = 'available'`.catch(() => [] as Record<string, unknown>[]);
+  return r?.at ? new Date(r.at as string).getTime() : null;
+}
+
 const SNAPSHOT_MAX_AGE_MS = 30 * 60_000;
 /** A saved copy up to this old can still say "yes, that car is listed" (cars rarely vanish within hours), but never "it may be sold". */
 const SNAPSHOT_STALE_MS = 12 * 3600_000;
@@ -162,7 +171,7 @@ export async function readSnapshot(): Promise<{ listings: Listing[]; sold: Listi
   if (!sql) return null;
   const state = await getSyncState();
   // A failed read doesn't erase the copy we already have: the last good read still counts for as long as it's recent enough.
-  const lastGood = state?.ok ? state.at : Number(await getSetting("inventory_last_good").catch(() => null)) || null;
+  const lastGood = state?.ok ? state.at : await lastGoodAt(sql);
   const age = lastGood ? Date.now() - lastGood : Infinity;
   if (!state || !lastGood || age > (state.via === "pasted" && state.ok ? PASTED_FRESH_MS : SNAPSHOT_STALE_MS)) return null;
   const [avail, sold] = await Promise.all([
@@ -191,8 +200,8 @@ export async function aiViewOfInventory(): Promise<{ ok: boolean; text: string; 
   const age = Date.now() - state.at;
   const mins = Math.round(age / 60_000);
   const agoText = mins < 60 ? `${mins} minutes ago` : `${Math.round(mins / 60)} hours ago`;
-  const lastGood = state.ok ? state.at : Number(await getSetting("inventory_last_good").catch(() => null)) || null;
-  if (!state.ok && !(lastGood && Date.now() - lastGood <= SNAPSHOT_STALE_MS && n > 0)) return { ok: false, text: `The AI can't check cars: the last website read failed (${state.error ?? "no reason given"}). It tells customers a salesperson will confirm until this is fixed.`, noLink };
+  const lastGood = state.ok ? state.at : await lastGoodAt(sql);
+  if (!state.ok && !(lastGood && Date.now() - lastGood <= SNAPSHOT_STALE_MS && n > 0)) return { ok: false, text: `The AI can't check cars: the last website read failed (${state.error ?? "no reason given"}). It tells customers a salesperson will confirm until this is fixed. The website is turning AutoDash away: paste the website text below, or run the 15-second browser step in tools/README-inventory.md.`, noLink };
   if (!state.ok && lastGood) return { ok: true, text: `The last website read failed (${state.error ?? "no reason given"}), so the AI is using the copy of ${n} cars saved ${Math.round((Date.now() - lastGood) / 60_000) < 60 ? `${Math.round((Date.now() - lastGood) / 60_000)} minutes` : `${Math.round((Date.now() - lastGood) / 3600_000)} hours`} ago. It can say a car is listed but never that it may be sold.`, noLink };
   if (age > (state.via === "pasted" ? PASTED_FRESH_MS : SNAPSHOT_STALE_MS)) return { ok: false, text: `The AI can't check cars: the last good read of the website was ${agoText}, which is too old. It tells customers a salesperson will confirm. Click Check website now, or see whether the website is turning AutoDash away.`, noLink };
   if (n === 0) return { ok: false, text: "The AI can't check cars: no cars are on the lot in AutoDash.", noLink };
