@@ -869,3 +869,18 @@ export async function addCustomerAction(input: { name: string; phone: string; em
   revalidatePath("/pipeline");
   return { ok: true, message: "Customer added.", key };
 }
+
+/** Developer-only: sends one test text so Twilio can be checked without a customer. Not saved on any customer. */
+export async function sendTestTextAction(phone: string): Promise<ActionResult> {
+  const staff = await requireStaff();
+  if (!staff || !can.useDeveloperTools(staff.role)) return fail("Only the developer can send a test text.");
+  const { sendSms, toE164, twilioConfigured, tenDigits } = await import("@/lib/sms/twilio");
+  if (!twilioConfigured()) return fail("Twilio isn't connected yet. Add the Twilio keys in Vercel and redeploy.");
+  const to = toE164(phone);
+  if (!to) return fail("Enter a US phone number with 10 digits.");
+  try {
+    const base = (process.env.APP_URL || "https://auto-one-dealer.vercel.app").replace(/\/$/, "");
+    const r = await sendSms(to, "AutoDash test: texting is working. Reply to this and it will show up in AutoDash.", `${base}/api/sms/status`);
+    return { ok: true, message: `Sent to ${tenDigits(to)} (Twilio says: ${r.status}). It should arrive in a few seconds. Then reply to it to test incoming texts.` };
+  } catch (e) { return fail(e instanceof Error ? e.message : "The test text didn't send."); }
+}

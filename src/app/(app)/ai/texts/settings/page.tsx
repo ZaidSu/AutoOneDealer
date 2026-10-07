@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import AiChannelSwitch from "@/components/ai/AiChannelSwitch";
+import TestTextButton from "@/components/ai/TestTextButton";
 import AutoTextToggle from "@/components/ai/AutoTextToggle";
 import DbNotice from "@/components/ui/DbNotice";
 import PageHeader from "@/components/ui/PageHeader";
@@ -51,6 +52,7 @@ export default async function AiTextSettingsPage() {
           </li>
           </>}
         </ul>
+        {dev && <div className="mt-4 border-t border-line pt-4"><TestTextButton /></div>}
         <div className="mt-4 border-t border-line pt-4"><AutoTextToggle initial={autoText} canChange={canChange} /></div>
       </section>
       <p className="mt-4 text-sm text-muted">The text sent a week after a purchase is set up under <Link href="/ai/automations" className="font-semibold text-signal underline">AI setup → Automations</Link>.</p>
