@@ -88,6 +88,8 @@ export async function draftNewReplies({ max = 4, force = false } = {}): Promise<
     // Anyone who asked to unsubscribe never gets an AI email.
     const [stopped] = await sql`select 1 from customers where lower(email) = ${email} and email_optout limit 1`;
     if (stopped) { await skip("This customer asked to stop emails."); continue; }
+    const [paused] = await sql`select 1 from customers where (key = ${lead.customer_key ?? ""} or lower(email) = ${email}) and ai_paused limit 1`;
+    if (paused) { await skip("The AI is switched off for this customer."); continue; }
     // One AI email per customer per week, even if they send several leads.
     const [recent] = await sql`select 1 from ai_replies where to_email = ${email} and status in ('draft', 'sent') and created_at > now() - interval '7 days' limit 1`;
     if (recent) { await skip("This customer already has an AI email from the last 7 days."); continue; }

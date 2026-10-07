@@ -41,6 +41,9 @@ alter table customers add column if not exists purchased_vehicle text;
 alter table customers add column if not exists purchase_followup_at timestamptz;
 alter table customers add column if not exists purchase_followup_off boolean not null default false;
 alter table customers add column if not exists email_optout boolean not null default false;
+-- v22: AI switched off for one customer, and new-lead texts already handled
+alter table customers add column if not exists ai_paused boolean not null default false;
+alter table leads add column if not exists sms_handled boolean not null default false;
 -- v13: inventory copied from the dealership website, with what sold
 create table if not exists inventory (
   id text primary key,

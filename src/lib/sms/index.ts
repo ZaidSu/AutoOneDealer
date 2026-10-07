@@ -6,7 +6,7 @@ import { DAYS } from "@/lib/ai/types";
 import { logActivity } from "@/lib/crm/queries";
 import { readyDb, trace } from "@/lib/db";
 import { getSetting, setSetting } from "@/lib/db/data";
-import { dealership } from "@/lib/dealership";
+import { aiStartDate, dealership } from "@/lib/dealership";
 import { aiHoursOpen } from "@/lib/ai/schedule";
 import { channelOn } from "@/lib/ai/switches";
 import { availabilityNote } from "@/lib/inventory";
@@ -33,6 +33,14 @@ export async function getAutoText(): Promise<boolean> {
 }
 export async function setAutoText(on: boolean) {
   await setSetting("ai_auto_text", on ? "on" : "off");
+}
+
+/** On: a new lead that includes a phone number also gets a first text (as well as the AI email). Off by default. */
+export async function getTextNewLeads(): Promise<boolean> {
+  return (await getSetting("ai_text_new_leads").catch(() => null)) === "on";
+}
+export async function setTextNewLeads(on: boolean) {
+  await setSetting("ai_text_new_leads", on ? "on" : "off");
 }
 
 // ---- customers and opt-outs ----
@@ -178,6 +186,10 @@ export async function aiReplyToText(customerKey: string | null, phone: string, {
   if (!sql || !e164 || !aiConfigured()) return "skipped";
   if (!force && !(await channelOn("text"))) return "skipped"; // AI texts switched off: staff handle texts by hand
   if (await isOptedOut(e164)) return "skipped";
+  if (!force && customerKey) {
+    const [paused] = await sql`select 1 from customers where key = ${customerKey} and ai_paused`;
+    if (paused) return "skipped"; // the AI is switched off for this customer
+  }
   const thread = (await sql`select * from sms_messages where phone = ${e164} and status not in ('discarded', 'draft', 'failed') order by coalesce(sent_at, created_at) desc limit 20`).map(toMessage).reverse();
   const last = thread.at(-1);
   if (!last || (last.direction !== "in" && !force)) return "skipped"; // only answer when the customer is waiting
@@ -228,6 +240,68 @@ Write the dealership's next text.`;
   return "drafted";
 }
 
+// ---- first text to a new lead ----
+/** Writes one short first text to each new lead that has a phone number (from the AI start day on, at most 2 days old).
+ *  Sends it if automatic texting is on, otherwise leaves a draft. Each lead is only handled once. */
+export async function textNewLeads({ max = 3 } = {}): Promise<{ drafted: number; sent: number; skipped: number; waiting: string | null }> {
+  const none = { drafted: 0, sent: 0, skipped: 0 };
+  if (!twilioConfigured()) return { ...none, waiting: "Twilio isn't connected yet." };
+  if (!aiConfigured()) return { ...none, waiting: "The AI key isn't set up." };
+  if (!(await getTextNewLeads())) return { ...none, waiting: "Texting new leads is switched off." };
+  if (!(await channelOn("text"))) return { ...none, waiting: "AI texts are switched off." };
+  if (!(await aiHoursOpen())) return { ...none, waiting: "Outside AI hours." };
+  const sql = await readyDb();
+  if (!sql) return { ...none, waiting: "The database isn't connected." };
+  const since = new Date(Math.max(aiStartDate().getTime(), Date.now() - 2 * 86400_000));
+  const leads = await sql`
+    select * from leads where not ignored and not sms_handled and phone is not null and phone <> '' and received_at >= ${since}
+    order by received_at asc limit ${max}`;
+  if (!leads.length) return { ...none, waiting: null };
+
+  const [info, training, autoText] = await Promise.all([getDealershipInfo(), getAiTraining(), getAutoText()]);
+  const out = { ...none };
+  for (const lead of leads) {
+    const done = () => sql`update leads set sms_handled = true where message_id = ${lead.message_id}`;
+    const e164 = toE164(lead.phone);
+    if (!e164 || (await isOptedOut(e164))) { await done(); out.skipped++; continue; }
+    const key = (lead.customer_key as string | null) ?? (await customerForPhone(e164));
+    const [paused] = key ? await sql`select 1 from customers where key = ${key} and ai_paused` : [];
+    // Someone we've already texted (or who texted us) is in a conversation, so no cold first text.
+    const [talked] = await sql`select 1 from sms_messages where phone = ${e164} and status not in ('discarded', 'failed') limit 1`;
+    if (paused || talked) { await done(); out.skipped++; continue; }
+    const firstName = String(lead.name ?? "").trim().split(/\s+/)[0] || null;
+    const system = `You write the first text to someone who just sent ${dealership.name}, a used car dealership in the Dallas area, an inquiry about a car. Write like a friendly salesperson texting:
+- 1 to 2 short sentences, under 240 characters. No markdown, no lists, no emojis. Use their first name if you have it and name the car they asked about if you have it.
+- Say you got their inquiry and ask one easy question (what they'd like to know, or when they could come see it). Don't claim to be a person: you write for the dealership team.
+- Never make up prices, financing approvals, rates or availability; if they asked something, say the team will confirm. Don't include the dealership name or an opt-out line, those are added automatically.
+- Follow the dealership's instructions below. If they wrote in Spanish, reply in Spanish. Reply with only the text message itself.`;
+    const stillForSale = await availabilityNote(lead.vehicle as string | null, { vin: lead.vin as string | null, stock: lead.stock as string | null, phone: info.phone });
+    const prompt = `DEALERSHIP: ${dealership.name}. Phone: ${info.phone || "not given"}. Hours/other details: ${info.notes || "none"}
+INSTRUCTIONS FROM THE DEALERSHIP: ${training.instructions || "none"}
+${stillForSale ? `${stillForSale}\n` : ""}CUSTOMER: ${firstName ?? "name unknown"}. Came from: ${lead.provider ?? "a listing site"}. Car: ${lead.vehicle ?? "not given"}.
+THEIR MESSAGE: ${String(lead.comments ?? "").slice(0, 600) || "(no message, just the inquiry)"}
+
+Write the first text.`;
+    let reply = "";
+    try {
+      reply = (await askClaude({ system, prompt, maxTokens: 200 })).replace(/^["']|["']$/g, "").trim().slice(0, 400);
+    } catch (error) {
+      console.error("[autodash:sms] couldn't write a first text to a lead:", error instanceof Error ? error.message : error);
+      break; // tried again on the next check; the lead isn't marked
+    }
+    await done();
+    if (reply.length < 2) { out.skipped++; continue; }
+    const [draft] = await sql`insert into sms_messages (customer_key, phone, direction, body, status, ai) values (${key}, ${e164}, 'out', ${reply}, 'draft', true) returning id`;
+    if (key) await logActivity(key, "text", "AI wrote a first text to this new lead", null).catch(() => undefined);
+    if (autoText) {
+      const sent = await sendText({ customerKey: key, phone: e164, body: reply, sentBy: "AI (automatic)", ai: true, draftId: Number(draft.id) });
+      trace("sms", `new-lead text ${sent.ok ? "sent" : `left as draft: ${sent.error}`}`);
+      if (sent.ok) out.sent++; else out.drafted++;
+    } else out.drafted++;
+  }
+  return { ...out, waiting: null };
+}
+
 // ---- after-purchase follow-ups ----
 export async function getPurchaseFollowup(): Promise<{ on: boolean; days: number }> {
   const [on, days] = await Promise.all([getSetting("purchase_followup").catch(() => null), getSetting("purchase_followup_days").catch(() => null)]);
@@ -255,7 +329,7 @@ export async function sendPurchaseFollowups({ max = 3 } = {}): Promise<{ drafted
   const rows = await sql`
     select * from customers
     where status = 'purchased' and purchased_at is not null and phone is not null
-      and purchase_followup_at is null and not purchase_followup_off
+      and purchase_followup_at is null and not purchase_followup_off and not ai_paused
       and purchased_at <= now() - make_interval(days => ${settings.days})
       and purchased_at > now() - make_interval(days => ${settings.days + FOLLOWUP_WINDOW_DAYS})
     order by purchased_at asc limit ${max}`;

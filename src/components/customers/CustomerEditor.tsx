@@ -113,6 +113,15 @@ export default function CustomerEditor({ view, setView, reps, sources, statuses,
                 </div>
               )}
 
+              <div className="mt-4">
+                <label className="flex items-center gap-2 text-sm text-ink">
+                  <input type="checkbox" checked={!view.aiPaused} disabled={saving}
+                    onChange={(e) => save("ai_paused", e.target.checked ? "on" : "off", { aiPaused: !e.target.checked })} />
+                  Let the AI email and text this customer
+                </label>
+                {view.aiPaused && <p className="mt-1 text-sm text-muted">The AI is off for this customer: it won&apos;t write or send anything to them. You can still email and text them yourself.</p>}
+              </div>
+
               <label className="mt-4 block text-sm text-muted">Notes
                 <textarea defaultValue={view.notes} rows={2} placeholder="Called, wants to trade in a 2012 Accord"
                   onBlur={(e) => e.target.value !== view.notes && save("notes", e.target.value, { notes: e.target.value })}

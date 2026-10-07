@@ -100,7 +100,12 @@ export async function draftFollowups({ max = 3, force = false } = {}): Promise<{
       continue;
     }
     // Someone who asked to unsubscribe (or already had) gets no AI answer.
-    const [optRow] = await sql`select email_optout from customers where key = ${reply.customer_key}`;
+    const [optRow] = await sql`select email_optout, ai_paused from customers where key = ${reply.customer_key}`;
+    if (optRow?.ai_paused) {
+      await sql`insert into ai_replies ${sql({ ...base, subject: "", body: "", status: "skipped", error: "The AI is switched off for this customer." })} on conflict (lead_id) do nothing`;
+      out.skipped++;
+      continue;
+    }
     if (optRow?.email_optout || wantsNoMoreEmail(String(reply.body ?? ""))) {
       await sql`insert into ai_replies ${sql({ ...base, subject: "", body: "", status: "skipped", error: "Asked to stop emails." })} on conflict (lead_id) do nothing`;
       out.skipped++;

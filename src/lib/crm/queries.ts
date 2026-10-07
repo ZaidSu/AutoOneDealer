@@ -37,6 +37,7 @@ function toView(r: Row, leads: CustomerView["leads"] = [], next: CustomerView["n
     purchasedVehicle: (r.purchased_vehicle as string) ?? null,
     followupSentAt: r.purchase_followup_at ? t(r.purchase_followup_at) : null,
     followupOff: Boolean(r.purchase_followup_off),
+    aiPaused: Boolean(r.ai_paused),
     returning: Boolean(purchasedAt && t(r.last_seen) > purchasedAt + 86400000),
     hasApplication: Number(r.app_count) > 0,
     leadsCount: Number(r.lead_count ?? 0),

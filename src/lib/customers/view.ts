@@ -27,6 +27,8 @@ export type CustomerView = {
   purchasedVehicle: string | null;
   followupSentAt: number | null;
   followupOff: boolean;
+  /** The AI never emails or texts this customer by itself (staff still can). */
+  aiPaused: boolean;
   returning: boolean;
   hasApplication: boolean;
   leadsCount: number;

@@ -15,7 +15,7 @@ import { withGmail } from "@/lib/gmail";
 import { syncLeads } from "@/lib/leads/sync";
 import { enrichInventory, seedInventoryOnce, syncInventory } from "@/lib/inventory/store";
 import { syncReviews } from "@/lib/reviews/store";
-import { sendPurchaseFollowups } from "@/lib/sms";
+import { sendPurchaseFollowups, textNewLeads } from "@/lib/sms";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 60;
@@ -81,6 +81,11 @@ export async function GET(req: NextRequest) {
     report.ai = left() > 10_000 ? await within(left() - 4_000, draftNewReplies({ max: 4 })) : "skipped (out of time, next run)";
   } catch (error) {
     report.ai = `failed: ${error instanceof Error ? error.message : "unknown"}`;
+  }
+  try {
+    report.newLeadTexts = left() > 8_000 ? await within(left() - 3_000, textNewLeads({ max: 3 })) : "skipped (out of time, next run)";
+  } catch (error) {
+    report.newLeadTexts = `failed: ${error instanceof Error ? error.message : "unknown"}`;
   }
   try {
     report.purchaseFollowups = left() > 8_000 ? await within(left() - 3_000, sendPurchaseFollowups({ max: 3 })) : "skipped (out of time, next run)";

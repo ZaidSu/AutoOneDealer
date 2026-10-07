@@ -104,6 +104,7 @@ export async function updateCustomerAction(
     case "purchased_vehicle":
       clean = clean === null ? null : cleanName(String(clean), 80) || null;
       break;
+    case "ai_paused":
     case "purchase_followup":
       if (clean !== "on" && clean !== "off" && clean !== null) return fail("Unknown follow-up setting.");
       break;
@@ -135,6 +136,8 @@ async function describeChange(field: data.CustomerField, value: string | number 
     }
     case "follow_up":
       return { kind: "follow_up", body: value ? `Follow up on ${String(value).slice(5).replace("-", "/")}` : "Reminder cleared" };
+    case "ai_paused":
+      return { kind: "note", body: value === "off" ? "AI switched off for this customer: no AI emails or texts" : "AI switched back on for this customer" };
     default:
       return null;
   }
@@ -507,6 +510,16 @@ export async function setAutoTextAction(on: boolean): Promise<ActionResult> {
   try { await setAutoText(Boolean(on)); } catch { return NO_DB; }
   revalidatePath("/ai/texts");
   return { ok: true, message: on ? "Automatic texting is on." : "Automatic texting is off. The AI writes drafts; your team clicks Send." };
+}
+
+export async function setTextNewLeadsAction(on: boolean): Promise<ActionResult> {
+  const staff = await requireStaff();
+  if (!staff) return fail("Your session ended. Sign in again.");
+  if (!can.editAiSettings(staff.role)) return fail(AI_EDIT_DENIED);
+  const { setTextNewLeads } = await import("@/lib/sms");
+  try { await setTextNewLeads(Boolean(on)); } catch { return NO_DB; }
+  revalidatePath("/ai/texts/settings");
+  return { ok: true, message: on ? "New leads with a phone number will get a first text." : "New leads won't get a first text." };
 }
 
 export async function savePurchaseFollowupAction(on: boolean, days: number): Promise<ActionResult> {

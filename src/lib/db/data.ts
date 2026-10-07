@@ -136,7 +136,7 @@ export async function allCustomerRecords(): Promise<CustomerRecord[]> {
   return (await sql`select * from customers`).map(toRecord);
 }
 
-export type CustomerField = "rep" | "status" | "financing" | "heard_from" | "state_scope" | "notes" | "follow_up" | "purchased_vehicle" | "purchase_followup";
+export type CustomerField = "rep" | "status" | "financing" | "heard_from" | "state_scope" | "notes" | "follow_up" | "purchased_vehicle" | "purchase_followup" | "ai_paused";
 
 /** Postgres dates come back as Date objects at UTC midnight; turn them back into "YYYY-MM-DD". */
 function toDay(value: unknown): string {
@@ -176,6 +176,10 @@ export async function updateCustomer(key: string, name: string | null, field: Cu
       break;
     case "purchased_vehicle":
       await sql`update customers set purchased_vehicle = ${value as string | null}, updated_at = now() where key = ${key}`;
+      break;
+    case "ai_paused":
+      // "off" = the AI leaves this customer alone (no AI emails or texts); "on" = normal.
+      await sql`update customers set ai_paused = ${value === "off"}, updated_at = now() where key = ${key}`;
       break;
     case "purchase_followup":
       // "on" (or empty) sends the follow-up text; "off" never does.

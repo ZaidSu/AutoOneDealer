@@ -10,7 +10,8 @@ import { channelOn } from "@/lib/ai/switches";
 import { can } from "@/lib/auth/access";
 import { requirePageStaff } from "@/lib/auth/guard";
 import { dbState, fresh } from "@/lib/db";
-import { getAutoText } from "@/lib/sms";
+import TextNewLeadsToggle from "@/components/ai/TextNewLeadsToggle";
+import { getAutoText, getTextNewLeads } from "@/lib/sms";
 import { twilioConfigured } from "@/lib/sms/twilio";
 import { pretty } from "@/lib/utils/sms-format";
 
@@ -22,7 +23,7 @@ export default async function AiTextSettingsPage() {
   const header = <PageHeader title="Text settings" description="Turn the AI on or off for texts, choose whether it texts by itself, and check that Twilio is connected." />;
   const state = await dbState();
   if (state !== "ready") return <>{header}<DbNotice state={state} what="Text settings" /></>;
-  const [autoText, enabled] = await fresh("Text settings", () => Promise.all([getAutoText(), channelOn("text")]));
+  const [autoText, enabled, newLeads] = await fresh("Text settings", () => Promise.all([getAutoText(), channelOn("text"), getTextNewLeads()]));
   const base = process.env.APP_URL || (process.env.VERCEL_PROJECT_PRODUCTION_URL ? `https://${process.env.VERCEL_PROJECT_PRODUCTION_URL}` : "https://auto-one-dealer.vercel.app");
   const webhook = `${base.replace(/\/$/, "")}/api/sms/incoming`;
   const ok = twilioConfigured();
@@ -53,6 +54,7 @@ export default async function AiTextSettingsPage() {
           </>}
         </ul>
         {dev && <div className="mt-4 border-t border-line pt-4"><TestTextButton /></div>}
+        <div className="mt-4 border-t border-line pt-4"><TextNewLeadsToggle initial={newLeads} canChange={canChange} /></div>
         <div className="mt-4 border-t border-line pt-4"><AutoTextToggle initial={autoText} canChange={canChange} /></div>
       </section>
       <p className="mt-4 text-sm text-muted">The text sent a week after a purchase is set up under <Link href="/ai/automations" className="font-semibold text-signal underline">AI setup → Automations</Link>.</p>
