@@ -24,13 +24,21 @@ export function listStripeInvoices(): Promise<Invoice[]> {
   });
 }
 
+/** Stripe's own preview of the next invoice. Asks about the customer's subscription by id (the documented way, and the only one that
+ *  works when the customer has more than one thing going on). Throws Stripe's message if it can't. */
+async function previewRaw(): Promise<StripeInvoice> {
+  const cus = stripeCustomerId();
+  const subs = await stripeApi<{ data: { id: string }[] }>(`subscriptions?customer=${encodeURIComponent(cus)}&limit=1`);
+  const form: Record<string, string> = { customer: cus };
+  if (subs.data[0]) form.subscription = subs.data[0].id;
+  return stripeApi<StripeInvoice>("invoices/create_preview", form);
+}
+
 /** What the next invoice will be, from Stripe's own preview (the subscription plus any one-time charges and discounts added in Stripe). */
 export function stripeUpcoming(): Promise<{ items: InvoiceItem[]; subtotal: number; tax: number; total: number; date: string | null } | null> {
   return cached("stripe:upcoming", 45_000, async () => {
     try {
-      let raw: StripeInvoice;
-      try { raw = await stripeApi<StripeInvoice>("invoices/create_preview", { customer: stripeCustomerId() }); }
-      catch { raw = await stripeApi<StripeInvoice>(`invoices/upcoming?customer=${encodeURIComponent(stripeCustomerId())}`); }
+      const raw = await previewRaw();
       const mapped = mapStripeInvoice({ ...raw, status: "open" });
       if (!mapped) return null;
       return { items: mapped.items, subtotal: mapped.subtotal, tax: mapped.tax, total: mapped.total, date: raw.next_payment_attempt ? day(raw.next_payment_attempt, dealership.timeZone) : raw.period_end ? day(raw.period_end, dealership.timeZone) : null };
@@ -93,6 +101,7 @@ export function stripeEmptyReason(): Promise<string> {
       if (!subs.data.length) return "This customer has no subscription in Stripe yet. In Stripe, open the customer and click Create subscription ($379 a month). The one-time fees already added will go on its first invoice.";
       const bad = subs.data.every((s) => ["incomplete", "incomplete_expired", "canceled"].includes(s.status));
       if (bad) return `The subscription in Stripe is ${subs.data[0].status.replace("_", " ")}, so no bill was issued. Open it in Stripe to finish or recreate it.`;
+      try { await previewRaw(); } catch (e) { return `Stripe has a subscription but AutoDash couldn't preview the next bill: ${e instanceof Error ? e.message : "unknown error"}`; }
       return "Stripe hasn't issued a bill for this customer yet (it may still be a draft). Open the customer in Stripe and finalize the invoice.";
     } catch (e) {
       return `Couldn't read subscriptions from Stripe: ${e instanceof Error ? e.message : "unknown error"}. The API key may be missing the permission to read subscriptions.`;
