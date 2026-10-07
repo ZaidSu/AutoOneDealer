@@ -23,8 +23,7 @@ export function mapStripeInvoice(raw: StripeInvoice, tz = DEFAULT_TZ): Invoice |
   const items: InvoiceItem[] = lines.map((l) => {
     const product = l.price?.product && typeof l.price.product === "object" ? l.price.product.name : null;
     const label = (l.description || l.price?.nickname || product || "Charge").slice(0, 120);
-    const span = l.period && l.period.end - l.period.start > 86400 ? `${day(l.period.start, tz)} to ${day(l.period.end, tz)}` : undefined;
-    return span ? { label, detail: span, cents: l.amount } : { label, cents: l.amount };
+    return { label, cents: l.amount }; // no date ranges: Stripe's service periods ("Oct 7 to Oct 8") only confuse a customer
   });
   const discount = (raw.total_discount_amounts ?? []).reduce((n, d) => n + d.amount, 0);
   if (discount > 0) items.push({ label: "Discount", cents: -discount });

@@ -3,8 +3,7 @@ import { notFound } from "next/navigation";
 import PrintButton from "@/components/billing/PrintButton";
 import { can } from "@/lib/auth/access";
 import { requirePageStaff } from "@/lib/auth/guard";
-import { getBillingSettings } from "@/lib/billing";
-import { listStripeInvoices, stripeBillingOn } from "@/lib/billing/stripe-sync";
+import { getBillingSettings, listInvoices } from "@/lib/billing";
 import { money, periodLabel } from "@/lib/billing/types";
 import { dealership } from "@/lib/dealership";
 
@@ -14,9 +13,9 @@ export const dynamic = "force-dynamic";
 /** A receipt for one paid month. Shows the business name only (no street address). */
 export default async function ReceiptPage({ params }: { params: Promise<{ id: string }> }) {
   const staff = await requirePageStaff();
-  if (!can.viewBilling(staff.role) || !stripeBillingOn()) notFound();
+  if (!can.viewBilling(staff.role)) notFound();
   const { id } = await params;
-  const invoice = (await listStripeInvoices().catch(() => [])).find((i) => i.stripeId === id && i.status === "paid");
+  const invoice = (await listInvoices().catch(() => [])).find((i) => (i.stripeId ?? String(i.id)) === id && i.status === "paid");
   if (!invoice) notFound();
   const settings = await getBillingSettings();
   const paidOn = invoice.paidAt ? new Date(invoice.paidAt).toLocaleDateString("en-US", { month: "long", day: "numeric", year: "numeric", timeZone: dealership.timeZone }) : "";

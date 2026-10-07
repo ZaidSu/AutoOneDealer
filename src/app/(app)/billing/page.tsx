@@ -221,7 +221,7 @@ export default async function BillingPage({ searchParams }: { searchParams: Prom
           <StripePricesForm monthly={editor[0]?.amountCents ?? null} charges={editor[1]} dashboardUrl={stripeDashboardUrl()} nextDate={upcoming?.date ?? null} />
         </section>
       )}
-      {inStripe && <Receipts invoices={invoices} />}
+      <Receipts invoices={invoices} />
       {manage && !inStripe && (
         <section aria-labelledby="prices" className="mt-10">
           <h2 id="prices" className="text-lg font-semibold">Prices and settings <span className="text-sm font-normal text-muted">(only you, the developer, see this)</span></h2>
@@ -324,11 +324,11 @@ function Receipts({ invoices }: { invoices: Invoice[] }) {
             </tr></thead>
             <tbody className="divide-y divide-line">
               {paid.map((i) => (
-                <tr key={i.number}>
+                <tr key={i.id}>
                   <td className="px-5 py-3 font-medium">{periodLabel(i.period)}</td>
                   <td className="px-3 py-3 text-muted">{i.paidAt ? date(i.paidAt) : "—"}</td>
                   <td className="px-3 py-3 tabular-nums">{money(i.total)}</td>
-                  <td className="px-5 py-3">{i.stripeId ? <a className="panel-link" href={`/billing/receipt/${i.stripeId}`}>View receipt</a> : null}</td>
+                  <td className="px-5 py-3"><a className="panel-link" href={`/billing/receipt/${i.stripeId ?? i.id}`}>View receipt</a></td>
                 </tr>
               ))}
             </tbody>
