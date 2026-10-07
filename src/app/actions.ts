@@ -511,7 +511,7 @@ export async function saveDigestSettingsAction(input: { on: boolean; everyMin: n
   if (!(DIGEST_EVERY as readonly number[]).includes(everyMin)) return fail("Pick how often from the list.");
   const to = String(input?.to ?? "").trim().toLowerCase();
   if (to && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(to)) return fail("That email address doesn't look right.");
-  try { await saveDigestSettings({ on: Boolean(input?.on), everyMin, to, anyTime: Boolean(input?.anyTime), appointments: input?.appointments !== false, inventory: input?.inventory !== false }); } catch { return NO_DB; }
+  try { await saveDigestSettings({ on: Boolean(input?.on), everyMin, to, anyTime: Boolean(input?.anyTime), appointments: input?.appointments === true, inventory: input?.inventory === true }); } catch { return NO_DB; }
   revalidatePath("/ai/automations");
   return { ok: true, message: input?.on ? `Saved. An update goes out about every ${everyMin} minutes while the AI is working, if anything happened.` : "Saved. Update emails are off." };
 }

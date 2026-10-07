@@ -1,5 +1,5 @@
 // The update email to the dealership inbox: every so often (default 90 minutes, during the AI's working hours) AutoDash writes
-// "here is what happened, contact these people" and sends it to the dealership mailbox. Skipped when nothing happened.
+// "these customers are waiting for you" (what they want, what was said, a link to talk to them) and sends ONE email to the dealership mailbox. Skipped when nobody is waiting.
 import { aiHoursOpen } from "@/lib/ai/schedule";
 import { canSendFrom } from "@/lib/auth/google";
 import { readyDb } from "@/lib/db";
@@ -14,17 +14,17 @@ export const DIGEST_EVERY = [30, 60, 90, 120, 180] as const;
 const EMAIL = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
 export async function getDigestSettings(): Promise<DigestSettings> {
-  const [on, every, to, anyTime, appts, inv] = await Promise.all(["digest_on", "digest_every", "digest_to", "digest_any_time", "digest_appointments", "digest_inventory"].map((k) => getSetting(k).catch(() => null)));
+  const [on, every, to, anyTime, appts, inv] = await Promise.all(["digest_on", "digest_every", "digest_to", "digest_any_time", "digest_show_appointments", "digest_show_inventory"].map((k) => getSetting(k).catch(() => null)));
   const n = Number(every);
-  return { on: on !== "off", everyMin: (DIGEST_EVERY as readonly number[]).includes(n) ? n : 90, to: to && EMAIL.test(to) ? to : "", anyTime: anyTime === "on", appointments: appts !== "off", inventory: inv !== "off" };
+  return { on: on !== "off", everyMin: (DIGEST_EVERY as readonly number[]).includes(n) ? n : 90, to: to && EMAIL.test(to) ? to : "", anyTime: anyTime === "on", appointments: appts === "on", inventory: inv === "on" };
 }
 export async function saveDigestSettings(s: DigestSettings) {
   await setSetting("digest_on", s.on ? "on" : "off");
   await setSetting("digest_every", String(s.everyMin));
   await setSetting("digest_to", s.to.trim().toLowerCase());
   await setSetting("digest_any_time", s.anyTime ? "on" : "off");
-  await setSetting("digest_appointments", s.appointments ? "on" : "off");
-  await setSetting("digest_inventory", s.inventory ? "on" : "off");
+  await setSetting("digest_show_appointments", s.appointments ? "on" : "off");
+  await setSetting("digest_show_inventory", s.inventory ? "on" : "off");
 }
 
 export type DigestStatus = { at: number; sent: boolean; reason: string };
@@ -43,40 +43,54 @@ const n = (v: unknown) => (v ? new Date(v as string).getTime() : 0);
 export async function gatherDigest(from: number, to: number): Promise<DigestData | null> {
   const sql = await readyDb();
   if (!sql) return null;
-  const since = new Date(Math.max(from, dataStartDate().getTime()));
+  // Everyone still waiting, not just people who arrived since the last email: a customer stays on the list until someone at the
+  // dealership contacts them (marked on their profile) or removes them. Looks back 3 days.
+  const since = new Date(Math.max(to - 72 * 3600_000, dataStartDate().getTime()));
   // Each query on its own: if one fails the update is still sent with the rest.
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   type Row = Record<string, any>;
   const q = async (query: PromiseLike<unknown>): Promise<Row[]> => {
     try { return (await query) as Row[]; } catch (e) { console.error("[autodash:digest]", e instanceof Error ? e.message : e); return []; }
   };
-  const [people, sent, drafts, emails, texts, appts, newCars, soldCars] = await Promise.all([
-    q(sql`select l.name, l.phone, l.email, l.vehicle, l.provider, l.comments, l.received_at, c.contacted_at,
-            r.status as reply_status, r.sent_at as reply_sent_at
+  const [people, emails, texts, drafts, appts, newCars, soldCars] = await Promise.all([
+    q(sql`select l.customer_key, l.name, l.phone, l.email, l.vehicle, l.provider, l.comments, l.received_at, c.contacted_at,
+            r.status as reply_status, r.sent_at as reply_sent_at, r.body as reply_body
           from leads l left join customers c on c.key = l.customer_key left join ai_replies r on r.lead_id = l.message_id
-          where not l.ignored and l.received_at >= ${since} order by l.received_at asc limit 30`),
-    q(sql`select customer_name, to_email, vehicle, sent_at, sent_by from ai_replies where status = 'sent' and sent_at >= ${since} order by sent_at asc limit 30`),
+          where not l.ignored and l.received_at >= ${since} order by l.received_at asc limit 60`),
+    q(sql`select customer_key, from_email, body, received_at from customer_replies where received_at >= ${since} order by received_at asc limit 100`),
+    q(sql`select customer_key, phone, body, created_at from sms_messages where direction = 'in' and created_at >= ${since} order by created_at asc limit 100`),
     q(sql`select count(*)::int as n from ai_replies where status = 'draft'`),
-    q(sql`select from_name, from_email, body, received_at from customer_replies where received_at >= ${since} order by received_at asc limit 20`),
-    q(sql`select m.phone, m.body, m.created_at, c.name from sms_messages m left join customers c on c.key = m.customer_key
-          where m.direction = 'in' and m.created_at >= ${since} order by m.created_at asc limit 20`),
     q(sql`select customer_name, phone, vehicle, starts_at from appointments where status = 'scheduled' and starts_at between now() and now() + interval '24 hours' order by starts_at limit 15`),
     q(sql`select title from inventory where status = 'available' and first_seen >= ${since} order by first_seen limit 10`),
     q(sql`select title from inventory where status = 'sold' and sold_at >= ${since} order by sold_at limit 10`),
   ]);
-  return {
-    dealership: dealership.name, timeZone: dealership.timeZone, from, to, appUrl: (process.env.APP_URL ?? "").replace(/\/+$/, "") || null,
-    newPeople: people.map((r) => ({
+  const appUrl = (process.env.APP_URL ?? "").replace(/\/+$/, "") || null;
+  const byCustomer = new Map<string, Row>();
+  for (const r of people) { // newest message per customer; one entry per person
+    const k = String(r.customer_key ?? r.email ?? r.phone ?? r.name ?? Math.random());
+    const old = byCustomer.get(k);
+    if (!old || n(r.received_at) >= n(old.received_at)) byCustomer.set(k, { ...r, _k: k, _first: old?._first ?? r.received_at });
+    else byCustomer.set(k, { ...old, _first: old._first });
+  }
+  const waiting = [...byCustomer.values()].map((r) => {
+    const key = r.customer_key ? String(r.customer_key) : null;
+    const at = n(r._first ?? r.received_at);
+    const replies = [
+      ...emails.filter((e) => key && e.customer_key === key).map((e) => ({ via: "email" as const, text: String(e.body ?? ""), at: n(e.received_at) })),
+      ...texts.filter((t) => (key && t.customer_key === key) || (r.phone && t.phone === r.phone)).map((t) => ({ via: "text" as const, text: String(t.body ?? ""), at: n(t.created_at) })),
+    ].sort((x, y) => x.at - y.at);
+    const contactedAt = n(r.contacted_at);
+    return {
       name: r.name ?? null, phone: r.phone ?? null, email: r.email ?? null, vehicle: r.vehicle ?? null, provider: r.provider ?? null, message: r.comments ?? null,
-      contacted: Boolean(r.contacted_at && n(r.contacted_at) >= n(r.received_at)),
-      ai: r.reply_status === "sent" || r.reply_status === "sending" ? "sent" : r.reply_status === "draft" ? "draft" : "none",
-      aiSentAt: r.reply_sent_at ? n(r.reply_sent_at) : null, at: n(r.received_at),
-    })),
-    wroteBack: [
-      ...emails.map((r) => ({ name: r.from_name ?? null, via: "email" as const, phone: null, email: r.from_email ?? null, text: String(r.body ?? ""), at: n(r.received_at) })),
-      ...texts.map((r) => ({ name: r.name ?? null, via: "text" as const, phone: r.phone ?? null, email: null, text: String(r.body ?? ""), at: n(r.created_at) })),
-    ].sort((a, b) => a.at - b.at),
-    aiSent: sent.map((r) => ({ name: r.customer_name ?? null, email: r.to_email, vehicle: r.vehicle ?? null, at: n(r.sent_at), auto: /automatic/i.test(String(r.sent_by ?? "")) })),
+      link: appUrl && key ? `${appUrl}/customers/${encodeURIComponent(key)}` : appUrl ? `${appUrl}/leads` : null,
+      ai: r.reply_status === "sent" || r.reply_status === "sending" ? ("sent" as const) : r.reply_status === "draft" ? ("draft" as const) : ("none" as const),
+      aiSentAt: r.reply_sent_at ? n(r.reply_sent_at) : null, aiText: r.reply_body ? String(r.reply_body) : null,
+      replies: replies.filter((x) => x.at > contactedAt),
+      at, _handled: contactedAt >= Math.max(at, ...replies.map((x) => x.at), 0) && contactedAt > 0,
+    };
+  }).filter((w) => !w._handled).map(({ _handled, ...w }) => { void _handled; return w; }).sort((a, b) => a.at - b.at).slice(0, 25);
+  return {
+    dealership: dealership.name, timeZone: dealership.timeZone, from, to, appUrl, waiting,
     draftsWaiting: Number(drafts[0]?.n ?? 0),
     appointments: appts.map((r) => ({ name: r.customer_name, phone: r.phone ?? null, vehicle: r.vehicle ?? null, at: n(r.starts_at) })),
     newCars: newCars.map((r) => String(r.title)),
@@ -112,7 +126,7 @@ async function runDigest({ force = false } = {}): Promise<DigestResult> {
   if (data && !settings.appointments) data.appointments = [];
   if (data && !settings.inventory) { data.newCars = []; data.soldCars = []; }
   if (!data) return { sent: false, reason: "no database" };
-  if (!force && digestIsEmpty(data)) return { sent: false, reason: "nothing new" };
+  if (!force && digestIsEmpty(data)) return { sent: false, reason: "nobody is waiting" };
 
   // Claim this slot first (only one server can), so two timer runs never send the same update twice.
   const claimed = await sql`insert into app_settings (key, value) values ('digest_last', ${String(now)})
