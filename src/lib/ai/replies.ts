@@ -14,6 +14,7 @@ import { loadGmailConnection } from "@/lib/gmail/connection";
 import { channelOn } from "@/lib/ai/switches";
 import { availabilityNote } from "@/lib/inventory";
 import { EMAIL_FOOTER } from "@/lib/legal/config";
+import { isOfferUp, OFFERUP_TEXT_RULES, textify } from "@/lib/ai/offerup-style";
 
 export type ReplyStatus = "draft" | "sent" | "discarded" | "skipped" | "failed";
 export type AiReply = {
@@ -132,7 +133,11 @@ ${training.qa.map((q) => `Q: ${q.question}\nA: ${q.answer}`).join("\n\n") || "no
 }
 
 async function writeReply(lead: Record<string, unknown>, info: Awaited<ReturnType<typeof getDealershipInfo>>, training: Awaited<ReturnType<typeof getAiTraining>>) {
-  const system = `You write email replies for ${dealership.name}, a used car dealership, to customers who just sent a lead through a car listing site.
+  const offerUp = isOfferUp(lead.provider, lead.email);
+  const system = offerUp ? `You write quick replies for ${dealership.name}, a used car dealership, to a customer who messaged about a car on OfferUp.
+${OFFERUP_TEXT_RULES}
+- Follow the dealership's own instructions below over these defaults when they conflict, except never invent facts and never add a sign-off.
+Reply with only JSON: {"subject": "...", "body": "..."}` : `You write email replies for ${dealership.name}, a used car dealership, to customers who just sent a lead through a car listing site.
 Write like a friendly, professional salesperson at the dealership. Rules:
 - Plain text only. No markdown, no bullet symbols, no emojis. 60 to 130 words.
 - Thank them by first name if you have it, mention the exact car they asked about, and answer their question if you can from the facts below.
@@ -158,8 +163,8 @@ Their message: ${String(lead.comments ?? "").slice(0, 3000) || "(no message, jus
   const json = text.slice(text.indexOf("{"), text.lastIndexOf("}") + 1);
   let parsed: { subject?: string; body?: string } = {};
   try { parsed = JSON.parse(json); } catch { /* handled below */ }
-  const body = String(parsed.body ?? "").trim();
-  if (body.length < 20) throw new Error("The AI's reply came back empty or unreadable.");
+  const body = offerUp ? textify(String(parsed.body ?? "")) : String(parsed.body ?? "").trim();
+  if (body.length < (offerUp ? 5 : 20)) throw new Error("The AI's reply came back empty or unreadable.");
   const subject = String(parsed.subject ?? "").trim() || `Your inquiry${lead.vehicle ? ` about the ${lead.vehicle}` : ""} at ${dealership.name}`;
   return { subject: subject.slice(0, 150), body: body.slice(0, 4000) };
 }
@@ -188,7 +193,7 @@ export async function sendReply(id: number, edits: { subject: string; body: stri
   if (!sql) return { ok: false, error: "The database isn't connected." };
   const subject = edits.subject.replace(/[\r\n]+/g, " ").trim().slice(0, 150);
   const body = edits.body.trim().slice(0, 6000);
-  if (!subject || body.length < 10) return { ok: false, error: "Write a subject and a message first." };
+  if (!subject || body.length < 4) return { ok: false, error: "Write a subject and a message first." };
   // Claim the draft first, so two people clicking Send at once can't send it twice.
   const [row] = await sql`update ai_replies set status = 'sending', subject = ${subject}, body = ${body} where id = ${id} and status = 'draft' returning *`;
   if (!row) return { ok: false, error: "This reply was already sent or discarded." };
@@ -204,7 +209,8 @@ export async function sendReply(id: number, edits: { subject: string; body: stri
     return { ok: false, error: "Gmail needs permission to send. Go to Settings and click Reconnect Gmail." };
   }
   // Every email says who it's from and how to stop (added here, so edited drafts get it too).
-  const fullBody = /unsubscribe/i.test(body) ? body : `${body}\n\n${EMAIL_FOOTER}`;
+  // OfferUp chats are texts to the customer, so those go out as plain short messages without the footer.
+  const fullBody = /unsubscribe/i.test(body) || isOfferUp(row.provider, row.to_email) ? body : `${body}\n\n${EMAIL_FOOTER}`;
   const result = await withGmail((gmail) => gmail.send({
     to: row.to_email, subject, body: fullBody, fromName: dealership.name,
     threadId: row.thread_id, inReplyTo: row.in_reply_to, references: row.references_header,

@@ -83,14 +83,35 @@ export function totals(items: InvoiceItem[], s: Pick<BillingSettings, "taxRatePe
   return { subtotal, tax, total: subtotal + tax };
 }
 
+export const SETUP_FEE_LABEL = "One-time connection fee";
+export const PHONE_FEE_LABEL = "One-time phone number fee";
+
 /** An unpaid bill, brought in line with the current plan: the monthly-plan line gets today's price and the tax is
- *  recalculated. Returns null if nothing changes. Extra-usage lines and the connection fee are left alone. */
+ *  recalculated. On the very first bill (`isFirst`) the one-time connection and phone number fees are kept in step with the
+ *  settings too: added if a bill made earlier is missing one, updated if the price changed. Extra-usage lines are left alone.
+ *  Returns null if nothing changes. */
 export function repricedBill(
   bill: { items: InvoiceItem[]; subtotal: number; tax: number; total: number },
   planLabel: string,
-  s: Pick<BillingSettings, "monthlyCents" | "taxRatePercent" | "taxablePercent">,
+  s: Pick<BillingSettings, "monthlyCents" | "taxRatePercent" | "taxablePercent"> & Partial<Pick<BillingSettings, "setupFeeCents" | "phoneFeeCents">>,
+  isFirst = false,
 ): { items: InvoiceItem[]; subtotal: number; tax: number; total: number } | null {
-  const items = bill.items.map((i) => (i.label === planLabel ? { ...i, cents: s.monthlyCents } : i));
+  let items = bill.items.map((i) => (i.label === planLabel ? { ...i, cents: s.monthlyCents } : i));
+  if (isFirst) {
+    const fees: [string, string, number | undefined][] = [
+      [SETUP_FEE_LABEL, "Phone number, Gmail and AI connection and training. First bill only.", s.setupFeeCents],
+      [PHONE_FEE_LABEL, "Your dedicated AI texting phone number. First bill only.", s.phoneFeeCents],
+    ];
+    for (const [label, detail, cents] of fees) {
+      if (cents === undefined) continue;
+      const has = items.some((i) => i.label === label);
+      if (has) items = items.flatMap((i) => (i.label !== label ? [i] : cents > 0 ? [{ ...i, cents }] : []));
+      else if (cents > 0) { // after the plan and connection fee lines, before any extra-usage lines
+        const at = items.reduce((last, i, n) => (i.label === planLabel || i.label === SETUP_FEE_LABEL ? n : last), 0);
+        items = [...items.slice(0, at + 1), { label, detail, cents }, ...items.slice(at + 1)];
+      }
+    }
+  }
   const t = totals(items, s);
-  return t.subtotal === bill.subtotal && t.tax === bill.tax && t.total === bill.total ? null : { items, ...t };
+  return t.subtotal === bill.subtotal && t.tax === bill.tax && t.total === bill.total && items.length === bill.items.length ? null : { items, ...t };
 }

@@ -65,3 +65,15 @@ test("the first bill is $379 plan + $99 connection + $11 phone number = $489", (
   const t = totals([{ label: "Plan", cents: DEFAULT_BILLING.monthlyCents }, { label: "Connection", cents: DEFAULT_BILLING.setupFeeCents }, { label: "Phone", cents: DEFAULT_BILLING.phoneFeeCents }], DEFAULT_BILLING);
   assert.equal(t.total, 48900);
 });
+
+test("the first bill gets the phone number fee even if it was made before that fee existed", () => {
+  const plan = "Auto One Motors monthly plan";
+  const old = { items: [{ label: plan, cents: 37900 }, { label: "One-time connection fee", cents: 9900 }], subtotal: 47800, tax: 0, total: 47800 };
+  const s = { monthlyCents: 37900, taxRatePercent: 0, taxablePercent: 80, setupFeeCents: 9900, phoneFeeCents: 1100 };
+  const fixed = repricedBill(old, plan, s, true)!;
+  assert.equal(fixed.total, 48900);
+  assert.deepEqual(fixed.items.map((i) => i.label), [plan, "One-time connection fee", "One-time phone number fee"]);
+  assert.equal(repricedBill(fixed, plan, s, true), null, "already current");
+  assert.equal(repricedBill(old, plan, s, false), null, "later months never get the one-time fees");
+  assert.equal(repricedBill(fixed, plan, { ...s, phoneFeeCents: 0 }, true)!.total, 47800, "set the fee to 0 and it comes off");
+});

@@ -12,6 +12,7 @@ import { aiHoursOpen } from "@/lib/ai/schedule";
 import { mapLimit, withGmail, type GmailClient } from "@/lib/gmail";
 import { loadGmailConnection } from "@/lib/gmail/connection";
 import { newPartOnly } from "@/lib/gmail/email";
+import { isOfferUp, OFFERUP_TEXT_RULES, textify } from "@/lib/ai/offerup-style";
 import { parseOfferUp } from "@/lib/parsers/offerup";
 import { channelOn } from "@/lib/ai/switches";
 import { wantsNoMoreEmail } from "@/lib/ai/unsubscribe";
@@ -106,7 +107,11 @@ export async function draftFollowups({ max = 3, force = false } = {}): Promise<{
       continue;
     }
     const [vehicleRow] = await sql`select last_vehicle, name from customers where key = ${reply.customer_key}`;
-    const system = `You answer customer emails for ${dealership.name}, a used car dealership in the Dallas area. The customer is replying to an earlier email from the dealership.
+    const offerUp = isOfferUp(null, reply.from_email) || /offerup/i.test(String(reply.subject ?? ""));
+    const system = offerUp ? `You answer messages for ${dealership.name}, a used car dealership in the Dallas area. The customer is chatting on OfferUp and just wrote back.
+${OFFERUP_TEXT_RULES}
+- Don't repeat what was already said; answer what they just wrote.
+Reply with only the message text.` : `You answer customer emails for ${dealership.name}, a used car dealership in the Dallas area. The customer is replying to an earlier email from the dealership.
 Write like a friendly, professional salesperson continuing the conversation:
 - Plain text only, no markdown. 40 to 120 words. Don't repeat what was already said; answer what they just wrote.
 - Use the facts below and what was said earlier in the conversation. Never make up prices, financing approvals, rates, payments, trade-in values or delivery; if you don't know, say a salesperson will confirm. For availability, only say what the LIVE INVENTORY CHECK says (if there is none, a salesperson will confirm).
@@ -127,8 +132,9 @@ ${conversation}
 
 THE EMAIL TO ANSWER NOW:
 ${reply.body}`;
-    const body = (await askClaude({ system, prompt, maxTokens: 600 })).trim().slice(0, 4000);
-    if (body.length < 20) { out.skipped++; continue; }
+    const raw = (await askClaude({ system, prompt, maxTokens: 600 })).trim().slice(0, 4000);
+    const body = offerUp ? textify(raw) : raw;
+    if (body.length < (offerUp ? 3 : 20)) { out.skipped++; continue; }
     const subject = /^re:/i.test(reply.subject) ? reply.subject : `Re: ${reply.subject}`;
     const [row] = await sql`insert into ai_replies ${sql({ ...base, subject: subject.slice(0, 150), body, status: "draft" })} on conflict (lead_id) do nothing returning id`;
     out.drafted++;

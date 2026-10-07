@@ -4,7 +4,7 @@ import { getSetting, setSetting } from "@/lib/db/data";
 import { dealership } from "@/lib/dealership";
 import { addDays, dayKey, zonedToUtc } from "@/lib/utils/time";
 import { listStripeInvoices, stripeBillingOn, stripeCard } from "./stripe-sync";
-import { DEFAULT_BILLING, PLAN_VERSION, periodLabel, repricedBill, totals, type BillingSettings, type Invoice, type InvoiceItem } from "./types";
+import { DEFAULT_BILLING, PHONE_FEE_LABEL, PLAN_VERSION, SETUP_FEE_LABEL, periodLabel, repricedBill, totals, type BillingSettings, type Invoice, type InvoiceItem } from "./types";
 
 export async function getBillingSettings(): Promise<BillingSettings> {
   try {
@@ -120,8 +120,8 @@ export async function draftItems(period: string, s: BillingSettings): Promise<In
     cents: s.monthlyCents,
   }];
   const [{ n }] = sql ? await sql`select count(*)::int as n from billing_invoices where status <> 'void'` : [{ n: 0 }];
-  if (n === 0 && s.setupFeeCents > 0) items.push({ label: "One-time connection fee", detail: "Phone number, Gmail and AI connection and training. First bill only.", cents: s.setupFeeCents });
-  if (n === 0 && s.phoneFeeCents > 0) items.push({ label: "One-time phone number fee", detail: "Your dedicated AI texting phone number. First bill only.", cents: s.phoneFeeCents });
+  if (n === 0 && s.setupFeeCents > 0) items.push({ label: SETUP_FEE_LABEL, detail: "Phone number, Gmail and AI connection and training. First bill only.", cents: s.setupFeeCents });
+  if (n === 0 && s.phoneFeeCents > 0) items.push({ label: PHONE_FEE_LABEL, detail: "Your dedicated AI texting phone number. First bill only.", cents: s.phoneFeeCents });
   const prev = previousPeriod(period);
   const used = await usageFor(prev);
   const extraEmails = Math.max(0, used.emails - s.includedEmails);
@@ -177,10 +177,11 @@ export async function repriceOpenInvoices(): Promise<number> {
   if (!sql) return 0;
   const s = await getBillingSettings();
   const rows = await sql`select * from billing_invoices where status = 'open' and period >= ${periodOf()}`;
+  const [{ first }] = await sql`select min(id)::int as first from billing_invoices where status <> 'void'`;
   let changed = 0;
   for (const row of rows) {
     const bill = toInvoice(row);
-    const next = repricedBill(bill, `${dealership.name} monthly plan`, s);
+    const next = repricedBill(bill, `${dealership.name} monthly plan`, s, bill.id === first);
     if (!next) continue;
     await sql`update billing_invoices set items = ${sql.json(next.items)}, subtotal = ${next.subtotal}, tax = ${next.tax}, total = ${next.total}
       where id = ${bill.id} and status = 'open'`;
