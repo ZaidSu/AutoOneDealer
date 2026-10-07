@@ -1,4 +1,4 @@
-// Server pages call this first: no valid sign-in, no page (the page frame itself no longer checks).
+// Server pages call this first: no valid sign-in, no page.
 import { redirect } from "next/navigation";
 import { getStaffSession } from "./session";
 

@@ -1,333 +1,276 @@
-// Creates the tables. Safe to run more than once (Developer page → Set up database).
-import { db, markReady, SCHEMA_VERSION, withTimeout } from "./index";
-import { LEADS_TABLE_SQL } from "./leads-sql";
+// Creates the tables the first time the site connects to the database. Safe to run more than once.
+// Every table starts with mw_ so it can share a Supabase project with other apps (like AutoDash) without clashing.
+import { legacyToNew, type LegacyInput } from "../legacy";
+import { db, markReady, SCHEMA_VERSION } from "./index";
 
-export const DEFAULT_SOURCES = [
-  "Cars.com", "CarsForSale", "CarGurus", "CarZing", "Edmunds", "Autotrader", "Facebook", "OfferUp", "Hammer",
-  "Google", "NCU (myncu.com)", "Auto Link / Credit Union of Texas", "Word of mouth", "Drive-by", "Repeat customer", "Other",
-];
-export const DEFAULT_REPS = ["Zach", "Steve", "Abdul"];
-
-/** Columns added after the first setup. Safe to run repeatedly; runs automatically when the site starts. */
-export const UPGRADE_SQL = `
-alter table appointments add column if not exists email text;
-alter table appointments add column if not exists followed_up boolean not null default false;
-alter table customers add column if not exists follow_up_at date;
-alter table customers add column if not exists contacted_at timestamptz;
--- v4: ready-made customer rows, kept up to date as leads are saved
-alter table customers add column if not exists phone text;
-alter table customers add column if not exists email text;
-alter table customers add column if not exists location text;
-alter table customers add column if not exists state_code text;
-alter table customers add column if not exists auto_scope text;
-alter table customers add column if not exists vehicles text[] not null default '{}';
-alter table customers add column if not exists providers text[] not null default '{}';
-alter table customers add column if not exists first_seen timestamptz;
-alter table customers add column if not exists last_seen timestamptz;
-alter table customers add column if not exists lead_count integer not null default 0;
-alter table customers add column if not exists app_count integer not null default 0;
-alter table customers add column if not exists last_inquiry_at timestamptz;
-alter table customers add column if not exists last_app_at timestamptz;
-alter table customers add column if not exists first_provider text;
-alter table customers add column if not exists last_provider text;
-alter table customers add column if not exists last_vehicle text;
-alter table customers add column if not exists loan_amount numeric;
-alter table customers add column if not exists search text not null default '';
-create index if not exists customers_last_seen on customers (last_seen desc nulls last);
-create index if not exists customers_phone on customers (phone);
-create index if not exists customers_email on customers (email);
--- v11: after-purchase follow-up texts
-alter table customers add column if not exists purchased_vehicle text;
-alter table customers add column if not exists purchase_followup_at timestamptz;
-alter table customers add column if not exists purchase_followup_off boolean not null default false;
-alter table customers add column if not exists email_optout boolean not null default false;
--- v13: inventory copied from the dealership website, with what sold
-create table if not exists inventory (
-  id text primary key,
-  finance_id text,
-  url text,
-  year integer,
-  make text,
-  model text,
-  slug text,
-  title text,
-  price integer,
-  mileage integer,
-  status text not null default 'available',
-  missed integer not null default 0,
-  first_seen timestamptz not null default now(),
-  last_seen timestamptz not null default now(),
-  sold_at timestamptz,
-  sold_price integer,
-  sold_by text,
-  sold_note text,
-  updated_at timestamptz not null default now()
-);
-create index if not exists inventory_status on inventory (status, last_seen desc);
-create index if not exists inventory_sold_at on inventory (sold_at desc) where status = 'sold';
-alter table inventory enable row level security;
--- v14: To do list: what was marked done or snoozed
-create table if not exists todo_state (
+export const SCHEMA_SQL = `
+create table if not exists mw_settings (
   key text primary key,
-  state text not null,
-  until timestamptz,
-  by text,
-  updated_at timestamptz not null default now()
+  value text not null
 );
-alter table todo_state enable row level security;
--- v15: proof that people agreed to receive texts (the public sign-up form)
-create table if not exists sms_consents (
-  id bigserial primary key,
-  phone text not null,
-  name text,
-  vehicle text,
-  source text not null default 'text-updates page',
-  consent_text text not null,
-  ip text,
-  user_agent text,
+
+create table if not exists mw_files (
+  id text primary key default gen_random_uuid()::text,
+  name text not null,
+  mime text not null,
+  size integer not null,
+  data bytea not null,
   created_at timestamptz not null default now()
 );
-create index if not exists sms_consents_phone on sms_consents (phone, created_at desc);
-create index if not exists sms_consents_ip on sms_consents (ip, created_at desc);
-alter table sms_consents enable row level security;
--- v16: cars that were already Sold on the website when AutoDash first saw them have no known sale date (it used to stamp the day they were first seen)
-update inventory set sold_at = null, sold_note = 'Shown as Sold on the website (date unknown)'
-  where status = 'sold' and sold_by is null and sold_note = 'Marked sold on the website' and sold_price is null and sold_at <= first_seen + interval '2 minutes';
--- v17: cars the website already showed as Sold when AutoDash first saw them (no known sale) are hidden, not counted as sales
-update inventory set status = 'ignored' where status = 'sold' and sold_at is null and sold_by is null;
--- v18: customer reviews (read from Google's review emails, or added by hand)
-create table if not exists reviews (
-  id text primary key,
-  source text not null default 'Google',
-  reviewer text,
-  rating integer,
-  body text,
-  link text,
-  reviewed_at timestamptz not null,
-  status text not null default 'active',
-  gmail_id text,
-  added_by text,
+
+create table if not exists mw_items (
+  id text primary key default gen_random_uuid()::text,
+  name text not null,
+  upc text,
+  sku text,
+  category text,
   created_at timestamptz not null default now()
 );
-create index if not exists reviews_when on reviews (reviewed_at desc);
-create index if not exists reviews_gmail on reviews (gmail_id);
-alter table reviews enable row level security;
--- v19: a review Google removed was counted because its removal email was read before the review itself. Repair it and re-read the emails.
-update reviews set status = 'removed' where source = 'Google' and rating = 1 and lower(reviewer) like 'craig%' and reviewed_at < timestamptz '2026-07-09 00:00:00+00';
-delete from app_settings where key in ('reviews_last_sync', 'reviews_removed_seen');
--- v20: speeds up the To do list's customer replies
-create index if not exists customers_status_seen on customers (status, last_seen desc);
-create index if not exists customers_follow_up on customers (follow_up_at) where follow_up_at is not null;
-create index if not exists leads_kind_received on leads (kind, received_at desc) where not ignored;
-create table if not exists activities (
-  id bigserial primary key,
-  customer_key text not null,
-  kind text not null,
-  body text not null default '',
-  staff text,
+
+-- Buyers. default_tax_status: 'resale' (resale certificate on file), 'exempt', or 'taxable'.
+create table if not exists mw_customers (
+  id text primary key default gen_random_uuid()::text,
+  name text not null unique,
+  default_tax_status text not null default 'resale' check (default_tax_status in ('resale','exempt','taxable')),
+  cert_file_id text references mw_files(id) on delete set null,
+  notes text,
   created_at timestamptz not null default now()
 );
-create index if not exists activities_customer on activities (customer_key, created_at desc);
-alter table activities enable row level security;
--- v5: AI email replies. One row per lead: the AI's draft, then what was sent (or why not).
-create table if not exists ai_replies (
-  id bigserial primary key,
-  lead_id text not null unique,
-  customer_key text,
-  customer_name text,
-  to_email text not null,
-  vehicle text,
-  provider text,
-  customer_message text not null default '',
-  subject text not null,
-  body text not null,
-  status text not null default 'draft',
-  error text,
-  lead_received_at timestamptz,
-  created_at timestamptz not null default now(),
-  sent_at timestamptz,
-  sent_by text,
-  gmail_id text
-);
-create index if not exists ai_replies_status on ai_replies (status, created_at desc);
-alter table ai_replies enable row level security;
--- v6: monthly bills for AutoDash itself. Amounts are in cents; items is the itemized breakdown.
-create table if not exists billing_invoices (
-  id bigserial primary key,
-  period text not null unique,
-  number text not null,
-  items jsonb not null,
-  subtotal integer not null,
-  tax integer not null,
-  total integer not null,
-  status text not null default 'open',
-  due_date date not null,
-  stripe_session_id text,
-  paid_at timestamptz,
+
+create table if not exists mw_contractors (
+  id text primary key default gen_random_uuid()::text,
+  name text not null unique,
+  phone text,
+  email text,
+  notes text,
   created_at timestamptz not null default now()
 );
-alter table billing_invoices enable row level security;
--- v7: the AI's summary of everything that happened with a customer (emails, AI replies, texts, notes).
-create table if not exists customer_summaries (
-  customer_key text primary key,
-  summary text not null,
-  next_step text,
-  sources text,
-  updated_at timestamptz not null default now()
-);
-alter table customer_summaries enable row level security;
--- v8: text messages (both directions, plus AI drafts waiting for approval) and people who replied STOP.
-create table if not exists sms_messages (
-  id bigserial primary key,
-  customer_key text,
-  phone text not null,
-  direction text not null,
-  body text not null,
-  status text not null,
-  ai boolean not null default false,
-  sent_by text,
-  error text,
-  twilio_sid text unique,
-  created_at timestamptz not null default now(),
-  sent_at timestamptz
-);
-create index if not exists sms_messages_phone on sms_messages (phone, created_at);
-create index if not exists sms_messages_customer on sms_messages (customer_key, created_at);
-create index if not exists sms_messages_status on sms_messages (status, created_at desc);
-alter table sms_messages enable row level security;
-create table if not exists sms_optouts (
-  phone text primary key,
-  opted_out_at timestamptz not null default now()
-);
-alter table sms_optouts enable row level security;
--- v9: bank payments through GoCardless (ACH). A bill being collected is 'processing' until the bank confirms it.
-alter table billing_invoices add column if not exists gc_payment_id text;
-alter table billing_invoices add column if not exists payment_method text;
-alter table billing_invoices add column if not exists payment_note text;
-alter table billing_invoices add column if not exists gc_attempts integer not null default 0;
-create unique index if not exists billing_invoices_gc_payment on billing_invoices (gc_payment_id) where gc_payment_id is not null;
--- v10: customers replying by email. Replies are saved, and AI answers go back in the same Gmail thread.
-alter table ai_replies add column if not exists kind text not null default 'lead';
-alter table ai_replies add column if not exists thread_id text;
-alter table ai_replies add column if not exists in_reply_to text;
-alter table ai_replies add column if not exists references_header text;
-create table if not exists customer_replies (
-  gmail_id text primary key,
-  thread_id text,
-  customer_key text,
-  from_email text not null,
-  from_name text,
-  subject text not null default '',
-  body text not null default '',
-  message_id text,
-  references_header text,
-  received_at timestamptz not null,
+
+-- contractor_id set = the contractor paid with their own money and is owed it back.
+create table if not exists mw_purchases (
+  id text primary key default gen_random_uuid()::text,
+  item_id text not null references mw_items(id) on delete restrict,
+  contractor_id text references mw_contractors(id) on delete restrict,
+  qty integer not null check (qty > 0),
+  unit_cost numeric(12,2) not null check (unit_cost >= 0),
+  purchased_on date not null default current_date,
+  store text,
+  order_no text,
+  notes text,
+  receipt_file_id text references mw_files(id) on delete set null,
   created_at timestamptz not null default now()
 );
-create index if not exists customer_replies_received on customer_replies (received_at desc);
-create index if not exists customer_replies_customer on customer_replies (customer_key, received_at desc);
-alter table customer_replies enable row level security;
-create table if not exists email_seen (gmail_id text primary key, seen_at timestamptz not null default now());
-alter table email_seen enable row level security;
--- v21: each car's photo, VIN and photos from its own page on the website
-alter table inventory add column if not exists image_url text;
-alter table inventory add column if not exists vin text;
-alter table inventory add column if not exists images jsonb not null default '[]'::jsonb;
-alter table inventory add column if not exists details_at timestamptz;
+
+-- Money the company paid back to a contractor.
+create table if not exists mw_contractor_payments (
+  id text primary key default gen_random_uuid()::text,
+  contractor_id text not null references mw_contractors(id) on delete restrict,
+  amount numeric(12,2) not null check (amount > 0),
+  paid_on date not null default current_date,
+  method text,
+  reference text,
+  notes text,
+  created_at timestamptz not null default now()
+);
+
+-- tax_status: 'resale' / 'exempt' (no tax charged) or 'taxable'. sales_tax = tax collected on the line.
+create table if not exists mw_sales (
+  id text primary key default gen_random_uuid()::text,
+  item_id text not null references mw_items(id) on delete restrict,
+  customer_id text references mw_customers(id) on delete restrict,
+  qty integer not null check (qty > 0),
+  unit_price numeric(12,2) not null check (unit_price >= 0),
+  sold_on date not null default current_date,
+  tax_status text not null default 'resale' check (tax_status in ('resale','exempt','taxable')),
+  sales_tax numeric(12,2) not null default 0 check (sales_tax >= 0),
+  invoice_no text,
+  notes text,
+  created_at timestamptz not null default now()
+);
+
+-- amount = invoice total (including any tax). file_id = the uploaded PDF or photo.
+create table if not exists mw_invoices (
+  id text primary key default gen_random_uuid()::text,
+  invoice_no text not null,
+  customer_id text references mw_customers(id) on delete restrict,
+  invoice_date date not null default current_date,
+  amount numeric(12,2) not null default 0 check (amount >= 0),
+  sales_tax numeric(12,2) not null default 0 check (sales_tax >= 0),
+  status text not null default 'unpaid' check (status in ('unpaid','paid')),
+  paid_on date,
+  file_id text references mw_files(id) on delete set null,
+  notes text,
+  created_at timestamptz not null default now()
+);
+
+create table if not exists mw_expenses (
+  id text primary key default gen_random_uuid()::text,
+  spent_on date not null default current_date,
+  category text not null,
+  vendor text,
+  amount numeric(12,2) not null check (amount >= 0),
+  receipt_file_id text references mw_files(id) on delete set null,
+  notes text,
+  created_at timestamptz not null default now()
+);
+
+create index if not exists mw_purchases_item on mw_purchases (item_id);
+create index if not exists mw_purchases_date on mw_purchases (purchased_on);
+create index if not exists mw_sales_item on mw_sales (item_id);
+create index if not exists mw_sales_date on mw_sales (sold_on);
+create index if not exists mw_invoices_no on mw_invoices (invoice_no);
+
+-- The site reads the database directly, never through Supabase's public API, so lock that door.
+alter table mw_settings enable row level security;
+alter table mw_files enable row level security;
+alter table mw_items enable row level security;
+alter table mw_customers enable row level security;
+alter table mw_contractors enable row level security;
+alter table mw_purchases enable row level security;
+alter table mw_contractor_payments enable row level security;
+alter table mw_sales enable row level security;
+alter table mw_invoices enable row level security;
+alter table mw_expenses enable row level security;
+
+-- v2: miles for the mileage deduction, and a sale's link to the purchase it came from (with that purchase's cost per unit)
+alter table mw_purchases add column if not exists miles numeric(8,1) not null default 0 check (miles >= 0);
+alter table mw_sales add column if not exists purchase_id text references mw_purchases(id) on delete set null;
+alter table mw_sales add column if not exists unit_cost numeric(12,2) check (unit_cost >= 0);
+create index if not exists mw_sales_purchase on mw_sales (purchase_id);
+
+-- v3: an invoice is a batch of items (sales point at it), and expenses say which part of the company they belong to
+alter table mw_sales add column if not exists invoice_id text references mw_invoices(id) on delete set null;
+create index if not exists mw_sales_invoice on mw_sales (invoice_id);
+alter table mw_expenses add column if not exists business text not null default 'resale';
+
+-- v4: a batch can be an invoice you sent or a purchase order the customer sent; quarters can be finalized (locked)
+alter table mw_invoices add column if not exists kind text not null default 'invoice';
+create table if not exists mw_quarters (
+  year integer not null,
+  quarter integer not null check (quarter between 1 and 4),
+  finalized_at timestamptz not null default now(),
+  note text,
+  snapshot jsonb not null default '{}'::jsonb,
+  primary key (year, quarter)
+);
+alter table mw_quarters enable row level security;
+
+-- v5: an invoice holds its items. Miles, store, tax and who bought it live on the invoice; the old purchases and sales tables are kept untouched as a backup.
+alter table mw_invoices add column if not exists contractor_id text references mw_contractors(id) on delete restrict;
+alter table mw_invoices add column if not exists store text;
+alter table mw_invoices add column if not exists miles numeric(8,1) not null default 0 check (miles >= 0);
+alter table mw_invoices add column if not exists tax_status text not null default 'resale' check (tax_status in ('resale','exempt','taxable'));
+alter table mw_invoices add column if not exists total_override numeric(12,2) check (total_override >= 0);
+alter table mw_invoices add column if not exists cost_override numeric(12,2) check (cost_override >= 0);
+create table if not exists mw_invoice_lines (
+  id text primary key default gen_random_uuid()::text,
+  invoice_id text not null references mw_invoices(id) on delete cascade,
+  item_id text not null references mw_items(id) on delete restrict,
+  qty integer not null check (qty > 0),
+  unit_price numeric(12,2) not null check (unit_price >= 0),
+  unit_cost numeric(12,2) not null default 0 check (unit_cost >= 0),
+  position integer not null default 0,
+  created_at timestamptz not null default now()
+);
+create index if not exists mw_invoice_lines_invoice on mw_invoice_lines (invoice_id);
+create index if not exists mw_invoice_lines_item on mw_invoice_lines (item_id);
+alter table mw_invoice_lines enable row level security;
+
+-- v6: the software side. Projects, and the income that comes in (from where, for which project).
+create table if not exists mw_projects (
+  id text primary key default gen_random_uuid()::text,
+  name text not null,
+  client text,
+  status text not null default 'active' check (status in ('active','paused','done')),
+  notes text,
+  created_at timestamptz not null default now()
+);
+alter table mw_projects enable row level security;
+create table if not exists mw_income (
+  id text primary key default gen_random_uuid()::text,
+  received_on date not null,
+  source text not null,
+  project_id text references mw_projects(id) on delete set null,
+  amount numeric(12,2) not null check (amount > 0),
+  notes text,
+  created_at timestamptz not null default now()
+);
+create index if not exists mw_income_date on mw_income (received_on);
+create index if not exists mw_income_project on mw_income (project_id);
+alter table mw_income enable row level security;
+
+-- v7: which card an item was bought with (true = yours: they owe the full price; false = theirs: they owe only your profit).
+alter table mw_invoice_lines add column if not exists own_card boolean not null default true;
+
+-- v8: money spent on the customer's card for a whole invoice (overrides the per-item choice), and which of your cards paid the rest.
+alter table mw_invoices add column if not exists their_card numeric(12,2) check (their_card >= 0);
+alter table mw_invoices add column if not exists my_card text;
+
+-- v10: invoices from your contractors, for you only (what they bought, what they charge you). Kept apart from your own invoices and totals.
+create table if not exists mw_contractor_invoices (
+  id text primary key default gen_random_uuid()::text,
+  contractor_id text not null references mw_contractors(id) on delete restrict,
+  invoiced_on date not null default current_date,
+  ref text,
+  notes text,
+  created_at timestamptz not null default now()
+);
+create index if not exists mw_contractor_invoices_contractor on mw_contractor_invoices (contractor_id);
+create table if not exists mw_contractor_invoice_lines (
+  id text primary key default gen_random_uuid()::text,
+  invoice_id text not null references mw_contractor_invoices(id) on delete cascade,
+  name text not null,
+  upc text,
+  qty integer not null check (qty > 0),
+  buy_price numeric(12,2) not null default 0 check (buy_price >= 0),
+  sell_price numeric(12,2) not null default 0 check (sell_price >= 0),
+  position integer not null default 0
+);
+create index if not exists mw_contractor_invoice_lines_invoice on mw_contractor_invoice_lines (invoice_id);
+alter table mw_contractor_invoices enable row level security;
+alter table mw_contractor_invoice_lines enable row level security;
+
+insert into mw_customers (name, default_tax_status) values ('BWWI', 'resale') on conflict (name) do nothing;
 `;
+
+type Sql = NonNullable<ReturnType<typeof db>>;
+
+/** One time: moves what was entered as purchases and sales onto invoices. The old tables are left as they are. */
+async function importOldRecords(sql: Sql): Promise<void> {
+  const [done] = await sql`select 1 from mw_settings where key = 'v5_imported'`;
+  if (done) return;
+  const [items, customers, invoices, purchases, sales] = await Promise.all([
+    sql`select id, name, upc, sku, category from mw_items`,
+    sql`select id, name, default_tax_status, cert_file_id, notes from mw_customers`,
+    sql`select id, kind, invoice_no, customer_id, invoice_date::text as invoice_date, status, paid_on::text as paid_on, file_id, notes from mw_invoices`,
+    sql`select id, item_id, contractor_id, qty, unit_cost::float8 as unit_cost, purchased_on::text as purchased_on, store, miles::float8 as miles from mw_purchases`,
+    sql`select id, item_id, customer_id, qty, unit_price::float8 as unit_price, sold_on::text as sold_on, tax_status, sales_tax::float8 as sales_tax,
+               invoice_no, invoice_id, purchase_id, unit_cost::float8 as unit_cost from mw_sales order by sold_on, created_at`,
+  ]);
+  const r = legacyToNew({ items, customers, invoices, purchases, sales } as unknown as LegacyInput);
+  const made = new Set(r.generated);
+  await sql.begin(async (tx) => {
+    for (const i of r.invoices) {
+      if (made.has(i.id)) {
+        await tx`insert into mw_invoices (id, kind, invoice_no, customer_id, invoice_date, status, paid_on, notes, contractor_id, store, miles, tax_status, sales_tax)
+          values (${i.id}, ${i.kind}, ${i.invoice_no}, ${i.customer_id}, ${i.invoice_date}, ${i.status}, ${i.paid_on}, ${i.notes}, ${i.contractor_id}, ${i.store}, ${i.miles}, ${i.tax_status}, ${i.sales_tax})`;
+      } else {
+        await tx`update mw_invoices set contractor_id = ${i.contractor_id}, store = ${i.store}, miles = ${i.miles}, tax_status = ${i.tax_status}, sales_tax = ${i.sales_tax}, notes = ${i.notes} where id = ${i.id}`;
+      }
+    }
+    for (const l of r.lines) {
+      await tx`insert into mw_invoice_lines (id, invoice_id, item_id, qty, unit_price, unit_cost, position) values (${l.id}, ${l.invoice_id}, ${l.item_id}, ${l.qty}, ${l.unit_price}, ${l.unit_cost}, ${l.position})`;
+    }
+    await tx`insert into mw_settings (key, value) values ('v5_imported', ${`${r.lines.length} items, ${r.unsold} unsold purchases left behind`}) on conflict (key) do nothing`;
+  });
+}
 
 export async function setupDatabase(): Promise<void> {
   const sql = db();
   if (!sql) throw new Error("DATABASE_URL is not set");
-  // A server that was frozen mid-transaction can leave a session holding table locks forever
-  // ("idle in transaction"). End any that have been stuck for over a minute so the upgrade can run.
-  await sql`
-    select pg_terminate_backend(pid, 1000) from pg_stat_activity
-    where datname = current_database() and pid <> pg_backend_pid()
-      and state in ('idle in transaction', 'idle in transaction (aborted)')
-      and now() - state_change > interval '60 seconds'`.catch(() => undefined);
-  // And ask Postgres to end such sessions by itself from now on (may not be permitted; harmless if not).
-  await sql`alter database postgres set idle_in_transaction_session_timeout = '60s'`.catch(() => undefined);
-  for (let attempt = 1; ; attempt++) {
-    try {
-await withTimeout(sql.begin(async (tx) => {
-        // Two servers starting at once take turns instead of colliding.
-        // Never hang a page waiting on another server's setup: give up after 8 seconds and try again next request.
-        await tx`set local lock_timeout = '2s'`;
-        await tx`select pg_advisory_xact_lock(724001)`;
-        await tx`
-          create table if not exists reps (
-            id serial primary key,
-            name text not null,
-            active boolean not null default true,
-            created_at timestamptz not null default now()
-          )`;
-        await tx`
-          create table if not exists sources (
-            id serial primary key,
-            name text not null unique,
-            active boolean not null default true,
-            created_at timestamptz not null default now()
-          )`;
-        // One row per customer, keyed like the Customers page (phone, else email). Only what staff set by hand.
-        await tx`
-          create table if not exists customers (
-            key text primary key,
-            name text,
-            rep_id integer references reps(id) on delete set null,
-            status text not null default 'new',
-            financing text,
-            heard_from text,
-            state_scope text,
-            notes text not null default '',
-            purchased_at timestamptz,
-            updated_at timestamptz not null default now()
-          )`;
-        await tx`
-          create table if not exists appointments (
-            id serial primary key,
-            customer_key text,
-            customer_name text not null,
-            phone text,
-            vehicle text,
-            rep_id integer references reps(id) on delete set null,
-            starts_at timestamptz not null,
-            duration_min integer not null default 60,
-            status text not null default 'scheduled',
-            notes text not null default '',
-            created_at timestamptz not null default now(),
-            updated_at timestamptz not null default now()
-          )`;
-        await tx`create index if not exists appointments_starts_at on appointments (starts_at)`;
-        await tx`create index if not exists appointments_customer on appointments (customer_key)`;
-        // Small key/value settings, e.g. the encrypted Gmail connection shared by every device.
-        await tx`
-          create table if not exists app_settings (
-            key text primary key,
-            value text not null,
-            updated_at timestamptz not null default now()
-          )`;
-    
-        await tx.unsafe(LEADS_TABLE_SQL);
-        await tx.unsafe(UPGRADE_SQL);
-    
-        // Keep tables private: Supabase's public data API can't read them; AutoDash's own connection (the owner) still can.
-        for (const table of ["reps", "sources", "customers", "appointments", "app_settings"]) {
-          await tx.unsafe(`alter table ${table} enable row level security`);
-        }
-    
-        for (const name of DEFAULT_SOURCES) await tx`insert into sources (name) values (${name}) on conflict (name) do nothing`;
-        const [{ count }] = await tx`select count(*)::int as count from reps`;
-        if (count === 0) for (const name of DEFAULT_REPS) await tx`insert into reps (name) values (${name})`;
-        await tx`insert into app_settings (key, value) values ('schema_version', ${SCHEMA_VERSION})
-          on conflict (key) do update set value = excluded.value, updated_at = now()`;
-      }), 25000);
-      break;
-    } catch (error) {
-      // 55P03 = a table was briefly locked by other work; wait a moment and try again (3 tries).
-      if ((error as { code?: string })?.code !== "55P03" || attempt >= 3) throw error;
-      await new Promise((resolve) => setTimeout(resolve, 1000 * attempt));
-    }
-  }
+  await sql.unsafe(SCHEMA_SQL);
+  await importOldRecords(sql);
+  await sql`insert into mw_settings (key, value) values ('schema_version', ${SCHEMA_VERSION})
+    on conflict (key) do update set value = excluded.value`;
   markReady();
 }

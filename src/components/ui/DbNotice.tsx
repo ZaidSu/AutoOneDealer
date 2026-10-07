@@ -1,12 +1,15 @@
 import type { DbState } from "@/lib/db";
 
-// Friendly note for features that need the shared database.
-export default function DbNotice({ state, what }: { state: DbState; what: string }) {
-  const text =
-    state === "not_configured"
-      ? `${what} turns on when the database is connected.`
-      : state === "not_set_up"
-        ? `${what} is almost ready. Open the Developer page and click Set up database.`
-        : `${what} can't reach the database right now. Try again in a minute.`;
-  return <p className="rounded-md border border-dashed border-line bg-white px-4 py-3 text-sm text-muted">{text}</p>;
+// Friendly note shown when the database isn't connected or can't be reached.
+export default function DbNotice({ state }: { state: Exclude<DbState, "ready"> }) {
+  return (
+    <div className="card max-w-xl">
+      <h2>{state === "not_configured" ? "The database isn\u2019t connected yet" : "Can\u2019t reach the database right now"}</h2>
+      <p className="mt-2 text-muted">
+        {state === "not_configured"
+          ? "Add DATABASE_URL in Vercel (Settings > Environment Variables), or in .env.local on your computer, then redeploy. The tables are created automatically the first time the site connects."
+          : "Try again in a minute. If it keeps happening, check that DATABASE_URL is the Supabase Transaction pooler address (port 6543) with your database password filled in."}
+      </p>
+    </div>
+  );
 }

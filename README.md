@@ -1,209 +1,108 @@
-# AutoDash
+# Marketplace Wholesale LLC
 
-Dealership operations platform for Auto One Motors: leads, credit applications, customers, appointments
-and analytics, built from the dealership's Gmail and a Supabase database.
-
-Built with Next.js (React + TypeScript) and Tailwind. There are no `.html` files on purpose: each page is a
+Public website plus a private tracker for purchases, sales, invoices, contractors and quarterly tax totals.
+Built the same way as AutoDash: Next.js (React + TypeScript) and Tailwind, Supabase Postgres through
+`DATABASE_URL`, Google sign-in, deployed on Vercel. There are no `.html` files on purpose: each page is a
 `page.tsx` file and Next.js turns it into HTML when the site runs.
 
 ## Where things are
 
 ```
 src/
-  app/                      pages and API (Next.js routes by folder)
-    (public)/login/         login page ("/" sends you here or to the dashboard)
-    (app)/                  signed-in pages (every page and API checks the session; signed-out visitors go to /login)
-      dashboard/  inbox/  leads/  credit-applications/  customers/
-      pipeline/  appointments/  analytics/  settings/  developer/
-    api/                    backend endpoints (login, Google callback, Gmail, lead sync, health, ...)
-    actions.ts              form actions (customer labels, appointments, team, sources)
-    globals.css             site-wide styles and theme colors
-    layout.tsx, fonts.ts    root HTML shell and fonts
-  components/               UI pieces, one folder per page (+ layout/ for sidebar and search, ui/ for shared bits)
-  lib/                      backend logic, no UI
-    auth/                   sessions, encryption, roles, Google sign-in
-    gmail/                  reading the dealership mailbox
-    parsers/                turning lead emails (CarsForSale, ADF/XML, Cars.com, ...) into structured leads
-    leads/                  saving leads to the database and background sync
-    customers/              grouping leads into customers
-    crm/                    customer, pipeline and analytics queries
-    db/                     Supabase connection, table setup, data access
-    dealership/             dealership name and settings
-    utils/                  formatting, dates/time zones, states, small helpers
-tests/
-  unit/                     fast tests, no database (npm test)
-  integration/              database tests (npm run test:db)
-  fixtures/                 sample lead emails used by the tests
+  app/
+    page.tsx                  public landing page ("/")
+    (public)/                 login, privacy, terms (SMS Terms are on the terms page, #sms)
+    (app)/                    signed-in pages: dashboard, invoices (+ [id]), items, expenses,
+                              customers, contractors (+ [id]), analytics, quarters, taxes
+    api/                      google-login, google-callback, logout, files/[id], export (CSV), health
+    (each page file is one line; the page itself is a "view" in components/views, shared by both modes)
+    actions.ts                every change made in the app (checks sign-in + role, validates input)
+    globals.css               theme colors and shared styles
+  components/                 site/ (public pages), layout/ (sidebar), forms/, dashboard/, ui/
+  lib/
+    auth/                     sessions, encryption, Google sign-in, roles
+    db/                       connection, automatic table setup (schema.ts), reading data
+    preview/                  preview mode: saves to the browser instead of the database
+    calc.ts, validate.ts      the money math and the form checks (shared by both modes, unit tested)
+tests/unit/                   npm test
 ```
 
-Each page folder in `src/app/(app)/` has a `page.tsx` (the page) and usually a `loading.tsx` (shown while it
-loads). Its pieces live in the matching `src/components/<page>/` folder.
+## Preview mode (the default: nothing to set up)
+With no settings at all, the site still works. The landing page, privacy policy and terms are public, and the tracker runs in
+**preview mode**: "Continue with Google" simply opens the app on that browser, and everything you enter (rows and uploaded
+PDFs or photos) is saved in that browser only. A "Preview mode" tag shows in the sidebar, with an "Erase preview data" button.
+Nothing is shared between devices, and nothing is sent anywhere.
+
+When you're ready to go live, add the Google and database settings below in Vercel. The site switches to live mode by itself
+(`/api/health` shows `"mode": "preview"` or `"mode": "live"`). Preview entries stay in the browser and are not copied to the database.
+
+## What the tracker does
+The app is built around one thing: the **invoice**. Everything else is worked out from it.
+- **Invoices:** drop an invoice PDF on the Invoices page and the site reads it (invoice number, date, customer, and each item's name, last 4 of the UPC, quantity and price). You check the items, add what each one cost you, and save. Or create one by hand. A PO the customer sent you works the same way. Scanned or photographed PDFs can't be read (there's no OCR), so those are attached and you type the items.
+- **The numbers on every invoice:** *They owe you* (the total of its items plus any tax, or a total you type), *Cost of goods* (the buying price of each item, or one number you type), and *Profit* = what they owe you (before tax) minus cost of goods. You can edit anything, any time: open the invoice and change items, prices, miles or the customer.
+- **Miles belong to the invoice,** one trip counted once, priced at a rate you set per year (Taxes page). The app flags the same store on the same day on more than one invoice, since that is usually one trip counted twice.
+- **Items** are created for you when you save an invoice (matched by name and last 4 of the UPC), and you can add, edit or delete them on the Items page.
+- **Quarters:** finalize a quarter to lock the invoices and expenses dated in it and save its totals; reopen it if something needs fixing. Reminders are on screen only.
+- **Contractors:** mark who bought an invoice's goods; you see what you owe them, the payments you made, and totals per month, quarter and year.
+- **Software side (sidebar section "Software"):** **Income** records money you were paid (date, from where, which project, amount) with totals by source, software expenses for comparison, and a CSV; **Projects** lists your software jobs with client, status and what each has paid you. Software income is also included in the tax package (7-software-income.csv).
+- **Which card:** every item is marked "My card" (the customer owes the full price) or "Their card" (they paid the store themselves, so they owe you only your profit on it). Set it per item when editing, or for a whole invoice from the dropdown on its row. What they owe, the Dashboard and the Taxes checks all follow it; sales, cost of goods and profit don't change.
+- **Purchase orders:** dropping a PO PDF reads its number, date, customer, items and the last 4 of each UPC (the UPC is printed in two pieces and is put back together).
+- **Import a batch** (/import): choose a data file and a folder of PDFs to add many invoices at once, PDFs attached. Anything already in the app is skipped.
+- **Analytics, Taxes, Expenses, Customers:** charts and tables, Q1 to Q4 and full-year totals with a "before you file" checklist, a tax package ZIP (summary, invoices, items, expenses, mileage log, contractors), expenses with receipts, and customers with their usual tax treatment and resale certificate.
+
+Pages load from the database in a single query. If they're still slow, check that Vercel's Function Region (Project Settings > Functions) is in the same region as your Supabase project.
+
+Upgrading from the older purchases/sales version: on first start the database (or your preview browser data) is converted once. Each old sale becomes an invoice line; miles are put on one invoice per purchase trip; sales that were not on an invoice become "Imported <date>" invoices marked paid. Items that were bought but never sold are not carried over. The old tables are left untouched as a backup. The default tax rate is `DEFAULT_TAX_RATE` in `src/lib/calc.ts`.
+Uploaded files are stored in the database (PDF, PNG, JPG, WebP or GIF, up to 4 MB each).
+
+Two roles: **owner** (everything) and **accountant** (view and download only). Set them with `OWNER_EMAIL` / `STAFF_ACCESS`.
 
 ## Run it locally (VS Code)
-
-1. Open this folder in VS Code (File → Open Folder) and accept the recommended extensions.
-2. `npm install`
-3. Fill in `.env.local` (`.env.example` explains each value). Quickest: `npx vercel env pull .env.local`,
-   then set `GOOGLE_REDIRECT_URI` back to `http://localhost:3000/api/google-callback`.
-4. `npm run dev` (or press F5) and open http://localhost:3000
-
-For Gmail connect to work locally, add `http://localhost:3000/api/google-callback` under **Authorized redirect
-URIs** in Google Cloud. Without `DATABASE_URL` the site still runs, minus the database features.
+1. `npm install`
+2. Copy `.env.example` to `.env.local` and fill it in. For Google sign-in locally, set
+   `GOOGLE_REDIRECT_URI=http://localhost:3000/api/google-callback` and add that address under **Authorized redirect URIs** in Google Cloud.
+3. `npm run dev` and open http://localhost:3000 (landing page) or http://localhost:3000/login.
 
 | Command | What it does |
 | --- | --- |
 | `npm run dev` | Local dev server with live reload |
-| `npm test` | Unit tests |
+| `npm test` | Unit tests (money math, roles, cookies) |
 | `npm run build` | Type check + production build (run before pushing) |
-| `DATABASE_URL=postgres://... npm run test:db` | Database tests. Drops and recreates tables, so use a throwaway database |
 
 ## Deploying
+Pushing to `main` deploys on Vercel. `vercel.json` tells Vercel this is a Next.js app, so you don't need to change
+any project setting, and no environment variables are needed for preview mode.
 
-Pushing to `main` deploys production on Vercel (https://auto-one-dealer.vercel.app). Environment variables live
-in Vercel → Project → Settings → Environment Variables, set for **Production** (and Preview if you use branches):
+## Going live later
+Add these under **Vercel > Project > Settings > Environment Variables** (Production), then redeploy. Live mode turns on
+once Google sign-in and the database are both set:
 
 - `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`
-- `GOOGLE_REDIRECT_URI` = `https://auto-one-dealer.vercel.app/api/google-callback`
+- `GOOGLE_REDIRECT_URI` = `https://YOUR-DOMAIN/api/google-callback` (also add it to Google Cloud's Authorized redirect URIs)
 - `SESSION_SECRET` (32+ random characters)
-- `GMAIL_ALLOWED_EMAIL`, optional `STAFF_ACCESS`
+- `OWNER_EMAIL`, optional `STAFF_ACCESS`
 - `DATABASE_URL` (Supabase **Transaction pooler**, port 6543)
-- `REQUIRE_GOOGLE_SIGNIN=true` to require Google sign-in with the staff allowlist
+- optional `CONTACT_EMAIL` (shown on the public site and legal pages)
 
-`/api/health` confirms a deployment is live, and the Developer page shows which settings are missing.
+`/api/health` confirms a deployment is live and lists any missing settings; `/api/health?check=db` checks the database.
 
-## Debugging slow pages
+## Database
+The first time the site connects, it creates its own tables (all start with `mw_`, so it can share a Supabase project with
+AutoDash without clashing). Row Level Security is turned on, so Supabase's public API can't read them; only this site can.
 
-The server writes a short trail to **Vercel → Logs** (lines starting with `[autodash:...]`):
+## Google Cloud
+Use the OAuth client you already made for AutoDash, or create a new one. Add the new redirect URI above. If the consent
+screen is in **Testing** mode, add each person's email under Test users. Use `https://YOUR-DOMAIN/privacy` and
+`https://YOUR-DOMAIN/terms` for the privacy policy and terms links.
 
-- `[autodash:db] opened page connection` / `replacing page connection (unused for 42s)`: a fresh database connection.
-- `... <- slow`: any page step or database check that took over a second, with its time.
-- `Follow-ups: stuck after 4000ms, retrying on a fresh connection` then `recovered on retry`: a database read got stuck and
-  fixed itself. `FAILED again after retry` means it didn't, and that part of the page shows an error.
+## Which card paid (update 10)
 
-Set `AUTODASH_DEBUG=1` in Vercel (then redeploy) to log every step of every page load, including the fast ones.
-`DB_DEBUG=1` also logs each database query. Turn both off again when you're done.
+On an invoice, "Which card paid for the goods" has two boxes: how much was spent on the customer's card, and which of your own cards paid the rest.
+They owe you the sale minus what went on their card; profit never changes. The Invoices page has a "Card spending" summary by card.
+Importing a file again leaves existing invoices alone except for their paid / not paid status.
 
-## AI email replies
+## Contractor invoices (update 12)
 
-When a lead with the customer's own email address comes in, Claude writes a reply using **AI assistant → Dealership
-info** and **Train your AI**. A person checks it on **AI assistant → Email replies**, edits anything, and clicks Send;
-AutoDash sends it from the dealership Gmail to the customer (never back to the listing site's no-reply address).
-
-- Replies are written Monday to Saturday, 9 AM to 7 PM Dallas time (`aiHours` in `src/lib/dealership/index.ts`).
-- **Automatic sending** switch on the Email replies page: off (default) = drafts wait for someone to click Send; on = the AI sends by itself during AI hours.
-- Only replies to leads from `AI_REPLIES_START` (default 2026-09-30) on, and never to leads more than 2 days old.
-- **Customers who write back:** the timer finds inbox emails from existing customers, logs "Replied by email", shows them on the Dashboard, and drafts an answer in the same Gmail thread using the whole conversation (skipped if the team already answered). Code: `src/lib/ai/followups.ts`, table `customer_replies`.
-- One AI email per customer per 7 days (first replies to new leads only; follow-ups in a conversation are not limited).
-- **AI summary** on each customer page: reads their leads, Gmail back-and-forth, AI emails, appointments and notes, and writes what happened plus a next step (`src/lib/ai/summary.ts`, table `customer_summaries`). Leads with no email (e.g. phone-call leads) are skipped.
-- Needs `ANTHROPIC_API_KEY` in Vercel, Gmail reconnected once so it can send, and the timer below.
-- Code: `src/lib/ai/replies.ts` (drafting, sending), `src/lib/ai/claude.ts` (API call), table `ai_replies`.
-
-### Update emails and other alerts (AI > Automations)
-
-All go to the dealership inbox (or any address set there), only need Gmail reconnected once so it can send, and each has its own switch:
-
-- **Update email** (default every 1 h 30 min): who to contact, what the AI emailed, drafts waiting. Options: also send outside AI hours, include appointments, include new/sold cars. The page shows why the last timer check did or didn't send.
-- **Customer waiting**: a new customer nobody has contacted after 30 min to 4 h.
-- **Morning briefing**: once a day at 5 to 12 AM: today's appointments, who is waiting, drafts waiting.
-- **Inventory problem**: the website's cars couldn't be read for 2 to 12 hours (the AI then can't check cars).
-- Code: `src/lib/ai/digest.ts`, `src/lib/ai/alerts.ts`. They run early in `/api/cron/tick`, before the slow AI-writing steps.
-
-### The timer (cron-job.org)
-
-`/api/cron/tick` pulls new leads and writes AI drafts. cron-job.org calls it every 5 minutes so this happens even
-when nobody has AutoDash open. Set `CRON_SECRET` in Vercel to a long random string, then create a cron job for
-`https://auto-one-dealer.vercel.app/api/cron/tick?key=<CRON_SECRET>` every 5 minutes.
-
-## AI texting (Twilio)
-
-Customers text the dealership number; the text shows on their customer page (live) and on **AI assistant → Text
-messages**. During AI hours the AI writes a short, friendly reply; with **Automatic texting** off (default) staff
-approve it, on = it sends itself. Staff can also text from the customer page. The first text to a number adds
-"Reply STOP to opt out"; STOP blocks texting until START. Texts are part of each customer's **AI summary**, which
-refreshes itself after new texts.
-
-- Env: `TWILIO_ACCOUNT_SID`, `TWILIO_AUTH_TOKEN`, `TWILIO_PHONE_NUMBER` (optional `TWILIO_MESSAGING_SERVICE_SID`, `APP_URL`).
-- In Twilio, "A message comes in" -> Webhook, HTTP POST -> `https://auto-one-dealer.vercel.app/api/sms/incoming`.
-- Delivery reports arrive at `/api/sms/status`. Both check Twilio's signature.
-- Code: `src/lib/sms/`, table `sms_messages` and `sms_optouts`. Texts deliver only after A2P 10DLC approval.
-
-## Billing
-
-**Billing** (sidebar, owner and developer only) shows this month's bill line by line (plan, one-time setup fee on the
-first bill, any extra AI emails/texts from last month, sales tax on the taxable share), usage against what's
-included, past bills, and documents. The owner pays by card on Stripe's own page.
-
-- Prices, limits, tax rate, due day and documents: **Billing → Prices and settings** (developer role only).
-- Billed by High Level Technologies by default (Billing → Prices and settings to change).
-- Set `BILLING_START` (like `2026-10`) and bills create themselves from that month on, no developer needed.
-- Bills are green (paid, on autopay, or due later), yellow (due within 7 days) or red (past due, with a warning that
-  AutoDash will be locked 3 days after the due date).
-- **Card autopay:** the owner ticks *Pay automatically each month* when paying; Stripe saves the card and the timer
-  charges it on the due date. The restricted key needs Checkout Sessions (write), PaymentIntents (write),
-  PaymentMethods (read) and Customers (write).
-- Needs `STRIPE_SECRET_KEY`, and a Stripe webhook to `https://auto-one-dealer.vercel.app/api/stripe/webhook`
-  (event `checkout.session.completed`) with its signing secret in `STRIPE_WEBHOOK_SECRET`.
-- Tax defaults (8.25% on 80%) are placeholders to confirm with an accountant.
-- **Pay by bank (GoCardless, ACH):** the owner connects the bank once ("Pay by bank"); then each bill is collected
-  automatically on its due date (shows "Processing" until the bank confirms, usually a few business days). Failed
-  payments go back to "Due" with the reason and a retry button. Needs `GOCARDLESS_ACCESS_TOKEN` and a GoCardless
-  webhook to `/api/billing/gocardless/webhook` with its secret in `GOCARDLESS_WEBHOOK_SECRET`. Card (Stripe) stays
-  available as a backup if its keys are set.
-
-## Features
-
-- **Sign-in**: Google identity only (`openid email profile`), staff allowlist with roles (owner, manager,
-  salesperson, developer). Without `REQUIRE_GOOGLE_SIGNIN=true` the login screen is open: username and
-  password are not checked. Sessions last 30 days.
-- **Settings → Connect Gmail** (owners/managers): read-only scope, Test / Reconnect / Disconnect. Only the
-  mailbox in `GMAIL_ALLOWED_EMAIL` is accepted.
-- **Inbox**: read-only list, views, search, text-only reading view (email HTML is never rendered).
-- **Credit Applications**: CarsForSale "New Loan App Submitted" emails parsed into applicant, phone, location,
-  loan amount, down payment, application ID and a link to the full application.
-- **Leads**: credit applications plus website inquiries from every lead source, newest first.
-- **Westlake Financial pre-qualifications** ("Pre-Qualification" in the subject) are read as financing leads: customer, car, down payment, amount financed, monthly payment, voucher and what to bring. The AI welcomes them in as pre-qualified (never as a final approval).
-- **Customers**: leads grouped into people by phone (then email), with every inquiry, application, source,
-  vehicle asked about, and their email conversations with the dealership.
-- **Dashboard**: today's date, today's appointments, and every lead and credit application since 6 PM the night before.
-- **Data start**: pages only show customers, leads and emails from `DATA_START` (default 2026-09-30) on. Older data stays in the database. The Pipeline only shows customers active since then (new lead, text, or added by hand).
-- **Add customer** (Customers and Pipeline pages): walk-ins, calls and referrals. Merges into an existing customer with the same phone/email.
-- **AI assistant** (sidebar group): Dealership info and Train your AI save for real; Email replies, Text messages, Phone numbers and Automations are placeholders until AI replies are built.
-- **Analytics**: lead sources, in state vs out of state, top out-of-state states, leads over time, credit
-  applications; with the database, purchases by source and salesperson results.
-
-### Saved leads
-
-With the database connected, each lead email is read from Gmail once, parsed and saved in the `leads` table
-(`src/lib/leads/`), so pages load in well under a second. While AutoDash is open, a background check runs every
-few minutes (`src/components/layout/AutoSync.tsx`), plus an **Update now** button. The first run imports the last
-12 months in batches. Non-lead matches (e.g. "Re:" replies) are remembered so they're never re-read.
-
-### Database features (Supabase)
-
-Turned on by `DATABASE_URL`. The site creates and upgrades its own tables on first use (tracked by
-`schema_version`):
-
-- **Settings → Sales team** and **Where customers heard about us** (editable lists).
-- **Customer labels**: salesperson, status, financing (auto "Needs review" for loan apps), heard about us (auto
-  from lead source), in/out of state (auto), notes, and booking appointments. "Returning" is added automatically
-  when a purchased customer sends a new lead.
-- **Appointments**: week view, filter by salesperson, double-booking warning, Showed up / No-show / Canceled,
-  and a no-shows-to-call-back list.
-
-## History
-
-The previous version of the site is preserved in the git tag `backup-before-rebuild-2026-09-26`.
-
-## Managing billing in Stripe (recommended)
-
-Set `STRIPE_CUSTOMER_ID` (the `cus_...` id) next to `STRIPE_SECRET_KEY` and billing is managed in Stripe itself. The Billing page in AutoDash then shows whatever Stripe has: invoices, amounts, paid or not, the saved card. Change something in Stripe and it shows up in AutoDash within a minute (instantly if the webhook is set up).
-
-One-time setup in Stripe:
-1. Create the customer (Auto One Motors, with the owner's email).
-2. Add a subscription: $379 every month.
-3. Add one-time items for the first invoice: $99 connection fee and $11 phone number fee (total $489).
-4. Settings > Billing > Customer portal: turn it on (lets the owner change the card).
-5. Developers > Webhooks: add `invoice.*`, `customer.subscription.*`, `payment_method.*` events (same endpoint as before, `/api/stripe/webhook`).
-6. Add `STRIPE_CUSTOMER_ID` in Vercel and redeploy.
-
-Prices, discounts, refunds, credit notes, pausing or cancelling are all done in Stripe. Once a month AutoDash adds any extra AI email or text charges (past the monthly allowance) to the customer in Stripe as invoice items, so they land on the next invoice and can be edited or removed there first. Leave `STRIPE_CUSTOMER_ID` empty to keep the older built-in billing.
+Each contractor's page has its own invoices: add items (search your item list or type a new one), what the contractor paid for each, and what they
+charge you for each. You owe what they charge; they make the difference. These are kept apart from your own invoices, so they never count in your
+sales, profit, analytics or taxes. Payments you record to a contractor are subtracted from what you owe.
