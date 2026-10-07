@@ -193,3 +193,17 @@ Turned on by `DATABASE_URL`. The site creates and upgrades its own tables on fir
 ## History
 
 The previous version of the site is preserved in the git tag `backup-before-rebuild-2026-09-26`.
+
+## Managing billing in Stripe (recommended)
+
+Set `STRIPE_CUSTOMER_ID` (the `cus_...` id) next to `STRIPE_SECRET_KEY` and billing is managed in Stripe itself. The Billing page in AutoDash then shows whatever Stripe has: invoices, amounts, paid or not, the saved card. Change something in Stripe and it shows up in AutoDash within a minute (instantly if the webhook is set up).
+
+One-time setup in Stripe:
+1. Create the customer (Auto One Motors, with the owner's email).
+2. Add a subscription: $379 every month.
+3. Add one-time items for the first invoice: $99 connection fee and $11 phone number fee (total $489).
+4. Settings > Billing > Customer portal: turn it on (lets the owner change the card).
+5. Developers > Webhooks: add `invoice.*`, `customer.subscription.*`, `payment_method.*` events (same endpoint as before, `/api/stripe/webhook`).
+6. Add `STRIPE_CUSTOMER_ID` in Vercel and redeploy.
+
+Prices, discounts, refunds, credit notes, pausing or cancelling are all done in Stripe. Once a month AutoDash adds any extra AI email or text charges (past the monthly allowance) to the customer in Stripe as invoice items, so they land on the next invoice and can be edited or removed there first. Leave `STRIPE_CUSTOMER_ID` empty to keep the older built-in billing.

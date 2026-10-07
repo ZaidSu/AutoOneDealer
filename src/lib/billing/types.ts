@@ -62,6 +62,9 @@ export type Invoice = {
   status: "open" | "processing" | "paid" | "void"; dueDate: string; paidAt: number | null; createdAt: number;
   /** How it was paid ("card" or "bank"), and a short note like "Collecting from the bank on Oct 9". */
   method: string | null; note: string | null;
+  /** Set when the bill lives in Stripe (Stripe mode): its own payment page. */
+  hostedUrl?: string | null;
+  source?: "stripe";
 };
 
 export const money = (cents: number) => (cents / 100).toLocaleString("en-US", { style: "currency", currency: "USD" });

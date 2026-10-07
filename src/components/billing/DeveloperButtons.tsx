@@ -1,6 +1,6 @@
 "use client";
 import { useState, useTransition } from "react";
-import { createInvoiceNowAction, disconnectBankAction, retryBankPaymentAction, turnOffCardAutopayAction, voidInvoiceAction } from "@/app/actions";
+import { createInvoiceNowAction, openCardPortalAction, disconnectBankAction, retryBankPaymentAction, turnOffCardAutopayAction, voidInvoiceAction } from "@/app/actions";
 
 export function CreateBillButton() {
   const [msg, setMsg] = useState("");
@@ -67,6 +67,21 @@ export function TurnOffAutopayButton() {
         Turn off autopay
       </button>
       {msg && <span role="status" className="text-sm text-muted">{msg}</span>}
+    </span>
+  );
+}
+
+/** The owner changes the saved card on Stripe's own page. */
+export function ManageCardButton() {
+  const [msg, setMsg] = useState("");
+  const [pending, start] = useTransition();
+  return (
+    <span className="flex flex-wrap items-center gap-3">
+      <button type="button" className="btn btn-sm" disabled={pending}
+        onClick={() => start(async () => { const r = await openCardPortalAction(); if (r.ok && r.message) window.location.href = r.message; else setMsg(r.ok ? "" : r.error); })}>
+        {pending ? "Opening…" : "Change card on Stripe"}
+      </button>
+      {msg && <span role="alert" className="text-sm text-signal">{msg}</span>}
     </span>
   );
 }

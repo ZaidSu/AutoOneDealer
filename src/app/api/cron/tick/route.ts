@@ -8,7 +8,9 @@ import { runAlerts } from "@/lib/ai/alerts";
 import { sendDigestIfDue } from "@/lib/ai/digest";
 import { draftNewReplies } from "@/lib/ai/replies";
 import { setSetting } from "@/lib/db/data";
-import { chargeDueBillsByCard, collectOpenBills, ensureInvoice } from "@/lib/billing";
+import { chargeDueBillsByCard, collectOpenBills, ensureInvoice, getBillingSettings, periodOf, previousPeriod, usageFor } from "@/lib/billing";
+import { addUsageChargesToStripe, stripeBillingOn } from "@/lib/billing/stripe-sync";
+import { periodLabel } from "@/lib/billing/types";
 import { withGmail } from "@/lib/gmail";
 import { syncLeads } from "@/lib/leads/sync";
 import { enrichInventory, seedInventoryOnce, syncInventory } from "@/lib/inventory/store";
@@ -32,8 +34,14 @@ export async function GET(req: NextRequest) {
   if (!allowed(req)) return NextResponse.json({ ok: false, message: "Wrong or missing key." }, { status: 401 });
   const started = Date.now();
   const report: Record<string, unknown> = {};
+  // Record that the timer ran the moment it starts, so one slow step can never make it look like the timer stopped.
+  await setSetting("last_timer_run", String(started)).catch(() => undefined);
+  // Each step gets only the time that's left; slow ones are skipped this run and done on the next (it runs every 5 minutes).
+  const left = () => 52_000 - (Date.now() - started);
+  const within = <T,>(ms: number, work: Promise<T>): Promise<T> =>
+    Promise.race([work, new Promise<T>((_, no) => setTimeout(() => no(new Error("took too long, will retry next run")), Math.max(1_000, ms)))]);
   try {
-    const sync = await withGmail((gmail) => syncLeads(gmail, { timeLimitMs: 20_000 }), undefined, "background");
+    const sync = await within(24_000, withGmail((gmail) => syncLeads(gmail, { timeLimitMs: 20_000 }), undefined, "background"));
     report.leads = sync.status === "ok" ? ("busy" in sync.data ? "already updating" : { added: sync.data.added ?? 0, total: sync.data.saved }) : sync.status === "error" ? sync.message : "Gmail isn't connected";
   } catch (error) {
     report.leads = `failed: ${error instanceof Error ? error.message : "unknown"}`;
@@ -41,13 +49,13 @@ export async function GET(req: NextRequest) {
   // The update emails come right after the lead import and BEFORE the slow AI-writing steps below. Those can take most of this
   // run's 60 seconds, and a timer run that is cut off never reaches anything after them (which is why updates went missing).
   try {
-    const digest = await sendDigestIfDue();
+    const digest = await within(Math.min(12_000, left()), sendDigestIfDue());
     report.digest = digest.sent ? digest.reason : `not sent: ${digest.reason}`;
   } catch (error) {
     report.digest = `failed: ${error instanceof Error ? error.message : "unknown"}`;
   }
   try {
-    const extra = await runAlerts();
+    const extra = await within(Math.min(10_000, left()), runAlerts());
     if (Object.keys(extra).length) report.alerts = extra;
   } catch (error) {
     report.alerts = `failed: ${error instanceof Error ? error.message : "unknown"}`;
@@ -61,31 +69,39 @@ export async function GET(req: NextRequest) {
     try { await enrichInventory({ max: 3, deadline: started + 55_000 }); } catch (error) { console.error("[autodash:inventory] VIN/photo read failed:", error instanceof Error ? error.message : error); }
   });
   try {
+    if (left() < 12_000) throw new Error("out of time this run, will continue next run");
     // Customers who wrote back by email (answered in the same thread).
-    const replies = await withGmail((gmail) => checkCustomerReplies(gmail), undefined, "background");
+    const replies = await within(Math.min(12_000, left()), withGmail((gmail) => checkCustomerReplies(gmail), undefined, "background"));
     report.customerReplies = replies.status === "ok" ? replies.data : replies.status === "error" ? replies.message : "Gmail isn't connected";
-    report.followups = await draftFollowups({ max: 3 });
+    if (left() > 10_000) report.followups = await within(left() - 4_000, draftFollowups({ max: 3 }));
   } catch (error) {
     report.customerReplies = `failed: ${error instanceof Error ? error.message : "unknown"}`;
   }
   try {
-    report.ai = await draftNewReplies({ max: 4 });
+    report.ai = left() > 10_000 ? await within(left() - 4_000, draftNewReplies({ max: 4 })) : "skipped (out of time, next run)";
   } catch (error) {
     report.ai = `failed: ${error instanceof Error ? error.message : "unknown"}`;
   }
   try {
-    report.purchaseFollowups = await sendPurchaseFollowups({ max: 3 });
+    report.purchaseFollowups = left() > 8_000 ? await within(left() - 3_000, sendPurchaseFollowups({ max: 3 })) : "skipped (out of time, next run)";
   } catch (error) {
     report.purchaseFollowups = `failed: ${error instanceof Error ? error.message : "unknown"}`;
   }
   try {
-    const bill = await ensureInvoice(undefined, { onlyIfStarted: true });
-    // With a bank account connected, new bills are scheduled for collection on their due date.
-    const collecting = bill ? await collectOpenBills() : 0;
-    // With card autopay on, bills are charged on their due date.
-    const charged = bill ? await chargeDueBillsByCard() : 0;
-    if (charged) report.autopay = `charged ${charged}`;
-    report.billing = bill ? `${bill.number} ${bill.status}${collecting ? ", bank collection started" : ""}` : "not started (the developer creates the first bill)";
+    if (left() < 6_000) throw new Error("out of time this run, will continue next run");
+    if (stripeBillingOn()) {
+      // Billing lives in Stripe. AutoDash only adds last month's extra-usage charges to the customer there (once a month).
+      const prev = previousPeriod(periodOf());
+      report.billing = `Stripe: ${await addUsageChargesToStripe(prev, await usageFor(prev), await getBillingSettings(), periodLabel(prev))}`;
+    } else {
+      const bill = await ensureInvoice(undefined, { onlyIfStarted: true });
+      // With a bank account connected, new bills are scheduled for collection on their due date.
+      const collecting = bill ? await collectOpenBills() : 0;
+      // With card autopay on, bills are charged on their due date.
+      const charged = bill ? await chargeDueBillsByCard() : 0;
+      if (charged) report.autopay = `charged ${charged}`;
+      report.billing = bill ? `${bill.number} ${bill.status}${collecting ? ", bank collection started" : ""}` : "not started (the developer creates the first bill)";
+    }
   } catch (error) {
     report.billing = `failed: ${error instanceof Error ? error.message : "unknown"}`;
   }

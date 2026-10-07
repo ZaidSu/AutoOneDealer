@@ -3,6 +3,7 @@ import { readyDb } from "@/lib/db";
 import { getSetting, setSetting } from "@/lib/db/data";
 import { dealership } from "@/lib/dealership";
 import { addDays, dayKey, zonedToUtc } from "@/lib/utils/time";
+import { listStripeInvoices, stripeBillingOn, stripeCard } from "./stripe-sync";
 import { DEFAULT_BILLING, PLAN_VERSION, periodLabel, repricedBill, totals, type BillingSettings, type Invoice, type InvoiceItem } from "./types";
 
 export async function getBillingSettings(): Promise<BillingSettings> {
@@ -78,7 +79,7 @@ export function billingStarted(period = periodOf()): boolean {
 
 /** "2026-10" for the month a moment falls in, Dallas time. */
 export const periodOf = (at: Date | number = Date.now()) => dayKey(at, dealership.timeZone).slice(0, 7);
-function previousPeriod(period: string) {
+export function previousPeriod(period: string) {
   const [y, m] = period.split("-").map(Number);
   return m === 1 ? `${y - 1}-12` : `${y}-${String(m - 1).padStart(2, "0")}`;
 }
@@ -133,6 +134,8 @@ export async function draftItems(period: string, s: BillingSettings): Promise<In
 /** Creates this month's bill if it doesn't exist yet. The developer's button makes the first bill; after that the
  *  timer makes each new month's bill automatically (onlyIfStarted), so billing never starts by surprise. */
 export async function ensureInvoice(period = periodOf(), { onlyIfStarted = false } = {}): Promise<Invoice | null> {
+  // Stripe mode: bills are made by Stripe; AutoDash never creates one. This just finds the month's bill.
+  if (stripeBillingOn()) return (await listStripeInvoices().catch(() => [])).find((b) => b.period === period) ?? null;
   const sql = await readyDb();
   if (!sql) return null;
   if (onlyIfStarted && !billingStarted(period)) {
@@ -169,6 +172,7 @@ export async function ensureInvoice(period = periodOf(), { onlyIfStarted = false
 /** Unpaid bills for this month or later follow the current plan (price and tax). Bills already paid, being paid, or from
  *  earlier months are never touched. Returns how many bills changed. */
 export async function repriceOpenInvoices(): Promise<number> {
+  if (stripeBillingOn()) return 0;
   const sql = await readyDb();
   if (!sql) return 0;
   const s = await getBillingSettings();
@@ -187,6 +191,7 @@ export async function repriceOpenInvoices(): Promise<number> {
 }
 
 export async function listInvoices(): Promise<Invoice[]> {
+  if (stripeBillingOn()) return listStripeInvoices().catch((e) => { console.error("[autodash:billing] Stripe invoices:", e instanceof Error ? e.message : e); return []; });
   const sql = await readyDb();
   if (!sql) return [];
   return (await sql`select * from billing_invoices where status <> 'void' order by period desc limit 36`).map(toInvoice);
@@ -258,6 +263,7 @@ export async function collectFromBank(invoice: Invoice): Promise<{ ok: true } | 
 
 /** Collects every open bill once a bank account is connected (called after setup and each day by the timer). */
 export async function collectOpenBills(): Promise<number> {
+  if (stripeBillingOn()) return 0;
   if (!(await getBankMandate())) return 0;
   let started = 0;
   for (const invoice of (await listInvoices()).filter((i) => i.status === "open").reverse()) {
@@ -302,6 +308,7 @@ export function isOverdue(invoice: Invoice): boolean {
 
 export type CardAutopay = { customer: string; paymentMethod: string; brand: string; last4: string; since: number };
 export async function getCardAutopay(): Promise<CardAutopay | null> {
+  if (stripeBillingOn()) return stripeCard();
   try { const raw = await getSetting("stripe_autopay"); return raw ? JSON.parse(raw) : null; } catch { return null; }
 }
 export async function setCardAutopay(value: CardAutopay | null) {
@@ -325,6 +332,7 @@ export async function completeCardCheckout(sessionId: string): Promise<"paid" | 
 
 /** Charges the saved card for every unpaid bill that's due today or earlier (the timer runs this daily). */
 export async function chargeDueBillsByCard(): Promise<number> {
+  if (stripeBillingOn()) return 0; // Stripe charges the card itself
   const sql = await readyDb();
   const autopay = await getCardAutopay();
   if (!sql || !autopay) return 0;

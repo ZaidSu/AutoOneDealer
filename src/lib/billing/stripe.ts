@@ -7,6 +7,8 @@ export const stripeConfigured = () => Boolean(process.env.STRIPE_SECRET_KEY);
 // Secret keys start with sk_, restricted keys (limited permissions) with rk_; either kind can be test or live.
 export const stripeTestMode = () => /^(sk|rk)_test_/.test(String(process.env.STRIPE_SECRET_KEY ?? ""));
 
+export async function stripeApi<T>(path: string, form?: Record<string, string>, idempotencyKey?: string): Promise<T> { return stripe<T>(path, form, idempotencyKey); }
+
 async function stripe<T>(path: string, form?: Record<string, string>, idempotencyKey?: string): Promise<T> {
   const key = process.env.STRIPE_SECRET_KEY;
   if (!key) throw new Error("Stripe isn't set up yet (STRIPE_SECRET_KEY).");
@@ -28,6 +30,12 @@ async function stripe<T>(path: string, form?: Record<string, string>, idempotenc
     throw error;
   }
   return data as T;
+}
+
+/** Stripe's own page where the owner can change the saved card or see receipts. Needs the Customer portal turned on once in the Stripe dashboard. */
+export async function createPortal(customer: string, returnUrl: string): Promise<string> {
+  const s = await stripe<{ url: string }>("billing_portal/sessions", { customer, return_url: returnUrl });
+  return s.url;
 }
 
 /** A Stripe payment page for one bill. Each line of the bill (and the tax) shows on Stripe's page too. */

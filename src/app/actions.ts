@@ -376,6 +376,20 @@ export async function voidInvoiceAction(id: number): Promise<ActionResult> {
   return { ok: true, message: "Bill canceled. Click Create this month's bill to make it again with the current prices." };
 }
 
+/** Returns the address of Stripe's page for changing the saved card (in `message`). */
+export async function openCardPortalAction(): Promise<ActionResult> {
+  const staff = await requireStaff();
+  if (!staff || !can.viewBilling(staff.role)) return fail("Only the owner can change how bills are paid.");
+  const { getCardAutopay } = await import("@/lib/billing");
+  const { createPortal, stripeConfigured } = await import("@/lib/billing/stripe");
+  const { stripeBillingOn, stripeCustomerId } = await import("@/lib/billing/stripe-sync");
+  const customer = stripeBillingOn() ? stripeCustomerId() : (await getCardAutopay())?.customer;
+  if (!customer || !stripeConfigured()) return fail("No card is saved with Stripe yet.");
+  const base = (process.env.APP_URL ?? "").replace(/\/+$/, "") || "https://auto-one-dealer.vercel.app";
+  try { return { ok: true, message: await createPortal(customer, `${base}/billing`) }; }
+  catch (e) { return fail(`Stripe said: ${e instanceof Error ? e.message : "couldn't open the page"}. If it mentions the customer portal, turn it on in Stripe: Settings > Billing > Customer portal.`); }
+}
+
 export async function setAutoSendAction(on: boolean): Promise<ActionResult> {
   const staff = await requireStaff();
   if (!staff) return fail("Your session ended. Sign in again.");

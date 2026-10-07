@@ -2,7 +2,7 @@ import type { Metadata } from "next";
 import BillingSettingsForm from "@/components/billing/BillingSettingsForm";
 import AcceptAgreement from "@/components/legal/AcceptAgreement";
 import { getAcceptance, isCurrent } from "@/lib/legal/accept";
-import { CreateBillButton, DisconnectBankButton, RetryBankButton, TurnOffAutopayButton, VoidBillButton } from "@/components/billing/DeveloperButtons";
+import { CreateBillButton, DisconnectBankButton, ManageCardButton, RetryBankButton, TurnOffAutopayButton, VoidBillButton } from "@/components/billing/DeveloperButtons";
 import DbNotice from "@/components/ui/DbNotice";
 import PageHeader from "@/components/ui/PageHeader";
 import { can } from "@/lib/auth/access";
@@ -13,6 +13,7 @@ import {
 } from "@/lib/billing";
 import { gocardlessConfigured, gocardlessSandbox } from "@/lib/billing/gocardless";
 import { stripeConfigured, stripeTestMode } from "@/lib/billing/stripe";
+import { stripeBillingOn, stripeDashboardUrl, stripeUpcoming } from "@/lib/billing/stripe-sync";
 import { money, periodLabel, totals, type Invoice } from "@/lib/billing/types";
 import { dbState, fresh } from "@/lib/db";
 
@@ -39,7 +40,8 @@ export default async function BillingPage({ searchParams }: { searchParams: Prom
   const period = periodOf();
   // Once billing has started, this month's bill exists as soon as anyone opens this page.
   let createError: string | null = null;
-  if (billingStarted(period)) {
+  const inStripe = stripeBillingOn(); // bills, prices and payments are managed in Stripe; this page mirrors them
+  if (!inStripe && billingStarted(period)) {
     await fresh("Bill", () => ensureInvoice(period)).catch((e) => {
       createError = e instanceof Error ? e.message : String(e);
       console.error("[autodash:billing] couldn't create this month's bill:", createError);
@@ -53,9 +55,11 @@ export default async function BillingPage({ searchParams }: { searchParams: Prom
   const current = invoices.find((i) => i.period === period) ?? null;
   const autopay = Boolean(card || mandate);
   const manage = can.manageBilling(staff.role);
-  const previewItems = current ? null : await fresh("Bill preview", () => draftItems(period, settings));
-  const preview = previewItems ? { items: previewItems, ...totals(previewItems, settings) } : null;
-  const shown = (current ?? preview)!;
+  const upcoming = inStripe && !current ? await stripeUpcoming().catch(() => null) : null;
+  const previewItems = current || inStripe ? null : await fresh("Bill preview", () => draftItems(period, settings));
+  const preview = upcoming ? { items: upcoming.items, subtotal: upcoming.subtotal, tax: upcoming.tax, total: upcoming.total }
+    : previewItems ? { items: previewItems, ...totals(previewItems, settings) } : null;
+  const shown = current ?? preview ?? { items: [], subtotal: 0, tax: 0, total: 0 };
   const tone = current ? billTone(current, autopay) : null;
   const pastDue = invoices.filter((i) => billTone(i, autopay).tone === "red");
   const notice = params.paid ? { ok: true, text: "Payment received. Thank you!" }
@@ -97,8 +101,8 @@ export default async function BillingPage({ searchParams }: { searchParams: Prom
           {tone && <StatusBox tone={tone} />}
           <Breakdown items={shown.items} subtotal={shown.subtotal} tax={shown.tax} total={shown.total} taxNote={shown.tax === 0 ? "Sales tax (exempt)" : settings.taxRatePercent > 0 ? `Sales tax (${settings.taxRatePercent}% on ${settings.taxablePercent}% of the bill)` : "Sales tax"} />
           <div className="border-t border-line p-5">
-            <PayArea invoice={current} manage={manage} autopay={autopay} hasMandate={Boolean(mandate)} dueDay={settings.dueDay} />
-            {!current && whyNoBill && <p className="mt-2 rounded-lg bg-paper px-3 py-2 text-sm text-muted"><b>Why there&apos;s no bill yet:</b> {whyNoBill}</p>}
+            <PayArea invoice={current} inStripe={inStripe} manage={manage} autopay={autopay} hasMandate={Boolean(mandate)} dueDay={settings.dueDay} />
+            {!current && !inStripe && whyNoBill && <p className="mt-2 rounded-lg bg-paper px-3 py-2 text-sm text-muted"><b>Why there&apos;s no bill yet:</b> {whyNoBill}</p>}
           </div>
         </section>
 
@@ -106,9 +110,9 @@ export default async function BillingPage({ searchParams }: { searchParams: Prom
         <div className="grid gap-6">
           <section aria-labelledby="plan" className="panel p-5">
             <h2 id="plan" className="text-[17px] font-semibold">Your plan</h2>
-            <p className="mt-2 font-condensed text-4xl font-semibold">{money(settings.monthlyCents)}<span className="font-sans text-base font-normal text-muted"> a month{settings.taxRatePercent > 0 ? ", plus tax" : ", no sales tax"}</span></p>
+            {inStripe ? <p className="mt-2 text-[15px] text-muted">Your plan, prices and payments are managed securely through Stripe.</p> : <p className="mt-2 font-condensed text-4xl font-semibold">{money(settings.monthlyCents)}<span className="font-sans text-base font-normal text-muted"> a month{settings.taxRatePercent > 0 ? ", plus tax" : ", no sales tax"}</span></p>}
             <p className="mt-2 text-sm text-muted">Billed by {settings.billedBy || "AutoDash"}, due on the {ordinal(settings.dueDay)} of each month.</p>
-            {settings.planParts.length > 0 && (
+            {!inStripe && settings.planParts.length > 0 && (
               <>
                 <h3 className="mt-5 text-sm font-semibold text-muted">What your {money(settings.monthlyCents)} covers</h3>
                 <ul className="mt-1 divide-y divide-line">
@@ -125,7 +129,13 @@ export default async function BillingPage({ searchParams }: { searchParams: Prom
 
           <section aria-labelledby="paying" className="panel p-5">
             <h2 id="paying" className="text-[17px] font-semibold">How you pay</h2>
-            {card ? (
+            {inStripe ? (
+              <>
+                <p className="mt-2 flex items-center gap-2 text-[15px]"><span aria-hidden className={`size-2.5 rounded-full ${card ? "bg-go" : "bg-lane"}`} />
+                  <span>{card ? <>{card.brand[0].toUpperCase() + card.brand.slice(1)} ending in {card.last4} is charged automatically.</> : "No card on file. Use the Pay button on a bill."}</span></p>
+                {manage || staff.role === "owner" ? <div className="mt-3"><ManageCardButton /></div> : null}
+              </>
+            ) : card ? (
               <>
                 <p className="mt-2 flex items-center gap-2 text-[15px]"><span aria-hidden className="size-2.5 rounded-full bg-go" />
                   <span><b>Enrolled in autopay.</b> {card.brand[0].toUpperCase() + card.brand.slice(1)} ending in {card.last4} is charged automatically on the {ordinal(settings.dueDay)}.</span></p>
@@ -169,7 +179,8 @@ export default async function BillingPage({ searchParams }: { searchParams: Prom
                       <td className="px-3 py-3"><span className={`rounded-full px-2.5 py-0.5 text-xs font-semibold ${TONE[t.tone].chip}`}>{t.label}</span></td>
                       <td className="px-5 py-3 text-sm text-muted">
                         {i.status === "paid" ? `${t.detail}${i.method === "card" ? " by card" : i.method === "bank" ? " by bank" : ""}` : t.detail}
-                        {i.status === "open" && i.period !== period && stripeConfigured() && (
+                        {i.status === "open" && inStripe && i.hostedUrl && <a href={i.hostedUrl} className="btn btn-sm mt-1 inline-flex">Pay {money(i.total)}</a>}
+                        {i.status === "open" && !inStripe && i.period !== period && stripeConfigured() && (
                           <form action="/api/billing/checkout" method="post" className="mt-1"><input type="hidden" name="invoiceId" value={i.id} /><button className="btn btn-sm">Pay {money(i.total)}</button></form>
                         )}
                       </td>
@@ -199,7 +210,14 @@ export default async function BillingPage({ searchParams }: { searchParams: Prom
         )}
       </section>
 
-      {manage && (
+      {manage && inStripe && (
+        <section aria-labelledby="prices" className="mt-10 rounded-xl border border-line bg-paper p-5">
+          <h2 id="prices" className="text-lg font-semibold">Prices and billing <span className="text-sm font-normal text-muted">(only you, the developer, see this)</span></h2>
+          <p className="mt-1 text-[15px]">Prices, bills, discounts, refunds and the card are all managed in Stripe. Change them there and this page updates by itself within a minute.</p>
+          <a href={stripeDashboardUrl()} target="_blank" rel="noopener noreferrer" className="btn btn-sm mt-3 inline-flex">Open in Stripe</a>
+        </section>
+      )}
+      {manage && !inStripe && (
         <section aria-labelledby="prices" className="mt-10">
           <h2 id="prices" className="text-lg font-semibold">Prices and settings <span className="text-sm font-normal text-muted">(only you, the developer, see this)</span></h2>
           <p className="mb-3 text-sm text-muted">Changes apply to the next bill. To change a bill already created and unpaid, cancel it and create it again.</p>
@@ -219,8 +237,14 @@ function StatusBox({ tone }: { tone: BillTone }) {
   );
 }
 
-function PayArea({ invoice, manage, autopay, hasMandate, dueDay }: { invoice: Invoice | null; manage: boolean; autopay: boolean; hasMandate: boolean; dueDay: number }) {
+function PayArea({ invoice, inStripe, manage, autopay, hasMandate, dueDay }: { invoice: Invoice | null; inStripe: boolean; manage: boolean; autopay: boolean; hasMandate: boolean; dueDay: number }) {
+  if (!invoice && inStripe) return <p className="text-sm text-muted">Your bill will appear here when it is issued.</p>;
   if (!invoice) return manage ? <CreateBillButton /> : <p className="text-sm text-muted">Your bill will appear here at the start of the month.</p>;
+  if (inStripe) {
+    return invoice.hostedUrl && invoice.status === "open"
+      ? <a href={invoice.hostedUrl} className="btn btn-red inline-flex h-11 items-center px-6 text-base">Pay {money(invoice.total)}</a>
+      : <p className="text-[15px] text-muted">{invoice.note ?? ""}</p>;
+  }
   if (invoice.status === "paid") return <p className="text-go">Paid. Thank you!</p>;
   if (invoice.status === "processing") return <p className="text-[15px] text-muted">{invoice.note ?? "Payment is processing."}</p>;
   return (
