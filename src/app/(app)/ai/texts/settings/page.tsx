@@ -25,6 +25,7 @@ export default async function AiTextSettingsPage() {
   const base = process.env.APP_URL || (process.env.VERCEL_PROJECT_PRODUCTION_URL ? `https://${process.env.VERCEL_PROJECT_PRODUCTION_URL}` : "https://auto-one-dealer.vercel.app");
   const webhook = `${base.replace(/\/$/, "")}/api/sms/incoming`;
   const ok = twilioConfigured();
+  const dev = can.useDeveloperTools(staff.role);
   const canChange = can.editAiSettings(staff.role);
   const number = pretty(String(process.env.TWILIO_PHONE_NUMBER ?? "").replace(/[^\d+]/g, "").replace(/^(\d{10})$/, "+1$1")) || "Messaging Service";
 
@@ -37,7 +38,8 @@ export default async function AiTextSettingsPage() {
       <section aria-label="Setup" className="panel p-5">
         <ul className="grid gap-2 text-[15px]">
           <Check ok={aiConfigured()} text={aiConfigured() ? "AI is connected" : "AI key missing: add ANTHROPIC_API_KEY in Vercel"} />
-          <Check ok={ok} text={ok ? `Texting number connected (${number})` : "Twilio not connected: add TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN and TWILIO_PHONE_NUMBER in Vercel"} />
+          <Check ok={ok} text={ok ? `Texting number connected (${number})` : "Twilio not connected: add TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN and TWILIO_PHONE_NUMBER (or TWILIO_MESSAGING_SERVICE_SID) in Vercel"} />
+          {dev && <>
           <li className="flex items-start gap-2.5">
             <span aria-hidden className="mt-1 grid size-4 shrink-0 place-items-center rounded-full bg-graphite-3/40 text-[10px] font-bold text-white">i</span>
             <span>In Twilio, set <b>A message comes in</b> (on the number, or the Messaging Service&apos;s Integration) to Webhook, HTTP POST:
@@ -47,6 +49,7 @@ export default async function AiTextSettingsPage() {
             <span aria-hidden className="mt-1 grid size-4 shrink-0 place-items-center rounded-full bg-graphite-3/40 text-[10px] font-bold text-white">i</span>
             <span>Texts to customers only deliver once the A2P 10DLC registration is approved in Twilio.</span>
           </li>
+          </>}
         </ul>
         <div className="mt-4 border-t border-line pt-4"><AutoTextToggle initial={autoText} canChange={canChange} /></div>
       </section>

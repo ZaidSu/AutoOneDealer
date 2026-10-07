@@ -3,6 +3,7 @@ import { BarList, Columns, Panel, Stat } from "@/components/analytics/Charts";
 import { AddSale, BackOnLot, CheckNowButton, ImportText, MarkSold, RemoveCar, RestoreCar } from "@/components/inventory/InventoryActions";
 import DbNotice from "@/components/ui/DbNotice";
 import PageHeader from "@/components/ui/PageHeader";
+import { can } from "@/lib/auth/access";
 import { requirePageStaff } from "@/lib/auth/guard";
 import { dbState, fresh } from "@/lib/db";
 import { aiViewOfInventory, getSyncState, inventoryStats, listCars, seedInventoryOnce } from "@/lib/inventory/store";
@@ -21,7 +22,8 @@ const ago = (ms: number) => {
 };
 
 export default async function InventoryPage({ searchParams }: { searchParams?: Promise<{ q?: string }> }) {
-  await requirePageStaff();
+  const staff = await requirePageStaff();
+  const dev = can.useDeveloperTools(staff.role); // website-reading status and the paste box are for the developer only
   const q = String((await searchParams)?.q ?? "").trim().toLowerCase().slice(0, 60);
   const header = <PageHeader title="Inventory" description="The cars on your website, what sold, and what sells best. The AI reads this to answer “is it still available?”." action={<CheckNowButton />} />;
   const state = await dbState();
@@ -37,6 +39,7 @@ export default async function InventoryPage({ searchParams }: { searchParams?: P
     <div className="max-w-6xl">
       {header}
 
+      {dev && <>
       <p role="status" className={`mb-6 rounded-xl px-4 py-3 text-[15px] ${sync?.ok ? "bg-go-soft text-go" : "border border-lane/40 bg-[#fdf6e3]"}`}>
         {!sync ? "Not read from the website yet. The timer does it every 5 minutes, or click Check website now."
           : sync.ok ? `Checked ${ago(sync.at)}: ${sync.count} cars on the website${sync.via === "helper" ? " (read through a helper service, because the website doesn't answer AutoDash directly)" : sync.via === "pushed" ? " (sent by the dealership computer)" : sync.via === "pasted" ? " (pasted from the website, trusted for a day)" : ""}${sync.complete ? "" : `. Only part of the website could be read${sync.pagesExpected ? ` (${sync.pagesRead ?? 0} of ${sync.pagesExpected} pages)` : ""}, so nothing is being marked sold. It keeps trying every 5 minutes`}.`
@@ -49,6 +52,7 @@ export default async function InventoryPage({ searchParams }: { searchParams?: P
       </p>
 
       <div className="mb-6"><ImportText /></div>
+      </>}
 
       <div className="grid grid-cols-2 gap-3 lg:grid-cols-3">
         <Stat value={stats.available} label="On the lot" color="#1f7a4d" />
