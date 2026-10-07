@@ -13,7 +13,7 @@ import {
 } from "@/lib/billing";
 import { gocardlessConfigured, gocardlessSandbox } from "@/lib/billing/gocardless";
 import { stripeConfigured, stripeTestMode } from "@/lib/billing/stripe";
-import { stripeBillingOn, stripeDashboardUrl, stripeUpcoming } from "@/lib/billing/stripe-sync";
+import { stripeBillingOn, stripeDashboardUrl, stripeEmptyReason, stripeUpcoming } from "@/lib/billing/stripe-sync";
 import { money, periodLabel, totals, type Invoice } from "@/lib/billing/types";
 import { dbState, fresh } from "@/lib/db";
 
@@ -56,6 +56,7 @@ export default async function BillingPage({ searchParams }: { searchParams: Prom
   const autopay = Boolean(card || mandate);
   const manage = can.manageBilling(staff.role);
   const upcoming = inStripe && !current ? await stripeUpcoming().catch(() => null) : null;
+  const stripeWhy = inStripe && !current && !upcoming && manage ? await stripeEmptyReason().catch(() => null) : null;
   const previewItems = current || inStripe ? null : await fresh("Bill preview", () => draftItems(period, settings));
   const preview = upcoming ? { items: upcoming.items, subtotal: upcoming.subtotal, tax: upcoming.tax, total: upcoming.total }
     : previewItems ? { items: previewItems, ...totals(previewItems, settings) } : null;
@@ -102,6 +103,7 @@ export default async function BillingPage({ searchParams }: { searchParams: Prom
           <Breakdown items={shown.items} subtotal={shown.subtotal} tax={shown.tax} total={shown.total} taxNote={shown.tax === 0 ? "Sales tax (exempt)" : settings.taxRatePercent > 0 ? `Sales tax (${settings.taxRatePercent}% on ${settings.taxablePercent}% of the bill)` : "Sales tax"} />
           <div className="border-t border-line p-5">
             <PayArea invoice={current} inStripe={inStripe} manage={manage} autopay={autopay} hasMandate={Boolean(mandate)} dueDay={settings.dueDay} />
+            {stripeWhy && <p className="mt-2 rounded-lg bg-paper px-3 py-2 text-sm text-muted"><b>Why there&apos;s no bill yet (only you see this):</b> {stripeWhy}</p>}
             {!current && !inStripe && whyNoBill && <p className="mt-2 rounded-lg bg-paper px-3 py-2 text-sm text-muted"><b>Why there&apos;s no bill yet:</b> {whyNoBill}</p>}
           </div>
         </section>

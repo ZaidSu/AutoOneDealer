@@ -79,3 +79,23 @@ export async function addUsageChargesToStripe(period: string, used: { emails: nu
   refreshStripeBilling();
   return charges.length ? `added ${charges.length} extra-usage charge(s) for ${label}` : "no extra usage";
 }
+
+/** For the owner/developer when the Billing page has nothing to show: says exactly why (wrong customer id or key mode, no subscription yet, nothing issued yet). */
+export function stripeEmptyReason(): Promise<string> {
+  return cached("stripe:why", 30_000, async () => {
+    try {
+      await stripeApi(`customers/${stripeCustomerId()}`);
+    } catch (e) {
+      return `Stripe couldn't find the customer ${stripeCustomerId()} with the key AutoDash has: ${e instanceof Error ? e.message : "unknown error"}. Check that STRIPE_CUSTOMER_ID and STRIPE_SECRET_KEY are both from the same mode (test or live).`;
+    }
+    try {
+      const subs = await stripeApi<{ data: { id: string; status: string }[] }>(`subscriptions?customer=${stripeCustomerId()}&status=all&limit=3`);
+      if (!subs.data.length) return "This customer has no subscription in Stripe yet. In Stripe, open the customer and click Create subscription ($379 a month). The one-time fees already added will go on its first invoice.";
+      const bad = subs.data.every((s) => ["incomplete", "incomplete_expired", "canceled"].includes(s.status));
+      if (bad) return `The subscription in Stripe is ${subs.data[0].status.replace("_", " ")}, so no bill was issued. Open it in Stripe to finish or recreate it.`;
+      return "Stripe hasn't issued a bill for this customer yet (it may still be a draft). Open the customer in Stripe and finalize the invoice.";
+    } catch (e) {
+      return `Couldn't read subscriptions from Stripe: ${e instanceof Error ? e.message : "unknown error"}. The API key may be missing the permission to read subscriptions.`;
+    }
+  });
+}
