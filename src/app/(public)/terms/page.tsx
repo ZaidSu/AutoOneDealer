@@ -18,7 +18,7 @@ export default function ServiceAgreementPage() {
 
       <H2>2. Fees and billing</H2>
       <UL>
-        <li><b>Monthly fee:</b> {money(B.monthlyCents)} per month, plus a <b>one-time connection fee of {money(B.setupFeeCents)}</b>.</li>
+        <li><b>Monthly fee:</b> {money(B.monthlyCents)} per month, plus a <b>one-time connection fee of {money(B.setupFeeCents)}</b>{B.phoneFeeCents > 0 && <> and a <b>one-time phone number fee of {money(B.phoneFeeCents)}</b></>}.</li>
         <li><b>Included usage:</b> up to {B.includedEmails.toLocaleString("en-US")} AI emails and {B.includedTexts.toLocaleString("en-US")} AI texts each month. Usage above that is billed at {B.extraEmailCents}&cent; per email and {B.extraTextCents}&cent; per text, as shown on the Billing page and on each bill.</li>
         <li><b>Sales tax:</b> Customer has told us it is exempt from sales tax and will give us a copy of its exemption certificate on request. No sales tax is charged while the exemption is valid. If the exemption is not valid or ends, Customer will owe any tax that should have been charged, and we may add it to a bill.</li>
         <li><b>Billed by:</b> {provider}. A bill is created each month and is due on the <b>{B.dueDay}th</b>.</li>

@@ -59,3 +59,9 @@ test("an unpaid bill made at the old price with tax is brought to $379 with no t
   assert.deepEqual({ subtotal: fixed.subtotal, tax: fixed.tax, total: fixed.total }, { subtotal: 47800, tax: 0, total: 47800 });
   assert.equal(repricedBill(fixed, plan, { monthlyCents: 37900, taxRatePercent: 0, taxablePercent: 80 }), null); // already current
 });
+
+test("the first bill is $379 plan + $99 connection + $11 phone number = $489", () => {
+  assert.equal(DEFAULT_BILLING.phoneFeeCents, 1100);
+  const t = totals([{ label: "Plan", cents: DEFAULT_BILLING.monthlyCents }, { label: "Connection", cents: DEFAULT_BILLING.setupFeeCents }, { label: "Phone", cents: DEFAULT_BILLING.phoneFeeCents }], DEFAULT_BILLING);
+  assert.equal(t.total, 48900);
+});

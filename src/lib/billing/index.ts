@@ -39,6 +39,7 @@ export async function saveBillingSettings(input: BillingSettings) {
     planVersion: PLAN_VERSION,
     monthlyCents: int(input.monthlyCents, 0, 10_000_000, d.monthlyCents),
     setupFeeCents: int(input.setupFeeCents, 0, 10_000_000, d.setupFeeCents),
+    phoneFeeCents: int(input.phoneFeeCents, 0, 10_000_000, d.phoneFeeCents),
     includedEmails: int(input.includedEmails, 0, 1_000_000, d.includedEmails),
     includedTexts: int(input.includedTexts, 0, 1_000_000, d.includedTexts),
     extraEmailCents: int(input.extraEmailCents, 0, 10_000, d.extraEmailCents),
@@ -119,6 +120,7 @@ export async function draftItems(period: string, s: BillingSettings): Promise<In
   }];
   const [{ n }] = sql ? await sql`select count(*)::int as n from billing_invoices where status <> 'void'` : [{ n: 0 }];
   if (n === 0 && s.setupFeeCents > 0) items.push({ label: "One-time connection fee", detail: "Phone number, Gmail and AI connection and training. First bill only.", cents: s.setupFeeCents });
+  if (n === 0 && s.phoneFeeCents > 0) items.push({ label: "One-time phone number fee", detail: "Your dedicated AI texting phone number. First bill only.", cents: s.phoneFeeCents });
   const prev = previousPeriod(period);
   const used = await usageFor(prev);
   const extraEmails = Math.max(0, used.emails - s.includedEmails);

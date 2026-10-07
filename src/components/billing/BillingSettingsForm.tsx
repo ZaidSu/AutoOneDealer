@@ -9,12 +9,12 @@ const toCents = (v: string) => Math.round(Number(v || 0) * 100);
 export default function BillingSettingsForm({ initial }: { initial: BillingSettings }) {
   const [s, setS] = useState(initial);
   const [parts, setParts] = useState(initial.planParts.map((p) => ({ ...p, dollars: dollars(p.cents) })));
-  const [money, setMoney] = useState({ monthly: dollars(initial.monthlyCents), setup: dollars(initial.setupFeeCents), email: dollars(initial.extraEmailCents), text: dollars(initial.extraTextCents) });
+  const [money, setMoney] = useState({ monthly: dollars(initial.monthlyCents), setup: dollars(initial.setupFeeCents), phone: dollars(initial.phoneFeeCents), email: dollars(initial.extraEmailCents), text: dollars(initial.extraTextCents) });
   const [msg, setMsg] = useState<{ ok: boolean; text: string } | null>(null);
   const [pending, start] = useTransition();
   const set = <K extends keyof BillingSettings>(k: K, v: BillingSettings[K]) => { setS({ ...s, [k]: v }); setMsg(null); };
   const save = () => start(async () => {
-    const r = await saveBillingSettingsAction({ ...s, planParts: parts.map(({ label, detail, dollars: d }) => ({ label, detail, cents: toCents(d) })), monthlyCents: toCents(money.monthly), setupFeeCents: toCents(money.setup), extraEmailCents: toCents(money.email), extraTextCents: toCents(money.text) });
+    const r = await saveBillingSettingsAction({ ...s, planParts: parts.map(({ label, detail, dollars: d }) => ({ label, detail, cents: toCents(d) })), monthlyCents: toCents(money.monthly), setupFeeCents: toCents(money.setup), phoneFeeCents: toCents(money.phone), extraEmailCents: toCents(money.email), extraTextCents: toCents(money.text) });
     setMsg(r.ok ? { ok: true, text: r.message ?? "Saved." } : { ok: false, text: r.error });
   });
   const m = (k: keyof typeof money) => ({ value: money[k], onChange: (e: React.ChangeEvent<HTMLInputElement>) => { setMoney({ ...money, [k]: e.target.value }); setMsg(null); } });
@@ -24,6 +24,7 @@ export default function BillingSettingsForm({ initial }: { initial: BillingSetti
       <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
         <label className="field">Monthly plan ($)<input className="input" inputMode="decimal" {...m("monthly")} /></label>
         <label className="field">Setup fee, first bill ($)<input className="input" inputMode="decimal" {...m("setup")} /></label>
+        <label className="field">Phone number fee, first bill ($)<input className="input" inputMode="decimal" {...m("phone")} /></label>
         <label className="field">Sales tax rate (%)<input className="input" inputMode="decimal" value={s.taxRatePercent} onChange={(e) => set("taxRatePercent", Number(e.target.value))} /></label>
         <label className="field">Taxable share of bill (%)<input className="input" inputMode="decimal" value={s.taxablePercent} onChange={(e) => set("taxablePercent", Number(e.target.value))} /></label>
         <label className="field">AI emails included / month<input className="input" inputMode="numeric" value={s.includedEmails} onChange={(e) => set("includedEmails", Number(e.target.value))} /></label>

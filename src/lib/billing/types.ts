@@ -6,6 +6,8 @@ export type BillingSettings = {
   planVersion: number;
   monthlyCents: number;
   setupFeeCents: number;
+  /** One-time phone number fee, first bill only (a separate line from the connection fee). */
+  phoneFeeCents: number;
   /** What's included each month before any extra charge. */
   includedEmails: number;
   includedTexts: number;
@@ -31,6 +33,7 @@ export const DEFAULT_BILLING: BillingSettings = {
   planVersion: PLAN_VERSION,
   monthlyCents: 37900,
   setupFeeCents: 9900,
+  phoneFeeCents: 1100,
   includedEmails: 1000,
   includedTexts: 1000,
   extraEmailCents: 10,
