@@ -167,10 +167,10 @@ export default async function BillingPage({ searchParams }: { searchParams: Prom
         <h2 id="history" className="mb-3 text-lg font-semibold">Bills and payments</h2>
         {invoices.length === 0 ? <p className="panel p-5 text-muted">No bills yet.</p> : (
           <div className="panel overflow-x-auto">
-            <table className="w-full min-w-[620px] text-left text-[15px]">
+            <table className="w-full min-w-[760px] text-left text-[15px]">
               <thead className="text-sm text-muted"><tr className="border-b border-line">
                 <th className="px-5 py-3 font-medium">Month</th><th className="px-3 py-3 font-medium">Bill</th><th className="px-3 py-3 font-medium">Total</th>
-                <th className="px-3 py-3 font-medium">Status</th><th className="px-5 py-3 font-medium">Details</th>
+                <th className="px-3 py-3 font-medium">Status</th><th className="px-3 py-3 font-medium">Details</th><th className="px-5 py-3 font-medium">Receipt</th>
               </tr></thead>
               <tbody className="divide-y divide-line">
                 {invoices.map((i) => {
@@ -181,12 +181,17 @@ export default async function BillingPage({ searchParams }: { searchParams: Prom
                       <td className="px-3 py-3 text-muted">{i.number}</td>
                       <td className="px-3 py-3 tabular-nums">{money(i.total)}</td>
                       <td className="px-3 py-3"><span className={`rounded-full px-2.5 py-0.5 text-xs font-semibold ${TONE[t.tone].chip}`}>{t.label}</span></td>
-                      <td className="px-5 py-3 text-sm text-muted">
+                      <td className="px-3 py-3 text-sm text-muted">
                         {i.status === "paid" ? `${t.detail}${i.method === "card" ? " by card" : i.method === "bank" ? " by bank" : ""}` : t.detail}
                         {i.status === "open" && inStripe && i.hostedUrl && <a href={i.hostedUrl} className="btn btn-sm mt-1 inline-flex">Pay {money(i.total)}</a>}
                         {i.status === "open" && !inStripe && i.period !== period && stripeConfigured() && (
                           <form action="/api/billing/checkout" method="post" className="mt-1"><input type="hidden" name="invoiceId" value={i.id} /><button className="btn btn-sm">Pay {money(i.total)}</button></form>
                         )}
+                      </td>
+                      <td className="px-5 py-3 text-sm">
+                        {i.status === "paid"
+                          ? <a className="panel-link" href={`/billing/receipt/${i.stripeId ?? i.id}/pdf`} target="_blank" rel="noopener noreferrer">Receipt (PDF)</a>
+                          : <span className="text-muted">After payment</span>}
                       </td>
                     </tr>
                   );
@@ -328,7 +333,7 @@ function Receipts({ invoices }: { invoices: Invoice[] }) {
                   <td className="px-5 py-3 font-medium">{periodLabel(i.period)}</td>
                   <td className="px-3 py-3 text-muted">{i.paidAt ? date(i.paidAt) : "—"}</td>
                   <td className="px-3 py-3 tabular-nums">{money(i.total)}</td>
-                  <td className="px-5 py-3"><a className="panel-link" href={`/billing/receipt/${i.stripeId ?? i.id}`}>View receipt</a></td>
+                  <td className="px-5 py-3"><a className="panel-link" href={`/billing/receipt/${i.stripeId ?? i.id}/pdf`} target="_blank" rel="noopener noreferrer">Receipt (PDF)</a> <span className="text-muted">·</span> <a className="panel-link" href={`/billing/receipt/${i.stripeId ?? i.id}`} target="_blank" rel="noopener noreferrer">Print view</a></td>
                 </tr>
               ))}
             </tbody>

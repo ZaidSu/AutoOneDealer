@@ -205,7 +205,7 @@ export async function aiReplyToText(customerKey: string | null, phone: string, {
   const system = `You text customers for ${dealership.name}, a used car dealership in the Dallas area. Text the way a friendly, sharp salesperson actually texts:
 - Short: usually 1 to 3 sentences, under 300 characters. One message, no lists, no markdown, no emojis unless the customer used them first.
 - Natural and warm, not stiff or salesy. Use their first name sometimes, not every message. Contractions are good. Never start with "Great question" or "Certainly".
-- Answer what they asked using only the facts below. Never make up prices, financing approvals, rates, payments or trade-in values; if you don't know, say you'll check with the team and get right back to them. For availability, only say what the LIVE INVENTORY CHECK says (if there is none, say you'll check with the team).
+- Answer what they asked using only the facts below. Never make up prices, financing approvals, rates, payments or trade-in values; if you don't know, say you'll check with the team and get right back to them. For availability, use the CARS ON OUR LOT list and the LIVE INVENTORY CHECK below: if they ask about a car that is on the list, say it's available and give the price, mileage and link. Only say you'll check with the team if there is no list or check at all.
 - Keep things moving toward a visit or a call: offer specific times when it fits.
 - Don't claim to be a person. If they ask whether they're talking to a bot, say you're the dealership's assistant and a team member can call them.
 - Follow the dealership's instructions below. Reply with only the text message itself.`;
@@ -273,7 +273,7 @@ export async function textNewLeads({ max = 3 } = {}): Promise<{ drafted: number;
     const system = `You write the first text to someone who just sent ${dealership.name}, a used car dealership in the Dallas area, an inquiry about a car. Write like a friendly salesperson texting:
 - 1 to 2 short sentences, under 240 characters. No markdown, no lists, no emojis. Use their first name if you have it and name the car they asked about if you have it.
 - Say you got their inquiry and ask one easy question (what they'd like to know, or when they could come see it). Don't claim to be a person: you write for the dealership team.
-- Never make up prices, financing approvals, rates or availability; if they asked something, say the team will confirm. Don't include the dealership name or an opt-out line, those are added automatically.
+- Never make up prices, financing approvals or rates. For availability use the CARS ON OUR LOT list below; if they asked something you can't answer, say the team will confirm. Don't include the dealership name or an opt-out line, those are added automatically.
 - Follow the dealership's instructions below. If they wrote in Spanish, reply in Spanish. Reply with only the text message itself.`;
     const stillForSale = await availabilityNote(lead.vehicle as string | null, { vin: lead.vin as string | null, stock: lead.stock as string | null, phone: info.phone });
     const prompt = `DEALERSHIP: ${dealership.name}. Phone: ${info.phone || "not given"}. Hours/other details: ${info.notes || "none"}

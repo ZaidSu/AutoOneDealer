@@ -161,6 +161,18 @@ export function describeListing(l: Listing): string {
   return `${l.title || `${l.year ?? ""} ${l.slug.replace(/-/g, " ")}`.trim()}${l.price ? `, $${l.price.toLocaleString("en-US")}` : ""}${l.mileage ? `, ${l.mileage.toLocaleString("en-US")} miles` : ""}${vinTail(l.vin) ? `, VIN ending ${vinTail(l.vin)}` : ""} (${l.url || SITE_PAGE})`;
 }
 
+/** The whole lot as text for the AI, so it can answer "do you have a Camry?" or "any SUVs under $15k?" from real cars. */
+export function formatLot(listings: Listing[], opts: { complete: boolean; minutesAgo: number; max?: number }): string {
+  const cars = listings.filter((l) => !l.sold).slice(0, opts.max ?? 80);
+  if (!cars.length) return "";
+  const ago = opts.minutesAgo < 60 ? `${Math.max(0, Math.round(opts.minutesAgo))} minutes ago` : `${Math.round(opts.minutesAgo / 60)} hours ago`;
+  return `CARS ON OUR LOT RIGHT NOW (${cars.length} cars, from our website inventory, saved ${ago})
+${cars.map((l) => `- ${describeListing(l)}`).join("\n")}
+HOW TO USE THIS LIST: when the customer asks about a car, a make or model, or a kind of car (SUV, truck, under $15,000...), answer from this list with the price, mileage and link. A car on this list IS available. Never mention a car that is not on the list. ${opts.complete
+    ? "If the car they ask about is not on the list, say it doesn't show on our website right now and may have sold, and offer the closest cars from the list."
+    : "This list may be missing some cars, so if the car they ask about is not on it, say a salesperson will confirm rather than saying it is sold."}`;
+}
+
 const MULTI_WORD_MAKES = ["Land Rover", "Alfa Romeo", "Aston Martin", "Rolls Royce", "Mercedes Benz"];
 const ACRONYM = /^(cts|tlx|rdx|mdx|ilx|rlx|ats|srx|gt|gx|gs|is|es|ls|lx|nx|rx|ux|rc|lc|hr|cr|br|wr|fr|ev|xl|se|le|xle|sr|rs|sl|slt|ltz|rst|ss|zr|srt|tdi|gti|suv)$/i;
 

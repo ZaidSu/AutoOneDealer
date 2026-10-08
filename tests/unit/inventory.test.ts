@@ -239,3 +239,16 @@ test("a car is only Sold if its own card says so, not if the word appears elsewh
   const cars = parseInventoryPage(html).listings;
   assert.deepEqual(cars.map((c) => [c.id, c.sold]), [["111111111", false], ["222222222", true], ["333333333", false]]);
 });
+
+import { formatLot, type Listing } from "../../src/lib/inventory/match.ts";
+test("the lot list gives the AI real cars with price, miles and link", () => {
+  const car = (over: Partial<Listing>): Listing => ({ id: "1", financeId: null, url: "https://example.com/c/1", year: 2019, slug: "toyota-camry", title: "2019 Toyota Camry SE", price: 18995, mileage: 62000, sold: false, vin: null, ...over } as Listing);
+  const text = formatLot([car({}), car({ id: "2", title: "2020 Honda CR-V", price: 22500, url: "https://example.com/c/2" }), car({ id: "3", title: "Sold one", sold: true })], { complete: true, minutesAgo: 4 });
+  assert.match(text, /2019 Toyota Camry SE, \$18,995, 62,000 miles/);
+  assert.match(text, /2020 Honda CR-V/);
+  assert.doesNotMatch(text, /Sold one/);
+  assert.match(text, /saved 4 minutes ago/);
+  assert.match(text, /doesn't show on our website right now/);
+  assert.match(formatLot([car({})], { complete: false, minutesAgo: 200 }), /may be missing some cars/);
+  assert.equal(formatLot([], { complete: true, minutesAgo: 1 }), "");
+});

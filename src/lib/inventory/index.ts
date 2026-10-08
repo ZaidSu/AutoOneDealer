@@ -3,7 +3,7 @@
 // that's listed is available; one that isn't is "may be sold, please call". If neither can be read, the AI says a
 // salesperson will confirm (never "sold").
 import { loadInventory, TTL_MS, getHtml, type Inventory } from "./fetch";
-import { describeListing, pageShowsVin, sameModel, similarTo, type Listing } from "./match";
+import { describeListing, formatLot, pageShowsVin, sameModel, similarTo, type Listing } from "./match";
 import { readSnapshot } from "./store";
 
 export { type Listing } from "./match";
@@ -63,6 +63,20 @@ export async function checkAvailability(vehicle: string | null | undefined, { vi
 
 /** The text the AI gets, so every email and text answers "is it available?" from the inventory instead of guessing. */
 export async function availabilityNote(vehicle: string | null | undefined, opts: { vin?: string | null; stock?: string | null; phone?: string } = {}): Promise<string> {
+  // The whole lot goes to the AI every time, so it can answer about any car the customer names, not only the one on their lead.
+  const lot = await lotNote().catch(() => "");
+  const specific = await carNote(vehicle, opts);
+  return [specific, lot].filter(Boolean).join("\n\n");
+}
+
+/** The list of cars on the lot (empty if the saved copy of the website is missing or too old). */
+export async function lotNote(): Promise<string> {
+  const snap = await readSnapshot();
+  if (!snap) return "";
+  return formatLot(snap.listings, { complete: snap.complete, minutesAgo: (Date.now() - snap.fetchedAt) / 60_000 });
+}
+
+async function carNote(vehicle: string | null | undefined, opts: { vin?: string | null; stock?: string | null; phone?: string }): Promise<string> {
   if (!vehicle?.trim() && !opts.vin && !opts.stock) return "";
   const result = await checkAvailability(vehicle, opts).catch((): Availability => ({ status: "unknown", reason: "The check failed" }));
   const call = opts.phone ? `call us at ${opts.phone}` : "give the dealership a call";

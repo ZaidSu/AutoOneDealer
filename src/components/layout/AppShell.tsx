@@ -184,7 +184,7 @@ function Nav({ pathname }: { pathname: string }) {
   return (
     <ul className="space-y-0.5">
       {NAV.map((entry) => {
-        if (!isGroup(entry)) return <li key={entry.href}><NavLink item={entry} active={isActive(pathname, entry.href)} badge={entry.href === "/todo" ? todoCount?.count : undefined} urgent={entry.href === "/todo" && Boolean(todoCount?.urgent)} /></li>;
+        if (!isGroup(entry)) return <li key={entry.href}><NavLink item={entry} active={isActive(pathname, entry.href)} badge={entry.href === "/todo" ? todoCount?.count : undefined} urgent={entry.href === "/todo"} /></li>;
         const hasActive = entry.items.some((i) => isActive(pathname, i.href));
         const expanded = hasActive || Boolean(openGroups[entry.id]);
         return (
@@ -199,7 +199,7 @@ function Nav({ pathname }: { pathname: string }) {
             </button>
             {expanded && (
               <ul id={`nav-${entry.id}`} className="mt-0.5 space-y-0.5 border-l border-line pl-2 ml-[21px]">
-                {entry.items.map((item) => <li key={item.href}><NavLink item={item} active={isActive(pathname, item.href)} nested badge={item.href === "/inventory" ? inventoryCount?.count : undefined} /></li>)}
+                {entry.items.map((item) => <li key={item.href}><NavLink item={item} active={isActive(pathname, item.href)} nested badge={item.href === "/inventory" ? inventoryCount?.count : undefined} urgent={item.href === "/inventory"} /></li>)}
               </ul>
             )}
           </li>
