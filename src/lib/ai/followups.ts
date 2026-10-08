@@ -16,6 +16,7 @@ import { isOfferUp, OFFERUP_TEXT_RULES, textify } from "@/lib/ai/offerup-style";
 import { parseOfferUp } from "@/lib/parsers/offerup";
 import { channelOn } from "@/lib/ai/switches";
 import { wantsNoMoreEmail } from "@/lib/ai/unsubscribe";
+import { actOnConversation } from "@/lib/ai/conversation-actions";
 import { availabilityNote } from "@/lib/inventory";
 export { newPartOnly };
 
@@ -121,6 +122,7 @@ Write like a friendly, professional salesperson continuing the conversation:
 - Plain text only, no markdown. 40 to 120 words. Don't repeat what was already said; answer what they just wrote.
 - Use the facts below and what was said earlier in the conversation. Never make up prices, financing approvals, rates, payments, trade-in values or delivery; if you don't know, say a salesperson will confirm. For availability, use the CARS ON OUR LOT list and the LIVE INVENTORY CHECK below: a car on the list is available (give price, mileage and link). Only say a salesperson will confirm if there is no list or check at all.
 - If they mention where they live or how far away they are, be helpful about it (for example offer to hold the car, set a time, or talk by phone) without promising anything not in the facts.
+- If they pick a day and time to visit, confirm it back clearly (day, date, time): it gets booked automatically. If they want to talk to a person, offer to have a sales rep call them; if they say yes, say a rep will call soon (the team is alerted automatically).
 - End with one clear next step. Sign off as "The team at ${dealership.name}" with the dealership phone number if you have it.
 - If they wrote in Spanish, reply in Spanish.
 Reply with only the email body.`;
@@ -140,6 +142,11 @@ ${reply.body}`;
     const raw = (await askClaude({ system, prompt, maxTokens: 600 })).trim().slice(0, 4000);
     const body = offerUp ? textify(raw) : raw;
     if (body.length < (offerUp ? 3 : 20)) { out.skipped++; continue; }
+    const [cust] = await sql`select name, phone, email, last_vehicle from customers where key = ${reply.customer_key}`.catch(() => [] as Record<string, unknown>[]);
+    await actOnConversation({
+      customerKey: reply.customer_key ?? null, name: (cust?.name as string) ?? reply.from_name ?? null, phone: (cust?.phone as string) ?? null, email: reply.from_email, vehicle: (cust?.last_vehicle as string) ?? null, channel: "email",
+      conversation: `${conversation}\nDealership (reply being sent now): ${body}`,
+    });
     const subject = /^re:/i.test(reply.subject) ? reply.subject : `Re: ${reply.subject}`;
     const [row] = await sql`insert into ai_replies ${sql({ ...base, subject: subject.slice(0, 150), body, status: "draft" })} on conflict (lead_id) do nothing returning id`;
     out.drafted++;

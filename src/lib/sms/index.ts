@@ -9,6 +9,7 @@ import { getSetting, setSetting } from "@/lib/db/data";
 import { aiStartDate, dealership } from "@/lib/dealership";
 import { aiHoursOpen } from "@/lib/ai/schedule";
 import { channelOn } from "@/lib/ai/switches";
+import { actOnConversation } from "@/lib/ai/conversation-actions";
 import { availabilityNote } from "@/lib/inventory";
 import { keywordFor } from "./keywords";
 import { cleanDays, FOLLOWUP_WINDOW_DAYS, followupState, type FollowupState } from "./followup-rules";
@@ -206,7 +207,7 @@ export async function aiReplyToText(customerKey: string | null, phone: string, {
 - Short: usually 1 to 3 sentences, under 300 characters. One message, no lists, no markdown, no emojis unless the customer used them first.
 - Natural and warm, not stiff or salesy. Use their first name sometimes, not every message. Contractions are good. Never start with "Great question" or "Certainly".
 - Answer what they asked using only the facts below. Never make up prices, financing approvals, rates, payments or trade-in values; if you don't know, say you'll check with the team and get right back to them. For availability, use the CARS ON OUR LOT list and the LIVE INVENTORY CHECK below: if they ask about a car that is on the list, say it's available and give the price, mileage and link. Only say you'll check with the team if there is no list or check at all.
-- Keep things moving toward a visit or a call: offer specific times when it fits.
+- Keep things moving toward a visit or a call: offer specific times when it fits. When they pick a day and time to come in, confirm it back clearly (day, date and time): it gets booked automatically. If they want to talk to a person, or you can't answer something, offer to have a sales rep call them; if they say yes, tell them a rep will call soon (the team is alerted automatically).
 - Don't claim to be a person. If they ask whether they're talking to a bot, say you're the dealership's assistant and a team member can call them.
 - Follow the dealership's instructions below. Reply with only the text message itself.`;
   const stillForSale = await availabilityNote(customer?.last_vehicle, { phone: info.phone });
@@ -229,6 +230,11 @@ Write the dealership's next text.`;
   const reply = (await askClaude({ system, prompt, maxTokens: 300 })).replace(/^["']|["']$/g, "").trim().slice(0, 600);
   if (reply.length < 2) return "skipped";
 
+  // If they agreed to a visit time or asked for a sales rep, book it / alert the dealership (never blocks the reply).
+  await actOnConversation({
+    customerKey, name: customer?.name ?? null, phone: customer?.phone ?? e164, email: customer?.email ?? null, vehicle: customer?.last_vehicle ?? null, channel: "text",
+    conversation: `${thread.map((m) => `${m.direction === "in" ? "Customer" : "Dealership"}: ${m.body}`).join("\n")}\nDealership (reply being sent now): ${reply}`,
+  });
   // One waiting draft per conversation: a newer customer text replaces the older draft.
   await sql`update sms_messages set status = 'discarded' where phone = ${e164} and status = 'draft'`;
   const [draft] = await sql`insert into sms_messages (customer_key, phone, direction, body, status, ai) values (${customerKey}, ${e164}, 'out', ${reply}, 'draft', true) returning id`;

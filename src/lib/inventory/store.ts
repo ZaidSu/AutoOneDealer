@@ -167,8 +167,8 @@ async function lastGoodAt(sql: NonNullable<Awaited<ReturnType<typeof readyDb>>>)
 }
 
 const SNAPSHOT_MAX_AGE_MS = 30 * 60_000;
-/** A saved copy up to this old can still say "yes, that car is listed" (cars rarely vanish within hours), but never "it may be sold". */
-const SNAPSHOT_STALE_MS = 12 * 3600_000;
+/** A saved copy up to a week old is still used: the AI can say "yes, that car is listed", but never "it may be sold" once it is not fresh. */
+const SNAPSHOT_STALE_MS = 7 * 24 * 3600_000;
 /** What the AI reads: the saved copy of the website. Fresh (30 minutes) it can say a car is gone; up to 3 hours old it can only say a car is listed. */
 export async function readSnapshot(): Promise<{ listings: Listing[]; sold: Listing[]; complete: boolean; fetchedAt: number } | null> {
   const sql = await readyDb();

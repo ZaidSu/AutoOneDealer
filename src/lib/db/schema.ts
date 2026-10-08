@@ -44,6 +44,8 @@ alter table customers add column if not exists email_optout boolean not null def
 -- v22: AI switched off for one customer, and new-lead texts already handled
 alter table customers add column if not exists ai_paused boolean not null default false;
 alter table leads add column if not exists sms_handled boolean not null default false;
+-- v23: when the AI last alerted the dealership phone that this customer wants a sales rep
+alter table customers add column if not exists rep_requested_at timestamptz;
 -- v13: inventory copied from the dealership website, with what sold
 create table if not exists inventory (
   id text primary key,

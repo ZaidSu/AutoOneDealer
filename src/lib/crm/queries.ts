@@ -56,18 +56,25 @@ export async function listCustomers(f: CustomerFilters, page = 0, perPage = 50):
   const q = (f.search ?? "").trim().toLowerCase();
   const like = `%${q.replace(/[%_\\]/g, (c) => `\\${c}`)}%`;
   const digits = q.replace(/\D/g, "");
-  const rows = await sql`
-    select c.*, r.name as rep_name, count(*) over () as total
-    from customers c left join reps r on r.id = c.rep_id
-    -- Customers marked purchased always show, even if their last lead is from before the data start (Analytics counts them too).
-    where (c.last_seen >= ${dataStartDate()} or c.status = 'purchased')
+  // The page's rows and the total are separate queries (run together): a window count over every row would stop the
+  // database from using the newest-first index with a limit of 50.
+  const where = sql`
+    (c.last_seen >= ${dataStartDate()} or c.status = 'purchased')
       ${q ? sql`and (c.search like ${like} or lower(coalesce(c.heard_from, '')) like ${like} ${digits.length >= 3 ? sql`or c.phone like ${`%${digits}%`}` : sql``})` : sql``}
       ${f.rep === "none" ? sql`and c.rep_id is null` : f.rep && /^\d+$/.test(f.rep) ? sql`and c.rep_id = ${Number(f.rep)}` : sql``}
       ${f.status ? sql`and c.status = ${f.status}` : sql``}
       ${f.fin ? sql`and coalesce(c.financing, case when c.app_count > 0 then 'needs_review' end) = ${f.fin}` : sql``}
-      ${f.scope ? sql`and coalesce(c.state_scope, c.auto_scope) = ${f.scope}` : sql``}
-    order by c.last_seen desc nulls last
-    limit ${perPage} offset ${page * perPage}`;
+      ${f.scope ? sql`and coalesce(c.state_scope, c.auto_scope) = ${f.scope}` : sql``}`;
+  const [rows, [counted]] = await Promise.all([
+    sql`select c.key, c.name, c.phone, c.email, c.location, c.state_code, c.first_seen, c.last_seen, c.status, c.rep_id, c.heard_from, c.first_provider, c.financing,
+          c.auto_scope, c.state_scope, c.notes, c.follow_up_at, c.purchased_at, c.purchased_vehicle, c.purchase_followup_at, c.purchase_followup_off,
+          c.ai_paused, c.app_count, c.lead_count, c.vehicles, c.providers, r.name as rep_name
+        from customers c left join reps r on r.id = c.rep_id
+        where ${where}
+        order by c.last_seen desc nulls last
+        limit ${perPage} offset ${page * perPage}`,
+    sql`select count(*)::int as total from customers c where ${where}`,
+  ]);
   const keys = rows.map((r) => r.key as string);
   const [recent, appointments] = await Promise.all([recentLeads(keys), appointmentsForCustomers(keys)]);
   return {
@@ -75,7 +82,7 @@ export async function listCustomers(f: CustomerFilters, page = 0, perPage = 50):
       const a = appointments.get(r.key);
       return toView(r, recent.get(r.key) ?? [], a ? { at: a.startsAt.getTime(), repName: a.repName } : null);
     }),
-    total: rows.length ? Number(rows[0].total) : 0,
+    total: Number(counted?.total ?? 0),
   };
 }
 

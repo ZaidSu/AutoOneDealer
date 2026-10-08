@@ -165,7 +165,7 @@ export function describeListing(l: Listing): string {
 export function formatLot(listings: Listing[], opts: { complete: boolean; minutesAgo: number; max?: number }): string {
   const cars = listings.filter((l) => !l.sold).slice(0, opts.max ?? 80);
   if (!cars.length) return "";
-  const ago = opts.minutesAgo < 60 ? `${Math.max(0, Math.round(opts.minutesAgo))} minutes ago` : `${Math.round(opts.minutesAgo / 60)} hours ago`;
+  const ago = opts.minutesAgo < 60 ? `${Math.max(0, Math.round(opts.minutesAgo))} minutes ago` : opts.minutesAgo < 2880 ? `${Math.round(opts.minutesAgo / 60)} hours ago` : `${Math.round(opts.minutesAgo / 1440)} days ago`;
   return `CARS ON OUR LOT RIGHT NOW (${cars.length} cars, from our website inventory, saved ${ago})
 ${cars.map((l) => `- ${describeListing(l)}`).join("\n")}
 HOW TO USE THIS LIST: when the customer asks about a car, a make or model, or a kind of car (SUV, truck, under $15,000...), answer from this list with the price, mileage and link. A car on this list IS available. Never mention a car that is not on the list. ${opts.complete
