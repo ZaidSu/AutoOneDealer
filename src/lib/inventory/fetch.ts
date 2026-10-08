@@ -2,6 +2,7 @@
 // First tries the website directly. Some websites turn away traffic from cloud servers like Vercel, so if that fails it
 // asks a free "reader" service (INVENTORY_PROXY_URL, default r.jina.ai) to fetch the page and hand back its HTML.
 // Set INVENTORY_PROXY_URL to "off" to turn the helper off.
+import type { Attempt } from "./attempts";
 import { combinePages, parseInventoryPage, type Listing, type Page } from "./match";
 
 const SITE = process.env.INVENTORY_URL || "https://www.autoonemotorstx.com/cars-for-sale";
@@ -58,17 +59,28 @@ export type Inventory = {
   /** The pages read this time, by page number, so reads can be added together across runs. */
   parts?: { n: number; page: Page }[];
   pagesRead?: number; pagesExpected?: number | null;
+  /** Every try this run made, page by page (what worked, what was turned away). */
+  attempts?: Attempt[];
 };
+
+/** A failed read that still says which page tries failed and why. */
+export class ReadError extends Error {
+  constructor(message: string, public attempts: Attempt[]) { super(message); }
+}
+const msg = (e: unknown) => (e instanceof Error ? e.message : String(e));
 
 /** Every car on the website, read fresh. `complete` is true only if every page was read and the count matches what the site says. */
 export async function fetchInventory(opts: { pick?: (expected: number) => number[] } = {}): Promise<Inventory> {
   const deadline = Date.now() + BUDGET_MS;
   let via: Via = "direct";
   let firstHtml: string;
-  try { firstHtml = await request(pageUrl(1), "direct"); } catch (direct) {
-    if (!PROXY) throw new Error(`The website didn't answer: ${direct instanceof Error ? direct.message : direct}`);
-    try { firstHtml = await request(pageUrl(1), "helper"); via = "helper"; } catch (helper) {
-      throw new Error(`Couldn't read the website. Directly: ${direct instanceof Error ? direct.message : direct}. Through the helper service: ${helper instanceof Error ? helper.message : helper}`);
+  const attempts: Attempt[] = [];
+  try { firstHtml = await request(pageUrl(1), "direct"); attempts.push({ page: 1, route: "direct", ok: true, note: "ok" }); } catch (direct) {
+    attempts.push({ page: 1, route: "direct", ok: false, note: msg(direct) });
+    if (!PROXY) throw new ReadError(`The website didn't answer: ${msg(direct)}`, attempts);
+    try { firstHtml = await request(pageUrl(1), "helper"); via = "helper"; attempts.push({ page: 1, route: "helper", ok: true, note: "ok" }); } catch (helper) {
+      attempts.push({ page: 1, route: "helper", ok: false, note: msg(helper) });
+      throw new ReadError(`Couldn't read the website. Directly: ${msg(direct)}. Through the helper service: ${msg(helper)}`, attempts);
     }
   }
   const first = parseInventoryPage(firstHtml);
@@ -77,24 +89,24 @@ export async function fetchInventory(opts: { pick?: (expected: number) => number
   let missing = 0;
   // One page at a time with a pause between (asking for many at once can look like an attack to the website). `pick` can limit
   // this run to a few pages; the rest are read on later runs. Each page is tried the usual way, then the other way.
-  const routes: Via[] = via === "direct" ? (PROXY ? ["direct", "helper"] : ["direct"]) : ["helper", "direct"];
+  const routes: ("direct" | "helper")[] = via === "direct" ? (PROXY ? ["direct", "helper"] : ["direct"]) : ["helper", "direct"];
   const expected = Math.min(first.pages ?? 1, MAX_PAGES);
   const wanted = opts.pick ? opts.pick(expected).filter((n) => n >= 2 && n <= expected) : Array.from({ length: Math.max(0, expected - 1) }, (_, i) => i + 2);
   for (const n of wanted) {
     let got: Page | null = null;
     for (const route of routes) {
       if (Date.now() > deadline - 4_000) break;
-      try { got = parseInventoryPage(await request(pageUrl(n), route)); } catch { /* try the other way */ }
-      if (got && got.listings.length === 0) got = null; // a page inside the range with no cars is a bad read
-      if (got) break;
+      try { got = parseInventoryPage(await request(pageUrl(n), route)); } catch (e) { attempts.push({ page: n, route, ok: false, note: msg(e) }); }
+      if (got && got.listings.length === 0) { attempts.push({ page: n, route, ok: false, note: "the page came back with no cars on it" }); got = null; } // a page inside the range with no cars is a bad read
+      if (got) { attempts.push({ page: n, route, ok: true, note: `${got.listings.length} cars` }); break; }
       await new Promise((r) => setTimeout(r, 1_200));
     }
     if (got) { pages.push(got); parts.push({ n, page: got }); } else missing++;
     await new Promise((r) => setTimeout(r, 2_000));
   }
   const { listings, complete } = combinePages(pages, missing);
-  if (listings.length === 0) throw new Error("No cars found on the page (the website layout may have changed)");
-  return { listings, complete, fetchedAt: Date.now(), via, parts, pagesRead: pages.length, pagesExpected: first.pages };
+  if (listings.length === 0) throw new ReadError("No cars found on the page (the website layout may have changed)", attempts);
+  return { listings, complete, fetchedAt: Date.now(), via, parts, pagesRead: pages.length, pagesExpected: first.pages, attempts };
 }
 
 /** The same thing, from page HTML that the dealership's own computer downloaded and sent to AutoDash. */

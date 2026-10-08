@@ -3,6 +3,7 @@
 // (15 minutes, with every page read each time) is recorded as sold; staff can correct that by hand.
 import { readyDb } from "@/lib/db";
 import { getSetting, setSetting } from "@/lib/db/data";
+import { foldAttempts, type Attempt, type PageStats } from "./attempts";
 import { fetchInventory, getHtml, type Inventory } from "./fetch";
 import { cached, dropCached } from "@/lib/utils/cache";
 import { seedText } from "./seed";
@@ -33,9 +34,24 @@ export async function syncInventory(opts: { force?: boolean } = {}): Promise<Syn
   const saved = await loadPageStore();
   // The timer reads page 1 plus the two pages most in need of a fresh copy. A manual "Check website now" reads everything.
   const pick = opts.force ? undefined : (expected: number) => pagesToRead(expected, saved, Date.now(), PAGE_MAX_AGE_MS, 2);
-  try { inv = await fetchInventory({ pick }); } catch (e) { return recordFailure(e instanceof Error ? e.message : "Couldn't read the website", prev); }
+  try { inv = await fetchInventory({ pick }); } catch (e) { await saveAttempts((e as { attempts?: Attempt[] }).attempts); return recordFailure(e instanceof Error ? e.message : "Couldn't read the website", prev); }
+  await saveAttempts(inv.attempts);
   return applyInventory(await mergeWithRecent(inv));
 }
+
+const STATS_KEY = "inventory_page_stats";
+/** Adds this run's page-by-page results to the running totals shown to the developer. */
+async function saveAttempts(attempts: Attempt[] | undefined) {
+  if (!attempts?.length) return;
+  try {
+    const raw = await getSetting(STATS_KEY);
+    await setSetting(STATS_KEY, JSON.stringify(foldAttempts(raw ? (JSON.parse(raw) as PageStats) : {}, attempts, Date.now())));
+  } catch { /* the totals are only a diagnostic */ }
+}
+export async function getPageStats(): Promise<PageStats> {
+  try { const raw = await getSetting(STATS_KEY); return raw ? (JSON.parse(raw) as PageStats) : {}; } catch { return {}; }
+}
+export async function resetPageStats() { await setSetting(STATS_KEY, "{}").catch(() => undefined); }
 
 const PAGES_KEY = "inventory_pages";
 const PAGE_MAX_AGE_MS = 25 * 60_000;

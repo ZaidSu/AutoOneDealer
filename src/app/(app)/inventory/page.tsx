@@ -6,7 +6,7 @@ import PageHeader from "@/components/ui/PageHeader";
 import { can } from "@/lib/auth/access";
 import { requirePageStaff } from "@/lib/auth/guard";
 import { dbState, fresh } from "@/lib/db";
-import { aiViewOfInventory, getSyncState, inventoryStats, listCars, seedInventoryOnce } from "@/lib/inventory/store";
+import { aiViewOfInventory, getPageStats, getSyncState, inventoryStats, listCars, seedInventoryOnce } from "@/lib/inventory/store";
 
 export const metadata: Metadata = { title: "Inventory" };
 export const dynamic = "force-dynamic";
@@ -29,7 +29,7 @@ export default async function InventoryPage({ searchParams }: { searchParams?: P
   const state = await dbState();
   if (state !== "ready") return <>{header}<DbNotice state={state} what="Inventory" /></>;
   await seedInventoryOnce().catch(() => undefined); // the first time, loads the cars from the website text sent on Oct 2
-  const [sync, stats, lot, sold, deleted, aiView] = await fresh("Inventory", () => Promise.all([getSyncState(), inventoryStats(TZ), listCars("available"), listCars("sold", 100), listCars("deleted", 100), aiViewOfInventory()]));
+  const [sync, stats, lot, sold, deleted, aiView, pageStats] = await fresh("Inventory", () => Promise.all([getSyncState(), inventoryStats(TZ), listCars("available"), listCars("sold", 100), listCars("deleted", 100), aiViewOfInventory(), dev ? getPageStats() : Promise.resolve({})]));
 
   const shown = q ? lot.filter((c) => `${c.title} ${c.vin ?? ""} ${c.make ?? ""} ${c.model ?? ""}`.toLowerCase().includes(q)) : lot;
   const best = stats.byMonth.length ? [...stats.byMonth].sort((a, b) => b.n - a.n)[0] : null;
@@ -51,6 +51,7 @@ export default async function InventoryPage({ searchParams }: { searchParams?: P
         {aiView.noLink > 0 && ` ${aiView.noLink} car${aiView.noLink === 1 ? " has" : "s have"} no link yet (they came from pasted text); they're replaced by the real ones after the next full read of the website.`}
       </p>
 
+      <PageReads stats={pageStats} />
       <div className="mb-6"><ImportText /></div>
       </>}
 
@@ -161,5 +162,31 @@ export default async function InventoryPage({ searchParams }: { searchParams?: P
         </details>
       )}
     </div>
+  );
+}
+
+/** Developer only: for each website page, how often it was read and what the website said when it wasn't. */
+function PageReads({ stats }: { stats: Record<string, { ok: number; fail: number; lastOkAt: number | null; lastFailAt: number | null; lastError: string | null; routes: { direct: [number, number]; helper: [number, number] } }> }) {
+  const rows = Object.entries(stats).map(([n, s]) => ({ n: Number(n), ...s })).sort((a, b) => a.n - b.n);
+  if (!rows.length) return <p className="-mt-3 mb-6 text-sm text-muted">Page-by-page results of reading the website appear here after the next check.</p>;
+  return (
+    <details className="mb-6 rounded-xl border border-line bg-white p-4 text-sm" open={rows.some((r) => r.fail > 0)}>
+      <summary className="cursor-pointer font-semibold">Which website pages are read, and which fail (only you see this)</summary>
+      <div className="mt-3 overflow-x-auto">
+        <table className="w-full min-w-[640px] text-left">
+          <thead className="text-muted"><tr><th className="py-1 pr-3 font-medium">Page</th><th className="pr-3 font-medium">Worked</th><th className="pr-3 font-medium">Failed</th><th className="pr-3 font-medium">Direct (ok / failed)</th><th className="pr-3 font-medium">Helper (ok / failed)</th><th className="font-medium">Last error</th></tr></thead>
+          <tbody className="divide-y divide-line">
+            {rows.map((r) => (
+              <tr key={r.n} className={r.fail > r.ok ? "bg-warn-soft" : ""}>
+                <td className="py-1.5 pr-3 font-semibold">{r.n}</td><td className="pr-3 tabular-nums">{r.ok}</td><td className="pr-3 tabular-nums">{r.fail}</td>
+                <td className="pr-3 tabular-nums">{r.routes.direct[0]} / {r.routes.direct[1]}</td><td className="pr-3 tabular-nums">{r.routes.helper[0]} / {r.routes.helper[1]}</td>
+                <td className="text-muted">{r.lastError ?? "none"}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+      <p className="mt-2 text-muted">Each check reads page 1 and the two pages that most need a fresh copy, so pages add up over time. A page that fails far more than the others is the one the website turns away.</p>
+    </details>
   );
 }
