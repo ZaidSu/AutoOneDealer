@@ -3,9 +3,11 @@ import { cookies } from "next/headers";
 import type { NextResponse } from "next/server";
 import { seal, unseal } from "./crypto";
 import { isConfigured, openLoginEnabled, sessionSecret, staffRoleFor } from "./config";
-import type { Role } from "./access";
+import { effectiveRole, type Role } from "./access";
 
 export const STAFF_COOKIE = "__Host-ad_staff";
+// The developer's "preview as" choice (owner, manager or salesperson). Only honored for the developer role.
+export const VIEW_COOKIE = "__Host-ad_view_as";
 export const STATE_COOKIE = "__Host-ad_oauth_state";
 // Temporary Gmail connection storage until the shared database arrives (Phase 3).
 export const GMAIL_COOKIE = "__Host-ad_gmail";
@@ -15,7 +17,7 @@ const OPEN_MAX_AGE = 60 * 60 * 24 * 30; // open login: stay signed in for 30 day
 const STATE_MAX_AGE = 60 * 10; // 10 minutes to finish Google's screen
 const GMAIL_MAX_AGE = 60 * 60 * 24 * 30;
 
-export type StaffSession = { email: string; name: string; picture?: string; role: Role; exp: number; open?: boolean };
+export type StaffSession = { email: string; name: string; picture?: string; role: Role; exp: number; open?: boolean; /** Set while the developer is previewing as this role (role is then the previewed one). */ viewAs?: Role };
 export type OAuthState = { state: string; flow: "signin" | "gmail"; exp: number };
 export type GmailConnection = { mailbox: string; refreshToken: string; connectedBy: string; connectedAt: number; scopes?: string };
 
@@ -49,7 +51,14 @@ export function readSealed<T>(raw: string | undefined): T | null {
  * Returns the signed-in staff member, re-checking the allowlist on every request
  * so removing someone from STAFF_ACCESS takes effect immediately.
  */
-export function validateStaff(raw: string | undefined): StaffSession | null {
+export function validateStaff(raw: string | undefined, viewRaw?: string): StaffSession | null {
+  const session = validateStaffReal(raw);
+  if (!session) return null;
+  const view = effectiveRole(session.role, viewRaw);
+  return view.viewAs ? { ...session, role: view.role, viewAs: view.viewAs } : session;
+}
+
+function validateStaffReal(raw: string | undefined): StaffSession | null {
   const session = readSealed<StaffSession>(raw);
   if (!session || session.exp < Date.now()) return null;
   if (session.open) return openLoginEnabled() ? session : null;
@@ -61,5 +70,5 @@ export function validateStaff(raw: string | undefined): StaffSession | null {
 /** For Server Components and Server Actions. */
 export async function getStaffSession(): Promise<StaffSession | null> {
   const jar = await cookies();
-  return validateStaff(jar.get(STAFF_COOKIE)?.value);
+  return validateStaff(jar.get(STAFF_COOKIE)?.value, jar.get(VIEW_COOKIE)?.value);
 }

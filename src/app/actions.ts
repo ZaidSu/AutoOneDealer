@@ -512,6 +512,20 @@ export async function setAutoTextAction(on: boolean): Promise<ActionResult> {
   return { ok: true, message: on ? "Automatic texting is on." : "Automatic texting is off. The AI writes drafts; your team clicks Send." };
 }
 
+/** Developer only: preview the app as the owner, a manager or a salesperson ("me" goes back to the developer view). */
+export async function setViewAsAction(view: string): Promise<ActionResult> {
+  const staff = await requireStaff();
+  if (!staff || !(staff.role === "developer" || staff.viewAs)) return fail("Only the developer can preview other views.");
+  const { cookies } = await import("next/headers");
+  const { VIEW_COOKIE } = await import("@/lib/auth/session");
+  const { effectiveRole } = await import("@/lib/auth/access");
+  const jar = await cookies();
+  if (effectiveRole("developer", view).viewAs) jar.set(VIEW_COOKIE, view, { httpOnly: true, secure: true, sameSite: "lax", path: "/", maxAge: 60 * 60 * 12 });
+  else jar.set(VIEW_COOKIE, "", { httpOnly: true, secure: true, sameSite: "lax", path: "/", maxAge: 0 });
+  revalidatePath("/", "layout");
+  return { ok: true };
+}
+
 export async function setTextNewLeadsAction(on: boolean): Promise<ActionResult> {
   const staff = await requireStaff();
   if (!staff) return fail("Your session ended. Sign in again.");

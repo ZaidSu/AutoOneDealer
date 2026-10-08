@@ -6,6 +6,7 @@ import { useEffect, useState } from "react";
 import AutoSync from "./AutoSync";
 import CommandSearch from "./CommandSearch";
 import Icon from "./Icon";
+import ViewAsMenu from "./ViewAsMenu";
 import { clearSavedData, preloadData, useLive } from "@/lib/client/live";
 
 type NavItem = { href: string; label: string; icon: string };
@@ -71,7 +72,7 @@ const under = (pathname: string, href: string) => pathname === href || pathname.
 /** The link for the page you're on. When two links both match (like /ai/emails and /ai/emails/history), only the longer one lights up. */
 const isActive = (pathname: string, href: string) => under(pathname, href) && !ALL_HREFS.some((h) => h.length > href.length && under(pathname, h));
 
-type Me = { name: string; role?: string; roleLabel: string; dealershipName: string };
+type Me = { name: string; role?: string; roleLabel: string; dealershipName: string; viewAs?: string | null; canPreview?: boolean };
 
 export default function AppShell({ children }: { children: React.ReactNode }) {
   const me = useLive<Me>("/api/me", { every: 10 * 60_000 }).data;
@@ -144,6 +145,7 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
       <div className="min-w-0">
         <div className="flex items-center gap-3 px-5 pt-5 sm:px-8 lg:px-12 lg:pt-7">
           <CommandSearch />
+          {me?.canPreview && <ViewAsMenu current={me.viewAs ?? null} />}
         </div>
         <main className="min-w-0 px-5 pt-6 pb-12 sm:px-8 lg:px-12">{children}</main>
       </div>

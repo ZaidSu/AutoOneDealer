@@ -102,7 +102,7 @@ export default function GmailCard({ connection, canManage, expectedMailbox, noti
           )}
         </div>
       ) : (
-        <p className="mt-4 text-sm text-muted">Only owners and managers can change the inbox connection.</p>
+        <p className="mt-4 text-sm text-muted">Only owners, managers and the developer can change the inbox connection.</p>
       )}
 
       <p className="mt-5 text-xs text-muted">

@@ -27,7 +27,7 @@ export function parseStaffAccess(staffAccess: string | undefined, fallbackOwner:
 }
 
 export const can = {
-  manageIntegrations: (role: Role) => role === "owner" || role === "manager",
+  manageIntegrations: (role: Role) => role === "owner" || role === "manager" || role === "developer",
   // Removing a customer from AutoDash (spam, tests, duplicates).
   deleteCustomers: (role: Role) => role === "owner" || role === "manager" || role === "developer",
   useDeveloperTools: (role: Role) => role === "developer",
@@ -37,6 +37,16 @@ export const can = {
   manageBilling: (role: Role) => role === "developer",
   editAiSettings: (role: Role) => role === "owner" || role === "manager" || role === "developer",
 };
+
+/** The roles the developer can preview the app as. */
+export const PREVIEW_ROLES: Role[] = ["owner", "manager", "salesperson"];
+
+/** The developer can preview the app as another role. Anyone else is always their own role. */
+export function effectiveRole(real: Role, view: string | null | undefined): { role: Role; viewAs?: Role } {
+  const wanted = String(view ?? "") as Role;
+  if (real === "developer" && PREVIEW_ROLES.includes(wanted)) return { role: wanted, viewAs: wanted };
+  return { role: real };
+}
 
 export const roleLabel: Record<Role, string> = {
   owner: "Owner",

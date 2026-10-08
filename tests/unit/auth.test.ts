@@ -1,7 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { randomToken, seal, unseal } from "../../src/lib/auth/crypto.ts";
-import { can, parseStaffAccess } from "../../src/lib/auth/access.ts";
+import { can, effectiveRole, parseStaffAccess } from "../../src/lib/auth/access.ts";
 
 const secret = "x".repeat(40);
 
@@ -42,7 +42,17 @@ test("role permissions", () => {
   assert.equal(can.manageIntegrations("owner"), true);
   assert.equal(can.manageIntegrations("manager"), true);
   assert.equal(can.manageIntegrations("salesperson"), false);
+  assert.equal(can.manageIntegrations("developer"), true);
   assert.equal(can.useDeveloperTools("developer"), true);
   assert.equal(can.useDeveloperTools("manager"), false);
   assert.equal(can.useDeveloperTools("owner"), false, "the dealership owner never sees developer tools");
+});
+
+test("only the developer can preview as another role", () => {
+  assert.deepEqual(effectiveRole("developer", "owner"), { role: "owner", viewAs: "owner" });
+  assert.deepEqual(effectiveRole("developer", "salesperson"), { role: "salesperson", viewAs: "salesperson" });
+  assert.deepEqual(effectiveRole("developer", "developer"), { role: "developer" });
+  assert.deepEqual(effectiveRole("developer", "nonsense"), { role: "developer" });
+  assert.deepEqual(effectiveRole("owner", "manager"), { role: "owner" }, "an owner can never preview or gain another role");
+  assert.deepEqual(effectiveRole("salesperson", "developer"), { role: "salesperson" });
 });
