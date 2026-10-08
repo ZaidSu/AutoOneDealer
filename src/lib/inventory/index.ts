@@ -1,9 +1,9 @@
 // "Is this car still for sale?" The AI checks the dealership's inventory instead of guessing. It reads the copy of the
-// website saved in the database (refreshed every 5 minutes); if that's too old it reads the website directly. A car
-// that's listed is available; one that isn't is "may be sold, please call". If neither can be read, the AI says a
+// website saved in the database (refreshed once a day at 7 pm; AutoDash never opens the website while answering a customer).
+// A car that's listed is available; one that isn't is "may be sold, please call". If there is no saved copy, the AI says a
 // salesperson will confirm (never "sold").
-import { loadInventory, TTL_MS, getHtml, type Inventory } from "./fetch";
-import { describeListing, formatLot, pageShowsVin, sameModel, similarTo, type Listing } from "./match";
+import type { Inventory } from "./fetch";
+import { describeListing, formatLot, sameModel, similarTo, type Listing } from "./match";
 import { readSnapshot } from "./store";
 
 export { type Listing } from "./match";
@@ -13,14 +13,11 @@ export type Availability =
   | { status: "maybe_sold"; similar: Listing[]; wasListed: Listing | null; confirmed: boolean }
   | { status: "unknown"; reason: string };
 
-type Snapshot = Omit<Inventory, "via"> & { sold: Listing[]; source: "saved" | "live" };
+type Snapshot = Omit<Inventory, "via"> & { sold: Listing[]; source: "saved" };
 
 async function snapshot(): Promise<Snapshot | null> {
   const saved = await readSnapshot().catch(() => null);
-  if (saved) return { ...saved, source: "saved" };
-  const live = await loadInventory();
-  // A live copy older than 30 minutes is too old to say a car is gone.
-  return live && Date.now() - live.fetchedAt < TTL_MS * 3 ? { ...live, sold: [], source: "live" } : null;
+  return saved ? { ...saved, source: "saved" } : null;
 }
 
 /** Looks a customer's car up. vin may be the full VIN or the last 6; stock is the lead's stock number. */
@@ -44,15 +41,6 @@ export async function checkAvailability(vehicle: string | null | undefined, { vi
     const byVin = known.find((l) => (wanted.length === 17 ? l.vin!.toUpperCase() === wanted.toUpperCase() : l.vin!.toUpperCase().endsWith(wanted.toUpperCase())));
     if (byVin) return { status: "available", match: byVin, exact: true };
   }
-  // A VIN pins down the exact car: look at the candidates' own pages for it.
-  if (candidates.length && (wanted.length === 17 || wanted.length === 6)) {
-    const checks = await Promise.allSettled(candidates.slice(0, 6).map(async (l) => ({ l, shows: pageShowsVin(await getHtml(l.url), wanted) })));
-    const hit = checks.find((c) => c.status === "fulfilled" && c.value.shows === "yes");
-    if (hit && hit.status === "fulfilled") return { status: "available", match: hit.value.l, exact: true };
-    const allRead = checks.every((c) => c.status === "fulfilled" && c.value.shows !== "cannot tell");
-    if (allRead && inv.complete) return { status: "maybe_sold", similar: similarTo(vehicle, live), wasListed: sameModel(vehicle, inv.sold)[0] ?? null, confirmed: false };
-  }
-
   if (candidates.length) return { status: "available", match: candidates[0], exact: candidates.length === 1 };
   // Not on the website. Only say "may be sold" if every page was read; a half-read inventory proves nothing.
   if (!inv.complete) return { status: "unknown", reason: "Only part of the website could be read" };

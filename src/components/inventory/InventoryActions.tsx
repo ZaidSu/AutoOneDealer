@@ -7,7 +7,7 @@ import { addSaleAction, importInventoryTextAction, markAvailableAction, markSold
 type Msg = { ok: boolean; text: string } | null;
 const today = () => new Date().toLocaleDateString("en-CA", { timeZone: "America/Chicago" });
 
-/** "Check website now": reads the website's inventory right away instead of waiting for the 5-minute timer. */
+/** "Check website now": reads the website's inventory right away instead of waiting for the daily 7 pm read. */
 export function CheckNowButton() {
   const [msg, setMsg] = useState<Msg>(null);
   const [pending, start] = useTransition();

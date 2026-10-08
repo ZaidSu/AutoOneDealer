@@ -898,6 +898,27 @@ export async function addCustomerAction(input: { name: string; phone: string; em
 }
 
 /** Developer-only: sends one test text so Twilio can be checked without a customer. Not saved on any customer. */
+/** Texts the number the AI uses for sales-rep alerts, so staff can check it reaches the right phone. */
+export async function sendRepAlertTestAction(phone: string): Promise<ActionResult> {
+  const staff = await requireStaff();
+  if (!staff) return fail("Your session ended. Sign in again.");
+  if (!can.editAiSettings(staff.role)) return fail(AI_EDIT_DENIED);
+  const { sendSms, toE164, twilioConfigured, tenDigits } = await import("@/lib/sms/twilio");
+  if (!twilioConfigured()) return fail("Texting isn't connected yet, so no alert can be sent.");
+  const to = toE164(phone);
+  if (!to) return fail("Enter a US phone number with 10 digits first.");
+  if (tenDigits(to) === tenDigits(String(process.env.TWILIO_PHONE_NUMBER ?? ""))) return fail("That is the AutoDash texting number itself. Use a phone someone at the dealership carries.");
+  try {
+    const base = (process.env.APP_URL || "https://auto-one-dealer.vercel.app").replace(/\/$/, "");
+    const text = "AutoDash AI: this is a test. When a customer asks for a sales rep, the alert will come to this number.";
+    const sent = await sendSms(to, text, `${base}/api/sms/status`);
+    const { logRepAlert } = await import("@/lib/ai/rep-alerts");
+    await logRepAlert({ kind: "test", customer: null, customerKey: null, to: tenDigits(to), ok: true, sid: sent.sid, status: sent.status, error: null, body: text });
+    revalidatePath("/ai/dealership");
+    return { ok: true, message: `Test sent to ${tenDigits(to)}. It should arrive in a few seconds.` };
+  } catch (e) { return fail(e instanceof Error ? e.message : "The test text didn't send."); }
+}
+
 export async function sendTestTextAction(phone: string): Promise<ActionResult> {
   const staff = await requireStaff();
   if (!staff || !can.useDeveloperTools(staff.role)) return fail("Only the developer can send a test text.");

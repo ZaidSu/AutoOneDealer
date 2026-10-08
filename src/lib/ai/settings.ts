@@ -20,6 +20,11 @@ export async function getDealershipInfo(): Promise<DealershipInfo> {
   return info;
 }
 
+/** The phone the AI texts when a customer asks for a sales rep: the one set for that, otherwise the dealership phone. */
+export function repAlertNumber(info: DealershipInfo): string {
+  return (info.repAlertPhone ?? "").trim() || info.phone;
+}
+
 export async function getAiTraining(): Promise<AiTraining> {
   const saved = parse<AiTraining & { faqs?: string }>(await getSetting("ai_training"), { ...EMPTY_TRAINING });
   let qa = Array.isArray(saved.qa) ? saved.qa.filter((q) => q && typeof q.question === "string") : [];
@@ -38,7 +43,7 @@ const text = (v: unknown, max: number) => String(v ?? "").slice(0, max);
 
 export async function saveDealershipInfo(input: DealershipInfo) {
   const clean: DealershipInfo = {
-    address: text(input.address, 200).trim(), phone: text(input.phone, 40).trim(), website: text(input.website, 200).trim(),
+    address: text(input.address, 200).trim(), phone: text(input.phone, 40).trim(), repAlertPhone: text(input.repAlertPhone, 40).trim(), website: text(input.website, 200).trim(),
     links: text(input.links, 4000), notes: text(input.notes, 4000),
     hours: DAYS.map((_, i) => ({ open: time(input.hours?.[i]?.open, "10:00"), close: time(input.hours?.[i]?.close, "19:00"), closed: Boolean(input.hours?.[i]?.closed) })),
   };

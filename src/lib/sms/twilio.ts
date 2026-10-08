@@ -66,3 +66,18 @@ export function publicUrl(req: { nextUrl: URL; headers: Headers }): string {
   return `${proto}://${host}${req.nextUrl.pathname}${req.nextUrl.search}`;
 }
 
+
+/** Asks Twilio where one message is now (queued, sent, delivered, undelivered, failed). Null if it can't be checked. */
+export async function fetchSmsStatus(messageSid: string): Promise<{ status: string; error: string | null } | null> {
+  if (!twilioConfigured() || !/^SM[0-9a-f]{20,}$/i.test(messageSid)) return null;
+  try {
+    const sid = process.env.TWILIO_ACCOUNT_SID!;
+    const response = await fetch(`${process.env.TWILIO_BASE_URL || "https://api.twilio.com"}/2010-04-01/Accounts/${sid}/Messages/${messageSid}.json`, {
+      cache: "no-store", signal: AbortSignal.timeout(5_000),
+      headers: { Authorization: `Basic ${Buffer.from(`${sid}:${process.env.TWILIO_AUTH_TOKEN}`).toString("base64")}` },
+    });
+    if (!response.ok) return null;
+    const data = await response.json();
+    return { status: String(data.status ?? ""), error: data.error_code ? explainTwilioError(data.error_code, String(data.error_message ?? `error ${data.error_code}`)) : null };
+  } catch { return null; }
+}

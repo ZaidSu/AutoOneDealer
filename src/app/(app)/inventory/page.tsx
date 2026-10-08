@@ -41,8 +41,8 @@ export default async function InventoryPage({ searchParams }: { searchParams?: P
 
       {dev && <>
       <p role="status" className={`mb-6 rounded-xl px-4 py-3 text-[15px] ${sync?.ok ? "bg-go-soft text-go" : "border border-lane/40 bg-[#fdf6e3]"}`}>
-        {!sync ? "Not read from the website yet. The timer does it every 5 minutes, or click Check website now."
-          : sync.ok ? `Checked ${ago(sync.at)}: ${sync.count} cars on the website${sync.via === "helper" ? " (read through a helper service, because the website doesn't answer AutoDash directly)" : sync.via === "pushed" ? " (sent by the dealership computer)" : sync.via === "pasted" ? " (pasted from the website, trusted for a day)" : ""}${sync.complete ? "" : `. Only part of the website could be read${sync.pagesExpected ? ` (${sync.pagesRead ?? 0} of ${sync.pagesExpected} pages)` : ""}, so nothing is being marked sold. It keeps trying every 5 minutes`}.`
+        {!sync ? "Not read from the website yet. AutoDash reads it once a day at 7 pm, or click Check website now."
+          : sync.ok ? `Checked ${ago(sync.at)}: ${sync.count} cars on the website${sync.via === "helper" ? " (read through a helper service, because the website doesn't answer AutoDash directly)" : sync.via === "pushed" ? " (sent by the dealership computer)" : sync.via === "pasted" ? " (pasted from the website, trusted for a day)" : ""}${sync.complete ? "" : `. Only part of the website could be read${sync.pagesExpected ? ` (${sync.pagesRead ?? 0} of ${sync.pagesExpected} pages)` : ""}, so nothing is being marked sold. The next full read is at 7 pm tonight (or click Check website now)`}.`
           : `The last check ${ago(sync.at)} failed: ${sync.error}. The AI says a salesperson will confirm availability until this is fixed.`}
       </p>
 
@@ -186,7 +186,7 @@ function PageReads({ stats }: { stats: Record<string, { ok: number; fail: number
           </tbody>
         </table>
       </div>
-      <p className="mt-2 text-muted">Each check reads page 1 and the two pages that most need a fresh copy, so pages add up over time. A page that fails far more than the others is the one the website turns away.</p>
+      <p className="mt-2 text-muted">Each full read (7 pm, or Check website now) tries every page. A page that fails far more than the others is the one the website turns away.</p>
     </details>
   );
 }

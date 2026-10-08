@@ -1,6 +1,6 @@
 "use client";
 import { useState, useTransition } from "react";
-import { saveDealershipInfoAction } from "@/app/actions";
+import { saveDealershipInfoAction, sendRepAlertTestAction } from "@/app/actions";
 import ReadOnlyNotice from "@/components/ai/ReadOnlyNotice";
 import { DAYS, type DealershipInfo } from "@/lib/ai/types";
 
@@ -8,7 +8,9 @@ export default function DealershipInfoForm({ initial, canEdit }: { initial: Deal
   const [info, setInfo] = useState(initial);
   const [result, setResult] = useState<{ ok: boolean; text: string } | null>(null);
   const [pending, start] = useTransition();
-  const set = (k: "address" | "phone" | "website" | "links" | "notes") => (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => {
+  const [test, setTest] = useState<{ ok: boolean; text: string } | null>(null);
+  const [testing, startTest] = useTransition();
+  const set = (k: "address" | "phone" | "repAlertPhone" | "website" | "links" | "notes") => (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => {
     setInfo({ ...info, [k]: e.target.value }); setResult(null);
   };
   const setHours = (i: number, patch: Partial<DealershipInfo["hours"][number]>) => {
@@ -28,6 +30,25 @@ export default function DealershipInfoForm({ initial, canEdit }: { initial: Deal
           <label className="field sm:col-span-2">Address<input className="input" disabled={!canEdit} value={info.address} onChange={set("address")} placeholder="1234 Main St, Dallas, TX 75001" /></label>
           <label className="field">Phone<input className="input" disabled={!canEdit} value={info.phone} onChange={set("phone")} inputMode="tel" placeholder="(214) 555-0123" /></label>
           <label className="field">Website<input className="input" disabled={!canEdit} value={info.website} onChange={set("website")} placeholder="https://…" /></label>
+          <div className="field sm:col-span-2">
+            <label>Text a sales rep alert to
+              <input className="input" disabled={!canEdit} value={info.repAlertPhone ?? ""} onChange={set("repAlertPhone")} inputMode="tel" placeholder={info.phone || "(214) 555-0123"} />
+            </label>
+            <p className="mt-1 text-sm text-muted">
+              When a customer tells the AI they want a sales rep, AutoDash texts this number with their name, phone and car. Leave it blank to use the Phone above.
+              Right now it texts <span className="font-semibold text-ink">{(info.repAlertPhone ?? "").trim() || info.phone.trim() || "no number yet"}</span>.
+              Change it here whenever the number changes, then Save. It has to be a different number from the AutoDash texting number.
+            </p>
+            {canEdit && (
+              <div className="mt-2 flex flex-wrap items-center gap-3">
+                <button type="button" className="btn" disabled={testing} onClick={() => startTest(async () => {
+                  const r = await sendRepAlertTestAction((info.repAlertPhone ?? "").trim() || info.phone);
+                  setTest({ ok: r.ok, text: (r.ok ? r.message : r.error) ?? "" });
+                })}>{testing ? "Sending…" : "Send a test alert"}</button>
+                {test && <p role="status" className={`text-sm ${test.ok ? "text-go" : "text-signal"}`}>{test.text}</p>}
+              </div>
+            )}
+          </div>
         </div>
       </section>
 

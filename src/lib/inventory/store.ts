@@ -7,7 +7,9 @@ import { foldAttempts, type Attempt, type PageStats } from "./attempts";
 import { fetchInventory, getHtml, type Inventory } from "./fetch";
 import { cached, dropCached } from "@/lib/utils/cache";
 import { seedText } from "./seed";
-import { makeAndModel, mergePageStore, pagesToRead, parseDetailPage, parsePastedInventory, SITE_PAGE, type Listing, type PageStore } from "./match";
+import { dailyReadDue, inReadWindow, localClock } from "./schedule";
+import { dealership } from "@/lib/dealership";
+import { makeAndModel, mergePageStore, parseDetailPage, parsePastedInventory, SITE_PAGE, type Listing, type PageStore } from "./match";
 
 export type SyncState = { at: number; ok: boolean; count: number; complete: boolean; added: number; sold: number; error: string | null; via?: "direct" | "helper" | "pushed" | "pasted"; pagesRead?: number; pagesExpected?: number | null };
 const SYNC_KEY = "inventory_sync";
@@ -21,23 +23,34 @@ const BACKOFF_MS = 30 * 60_000;
 /** A pasted copy stays trusted for a day (like a daily feed would). The website's own reads are only trusted for 30 minutes. */
 const PASTED_FRESH_MS = 24 * 3600_000;
 
-/** Reads the website from the server (the timer does this every 5 minutes). If the dealership computer has sent the
- *  inventory recently, that is used instead and the website isn't read from here. */
+/** Reads the website from the server: every page, in one go. The timer does this once a day at 7 pm (see runDailyRead), and
+ *  "Check website now" does it on request. If the dealership computer has sent the inventory recently, that is used instead. */
 export async function syncInventory(opts: { force?: boolean } = {}): Promise<SyncState> {
   const prev = await getSyncState();
   // A copy sent from the dealership computer, or pasted by hand, is used instead of reading the website from here.
   if (!opts.force && prev?.ok && ((prev.via === "pushed" && Date.now() - prev.at < 40 * 60_000) || (prev.via === "pasted" && Date.now() - prev.at < PASTED_FRESH_MS))) return prev;
-  // Turned away last time? Don't keep asking every 5 minutes (that can get AutoDash blocked for longer): wait 30 minutes between tries.
+  // Turned away last time? Don't keep asking (that can get AutoDash blocked for longer): wait 30 minutes between tries.
   // A person pressing "Check website now" always goes through.
   if (!opts.force && prev && !prev.ok && Date.now() - prev.at < BACKOFF_MS) return prev;
   let inv: Inventory;
-  const saved = await loadPageStore();
-  // The timer reads page 1 plus the two pages most in need of a fresh copy. A manual "Check website now" reads everything.
-  const pick = opts.force ? undefined : (expected: number) => pagesToRead(expected, saved, Date.now(), PAGE_MAX_AGE_MS, 2);
-  try { inv = await fetchInventory({ pick }); } catch (e) { await saveAttempts((e as { attempts?: Attempt[] }).attempts); return recordFailure(e instanceof Error ? e.message : "Couldn't read the website", prev); }
+  try { inv = await fetchInventory(); } catch (e) { await saveAttempts((e as { attempts?: Attempt[] }).attempts); return recordFailure(e instanceof Error ? e.message : "Couldn't read the website", prev); }
   await saveAttempts(inv.attempts);
   return applyInventory(await mergeWithRecent(inv));
 }
+
+const DAILY_KEY = "inventory_daily_day";
+/** The once-a-day read: runs from the timer during the 7 pm hour (dealership time) until one succeeds, then not again until tomorrow.
+ *  A failed read is tried once more 30 minutes later, still inside the hour. */
+export async function runDailyRead(): Promise<string> {
+  const now = Date.now();
+  const lastDone = await getSetting(DAILY_KEY).catch(() => null);
+  if (!dailyReadDue(now, dealership.timeZone, lastDone)) return "not due";
+  const state = await syncInventory();
+  if (state.ok) await setSetting(DAILY_KEY, localClock(now, dealership.timeZone).day).catch(() => undefined);
+  return state.ok ? `read ${state.count} cars` : `failed: ${state.error ?? "unknown"}`;
+}
+/** True during the 7 pm hour: the only time the car pages are opened for VINs and photos. */
+export const inDailyWindow = () => inReadWindow(Date.now(), dealership.timeZone);
 
 const STATS_KEY = "inventory_page_stats";
 /** Adds this run's page-by-page results to the running totals shown to the developer. */
@@ -225,7 +238,7 @@ export async function aiViewOfInventory(): Promise<{ ok: boolean; text: string; 
   if (!state.ok && lastGood) return { ok: true, text: `The last website read failed (${state.error ?? "no reason given"}), so the AI is using the copy of ${n} cars saved ${Math.round((Date.now() - lastGood) / 60_000) < 60 ? `${Math.round((Date.now() - lastGood) / 60_000)} minutes` : `${Math.round((Date.now() - lastGood) / 3600_000)} hours`} ago. It can say a car is listed but never that it may be sold.`, noLink };
   if (age > (state.via === "pasted" ? PASTED_FRESH_MS : SNAPSHOT_STALE_MS)) return { ok: false, text: `The AI can't check cars: the last good read of the website was ${agoText}, which is too old. It tells customers a salesperson will confirm. Click Check website now, or see whether the website is turning AutoDash away.`, noLink };
   if (n === 0) return { ok: false, text: "The AI can't check cars: no cars are on the lot in AutoDash.", noLink };
-  const partial = !state.complete ? " Only part of the website was read, so it can say a car is available but never that it may be sold." : age > SNAPSHOT_MAX_AGE_MS && state.via !== "pasted" ? " The copy is a little old, so it can say a car is available but not that it may be sold." : "";
+  const partial = !state.complete ? " Only part of the website was read, so it can say a car is available but never that it may be sold." : age > SNAPSHOT_MAX_AGE_MS && state.via !== "pasted" ? " The website is read once a day at 7 pm, so between reads the AI can say a car is listed but not that it may be sold." : "";
   return { ok: true, text: `The AI is checking ${n} cars from a copy saved ${agoText}.${partial}`, noLink };
 }
 

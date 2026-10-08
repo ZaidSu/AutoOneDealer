@@ -13,7 +13,7 @@ import { addUsageChargesToStripe, stripeBillingOn } from "@/lib/billing/stripe-s
 import { periodLabel } from "@/lib/billing/types";
 import { withGmail } from "@/lib/gmail";
 import { syncLeads } from "@/lib/leads/sync";
-import { enrichInventory, seedInventoryOnce, syncInventory } from "@/lib/inventory/store";
+import { enrichInventory, inDailyWindow, runDailyRead, seedInventoryOnce } from "@/lib/inventory/store";
 import { syncReviews } from "@/lib/reviews/store";
 import { sendPurchaseFollowups, textNewLeads } from "@/lib/sms";
 
@@ -64,9 +64,10 @@ export async function GET(req: NextRequest) {
   // or break the rest of the timer. The result shows on the Inventory page.
   after(async () => {
     try { await syncReviews().catch(() => undefined); } catch { /* reviews can wait */ }
-    try { await seedInventoryOnce().catch(() => undefined); await syncInventory(); } catch (error) { console.error("[autodash:inventory] sync failed:", error instanceof Error ? error.message : error); }
-    // A few cars per run get their VIN and photos from their own page (only if there's time left in this run).
-    try { await enrichInventory({ max: 3, deadline: started + 55_000 }); } catch (error) { console.error("[autodash:inventory] VIN/photo read failed:", error instanceof Error ? error.message : error); }
+    // The website is read once a day, during the 7 pm hour (dealership time). The timer's other 5-minute runs leave it alone.
+    try { await seedInventoryOnce().catch(() => undefined); await runDailyRead(); } catch (error) { console.error("[autodash:inventory] sync failed:", error instanceof Error ? error.message : error); }
+    // In that same hour, a few cars per run get their VIN and photos from their own page (only if there's time left in this run).
+    try { if (inDailyWindow()) await enrichInventory({ max: 3, deadline: started + 55_000 }); } catch (error) { console.error("[autodash:inventory] VIN/photo read failed:", error instanceof Error ? error.message : error); }
   });
   try {
     if (left() < 12_000) throw new Error("out of time this run, will continue next run");

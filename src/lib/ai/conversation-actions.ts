@@ -3,7 +3,8 @@
 //  - the customer wants a sales rep: the dealership's phone gets a text to call them
 import { aiConfigured, askClaude } from "@/lib/ai/claude";
 import { ACTIONS_SYSTEM, parseActions } from "@/lib/ai/action-parse";
-import { getDealershipInfo } from "@/lib/ai/settings";
+import { logRepAlert } from "@/lib/ai/rep-alerts";
+import { getDealershipInfo, repAlertNumber } from "@/lib/ai/settings";
 import { logActivity } from "@/lib/crm/queries";
 import { readyDb, trace } from "@/lib/db";
 import { createAppointment } from "@/lib/db/data";
@@ -54,18 +55,21 @@ export async function actOnConversation(ctx: Ctx): Promise<{ booked: boolean; re
       if (!recent) {
         await sql`update customers set rep_requested_at = now() where key = ${ctx.customerKey}`;
         const info = await getDealershipInfo();
-        const to = toE164(info.phone);
+        const to = toE164(repAlertNumber(info));
         const base = (process.env.APP_URL || "https://auto-one-dealer.vercel.app").replace(/\/$/, "");
         if (!twilioConfigured() || !to || tenDigits(to) === tenDigits(String(process.env.TWILIO_PHONE_NUMBER ?? ""))) {
-          await logActivity(ctx.customerKey, "note", "Asked for a sales rep, but the dealership phone couldn't be texted (set the phone under AI setup -> Dealership info).", "AI (automatic)").catch(() => undefined);
+          await logRepAlert({ kind: "alert", customer: who, customerKey: ctx.customerKey, to: to ? tenDigits(to) : null, ok: false, sid: null, status: null, error: !twilioConfigured() ? "Texting isn't connected" : !to ? "No alert number is set" : "The alert number is the AutoDash texting number itself", body: "" });
+          await logActivity(ctx.customerKey, "note", "Asked for a sales rep, but the dealership phone couldn't be texted (set the number under AI setup -> Dealership info -> \"Text a sales rep alert to\").", "AI (automatic)").catch(() => undefined);
         } else {
           const car = ctx.vehicle ? ` about the ${ctx.vehicle}` : "";
           const body = `AutoDash AI: ${who}${phone10 ? ` (${phone10.replace(/(\d{3})(\d{3})(\d{4})/, "$1-$2-$3")})` : ""} wants a sales rep to call them${car}.${actions.wantsRep.reason ? ` ${actions.wantsRep.reason}.` : ""} ${base}/customers/${ctx.customerKey}`.slice(0, 320);
           try {
-            await sendSms(to, body);
+            const sent = await sendSms(to, body);
+            await logRepAlert({ kind: "alert", customer: who, customerKey: ctx.customerKey, to: tenDigits(to), ok: true, sid: sent.sid, status: sent.status, error: null, body });
             await logActivity(ctx.customerKey, "note", "Asked for a sales rep: the AI texted the dealership phone", "AI (automatic)").catch(() => undefined);
             out.repAlerted = true;
           } catch (error) {
+            await logRepAlert({ kind: "alert", customer: who, customerKey: ctx.customerKey, to: tenDigits(to), ok: false, sid: null, status: null, error: error instanceof Error ? error.message : "unknown error", body });
             await logActivity(ctx.customerKey, "note", `Asked for a sales rep, but the text to the dealership phone failed: ${error instanceof Error ? error.message : "unknown error"}`, "AI (automatic)").catch(() => undefined);
           }
         }
