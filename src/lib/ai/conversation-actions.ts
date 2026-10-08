@@ -1,8 +1,9 @@
 // After the AI talks with a customer, this checks the conversation for two things and does them:
 //  - the customer agreed to a visit time: the appointment is booked
-//  - the customer wants a sales rep: the dealership's phone gets a text to call them
+//  - the customer needs a person (asked for a rep or a Carfax, is talking numbers or ready to buy, or the AI could not answer):
+//    the dealership's phone gets a text with their name, number, what they want and what was said
 import { aiConfigured, askClaude } from "@/lib/ai/claude";
-import { ACTIONS_SYSTEM, parseActions } from "@/lib/ai/action-parse";
+import { ACTIONS_SYSTEM, parseActions, repAlertText } from "@/lib/ai/action-parse";
 import { logRepAlert } from "@/lib/ai/rep-alerts";
 import { getDealershipInfo, repAlertNumber } from "@/lib/ai/settings";
 import { logActivity } from "@/lib/crm/queries";
@@ -15,8 +16,9 @@ import { formatDateTime } from "@/lib/utils/format";
 
 type Ctx = { customerKey: string | null; name: string | null; phone: string | null; email?: string | null; vehicle: string | null; conversation: string; channel: "text" | "email" };
 
-export async function actOnConversation(ctx: Ctx): Promise<{ booked: boolean; repAlerted: boolean }> {
-  const none = { booked: false, repAlerted: false };
+/** `backfill`: looking back through old conversations. No visits are booked, and anyone who was ever alerted before is skipped. */
+export async function actOnConversation(ctx: Ctx, opts: { backfill?: boolean } = {}): Promise<{ booked: boolean; repAlerted: boolean; reason?: string }> {
+  const none: { booked: boolean; repAlerted: boolean; reason?: string } = { booked: false, repAlerted: false };
   try {
     if (!aiConfigured() || !ctx.customerKey || ctx.conversation.trim().length < 5) return none;
     const sql = await readyDb();
@@ -30,7 +32,7 @@ export async function actOnConversation(ctx: Ctx): Promise<{ booked: boolean; re
     const phone10 = digits.length === 11 && digits.startsWith("1") ? digits.slice(1) : digits;
     const who = ctx.name?.trim() || (phone10 ? `the customer at ${phone10}` : "A customer");
 
-    if (actions.booking) {
+    if (actions.booking && !opts.backfill) {
       const startsAt = zonedToUtc(actions.booking.date, actions.booking.time, dealership.timeZone);
       if (startsAt && startsAt.getTime() > Date.now()) {
         // Already booked around then? Then it's the same visit.
@@ -51,7 +53,9 @@ export async function actOnConversation(ctx: Ctx): Promise<{ booked: boolean; re
 
     if (actions.wantsRep) {
       // At most one alert per customer every 6 hours.
-      const [recent] = await sql`select 1 from customers where key = ${ctx.customerKey} and rep_requested_at > now() - interval '6 hours'`;
+      const [recent] = opts.backfill
+        ? await sql`select 1 from customers where key = ${ctx.customerKey} and rep_requested_at is not null`
+        : await sql`select 1 from customers where key = ${ctx.customerKey} and rep_requested_at > now() - interval '6 hours'`;
       if (!recent) {
         await sql`update customers set rep_requested_at = now() where key = ${ctx.customerKey}`;
         const info = await getDealershipInfo();
@@ -59,18 +63,18 @@ export async function actOnConversation(ctx: Ctx): Promise<{ booked: boolean; re
         const base = (process.env.APP_URL || "https://auto-one-dealer.vercel.app").replace(/\/$/, "");
         if (!twilioConfigured() || !to || tenDigits(to) === tenDigits(String(process.env.TWILIO_PHONE_NUMBER ?? ""))) {
           await logRepAlert({ kind: "alert", customer: who, customerKey: ctx.customerKey, to: to ? tenDigits(to) : null, ok: false, sid: null, status: null, error: !twilioConfigured() ? "Texting isn't connected" : !to ? "No alert number is set" : "The alert number is the AutoDash texting number itself", body: "" });
-          await logActivity(ctx.customerKey, "note", "Asked for a sales rep, but the dealership phone couldn't be texted (set the number under AI setup -> Dealership info -> \"Text a sales rep alert to\").", "AI (automatic)").catch(() => undefined);
+          await logActivity(ctx.customerKey, "note", "Needs a person, but the dealership phone couldn't be texted (set the number under AI setup -> Dealership info -> \"Text a sales rep alert to\").", "AI (automatic)").catch(() => undefined);
         } else {
-          const car = ctx.vehicle ? ` about the ${ctx.vehicle}` : "";
-          const body = `AutoDash AI: ${who}${phone10 ? ` (${phone10.replace(/(\d{3})(\d{3})(\d{4})/, "$1-$2-$3")})` : ""} wants a sales rep to call them${car}.${actions.wantsRep.reason ? ` ${actions.wantsRep.reason}.` : ""} ${base}/customers/${ctx.customerKey}`.slice(0, 320);
+          const body = repAlertText({ who, phone: phone10 || null, car: ctx.vehicle, reason: actions.wantsRep.reason, summary: actions.wantsRep.summary, link: `${base}/customers/${ctx.customerKey}` });
           try {
             const sent = await sendSms(to, body);
             await logRepAlert({ kind: "alert", customer: who, customerKey: ctx.customerKey, to: tenDigits(to), ok: true, sid: sent.sid, status: sent.status, error: null, body });
-            await logActivity(ctx.customerKey, "note", "Asked for a sales rep: the AI texted the dealership phone", "AI (automatic)").catch(() => undefined);
+            await logActivity(ctx.customerKey, "note", `Needs a person (${actions.wantsRep.reason || "sales rep"}): the AI texted the dealership phone`, "AI (automatic)").catch(() => undefined);
             out.repAlerted = true;
+            out.reason = actions.wantsRep.reason;
           } catch (error) {
             await logRepAlert({ kind: "alert", customer: who, customerKey: ctx.customerKey, to: tenDigits(to), ok: false, sid: null, status: null, error: error instanceof Error ? error.message : "unknown error", body });
-            await logActivity(ctx.customerKey, "note", `Asked for a sales rep, but the text to the dealership phone failed: ${error instanceof Error ? error.message : "unknown error"}`, "AI (automatic)").catch(() => undefined);
+            await logActivity(ctx.customerKey, "note", `Needs a person, but the text to the dealership phone failed: ${error instanceof Error ? error.message : "unknown error"}`, "AI (automatic)").catch(() => undefined);
           }
         }
       }

@@ -12,6 +12,7 @@ import { dbState, fresh } from "@/lib/db";
 
 export const metadata: Metadata = { title: "Dealership info" };
 export const dynamic = "force-dynamic";
+export const maxDuration = 60;
 
 export default async function DealershipInfoPage() {
   const staff = await requirePageStaff();
@@ -23,5 +24,5 @@ export default async function DealershipInfoPage() {
   // Ask Twilio where the most recent ones are now (delivered or not).
   const live: Record<string, string> = {};
   await Promise.all(alerts.slice(0, 8).filter((a) => a.sid).map(async (a) => { const r = await fetchSmsStatus(a.sid!); if (r) live[a.sid!] = r.status; }));
-  return <div className="max-w-3xl">{header}<DealershipInfoForm initial={info} canEdit={can.editAiSettings(staff.role)} /><div className="mt-6"><RepAlertLog alerts={alerts} live={live} /></div></div>;
+  return <div className="max-w-3xl">{header}<DealershipInfoForm initial={info} canEdit={can.editAiSettings(staff.role)} /><div className="mt-6"><RepAlertLog alerts={alerts} live={live} canScan={can.editAiSettings(staff.role)} /></div></div>;
 }

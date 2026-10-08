@@ -898,6 +898,21 @@ export async function addCustomerAction(input: { name: string; phone: string; em
 }
 
 /** Developer-only: sends one test text so Twilio can be checked without a customer. Not saved on any customer. */
+/** Looks back through the last 14 days of conversations and alerts the dealership phone about anyone who needed a person. */
+export async function scanPastConversationsAction(): Promise<ActionResult & { alerted?: { name: string; reason: string }[]; checked?: number; remaining?: number }> {
+  const staff = await requireStaff();
+  if (!staff) return fail("Your session ended. Sign in again.");
+  if (!can.editAiSettings(staff.role)) return fail(AI_EDIT_DENIED);
+  const { aiConfigured } = await import("@/lib/ai/claude");
+  if (!aiConfigured()) return fail("The AI isn't connected.");
+  const { scanPastConversations } = await import("@/lib/ai/alert-scan");
+  try {
+    const r = await scanPastConversations({ days: 14, deadline: Date.now() + 55_000 });
+    revalidatePath("/ai/dealership");
+    return { ok: true, message: "Done.", alerted: r.alerted, checked: r.checked, remaining: r.remaining };
+  } catch (e) { return fail(e instanceof Error ? e.message : "The scan didn't finish."); }
+}
+
 /** Texts the number the AI uses for sales-rep alerts, so staff can check it reaches the right phone. */
 export async function sendRepAlertTestAction(phone: string): Promise<ActionResult> {
   const staff = await requireStaff();

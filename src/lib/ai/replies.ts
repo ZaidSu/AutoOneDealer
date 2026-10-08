@@ -15,6 +15,7 @@ import { channelOn } from "@/lib/ai/switches";
 import { availabilityNote } from "@/lib/inventory";
 import { EMAIL_FOOTER } from "@/lib/legal/config";
 import { isOfferUp, OFFERUP_TEXT_RULES, textify } from "@/lib/ai/offerup-style";
+import { actOnConversation } from "@/lib/ai/conversation-actions";
 
 export type ReplyStatus = "draft" | "sent" | "discarded" | "skipped" | "failed";
 export type AiReply = {
@@ -97,6 +98,13 @@ export async function draftNewReplies({ max = 4, force = false } = {}): Promise<
       const { subject, body } = await writeReply(lead, info, training);
       const [row] = await sql`insert into ai_replies ${sql({ ...base, subject, body, status: "draft" })} on conflict (lead_id) do nothing returning id`;
       drafted++;
+      // A first message that already needs a person (asks for a Carfax, talks numbers, wants to buy) alerts the dealership phone right away.
+      if (row && lead.customer_key && String(lead.comments ?? "").trim().length > 8) {
+        await actOnConversation({
+          customerKey: String(lead.customer_key), name: (lead.name as string) ?? null, phone: (lead.phone as string) ?? null, email, vehicle: (lead.vehicle as string) ?? null, channel: "email",
+          conversation: `Customer (first message${lead.provider ? `, from ${lead.provider}` : ""}): ${String(lead.comments).slice(0, 1500)}\nDealership (reply being sent now): ${body}`,
+        });
+      }
       if (row && sendNow) {
         const result = await sendReply(Number(row.id), { subject, body }, "AI (automatic)");
         if (result.ok) sent++;
