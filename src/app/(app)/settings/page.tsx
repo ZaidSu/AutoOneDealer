@@ -4,6 +4,8 @@ import GmailCard from "@/components/settings/GmailCard";
 import TeamAndSources from "@/components/settings/TeamAndSources";
 import DbNotice from "@/components/ui/DbNotice";
 import PageHeader from "@/components/ui/PageHeader";
+import Link from "next/link";
+import { twilioConfigured } from "@/lib/sms/twilio";
 import { dbState, fresh } from "@/lib/db";
 import { listReps, listSources } from "@/lib/db/data";
 import { can, roleLabel } from "@/lib/auth/access";
@@ -77,9 +79,16 @@ export default async function SettingsPage({ searchParams }: { searchParams: Pro
         <section aria-labelledby="sms-heading" className="rounded-lg border border-line bg-white p-6">
           <div className="flex flex-wrap items-center justify-between gap-3">
             <h2 id="sms-heading" className="text-lg font-semibold">Text messaging</h2>
-            <span className="rounded-full bg-paper px-3 py-0.5 text-sm font-medium text-muted ring-1 ring-line">Not set up</span>
+            {twilioConfigured()
+              ? <span className="rounded-full bg-go-soft px-3 py-0.5 text-sm font-medium text-go">Connected</span>
+              : <span className="rounded-full bg-paper px-3 py-0.5 text-sm font-medium text-muted ring-1 ring-line">Not set up</span>}
           </div>
-          <p className="mt-2 text-muted">Two-way texting with customers will be added in a later phase, after consent and opt-out handling are in place.</p>
+          <p className="mt-2 text-muted">
+            {twilioConfigured()
+              ? "Customers can text the dealership number and the AI can reply. STOP and START are handled automatically. "
+              : "Texting turns on once the Twilio keys are added in Vercel. "}
+            <Link href="/ai/texts/settings" className="font-semibold text-signal underline">Text settings</Link>
+          </p>
         </section>
       </div>
     </>
