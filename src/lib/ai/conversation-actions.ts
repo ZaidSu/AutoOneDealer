@@ -52,12 +52,12 @@ export async function actOnConversation(ctx: Ctx, opts: { backfill?: boolean } =
     }
 
     if (actions.wantsRep) {
-      // At most one alert per customer every 6 hours.
-      const [recent] = opts.backfill
-        ? await sql`select 1 from customers where key = ${ctx.customerKey} and rep_requested_at is not null`
-        : await sql`select 1 from customers where key = ${ctx.customerKey} and rep_requested_at > now() - interval '6 hours'`;
-      if (!recent) {
-        await sql`update customers set rep_requested_at = now() where key = ${ctx.customerKey}`;
+      // One alert per customer per 24 hours. The claim is a single database step, so two checks running at once
+      // (or the look-back button and the timer) can't both get through. The look-back skips anyone ever alerted.
+      const claimed = opts.backfill
+        ? await sql`update customers set rep_requested_at = now() where key = ${ctx.customerKey} and rep_requested_at is null returning key`
+        : await sql`update customers set rep_requested_at = now() where key = ${ctx.customerKey} and (rep_requested_at is null or rep_requested_at < now() - interval '24 hours') returning key`;
+      if (claimed.length) {
         const info = await getDealershipInfo();
         const to = toE164(repAlertNumber(info));
         const base = (process.env.APP_URL || "https://auto-one-dealer.vercel.app").replace(/\/$/, "");

@@ -1,19 +1,21 @@
-// Looks back through recent conversations and texts the dealership phone about anyone who needed a person (asked for a
+// Looks back through TODAY's conversations (since midnight, dealership time) and texts the dealership phone about anyone who needed a person (asked for a
 // Carfax, was talking numbers, wanted to buy...) before this check existed. Each customer is alerted at most once this way.
 import { actOnConversation } from "@/lib/ai/conversation-actions";
 import { readyDb } from "@/lib/db";
 import { getSetting, setSetting } from "@/lib/db/data";
+import { dealership } from "@/lib/dealership";
+import { dayKey, zonedToUtc } from "@/lib/utils/time";
 
 const KEY = "alert_scan_checked";
 export type ScanResult = { checked: number; alerted: { name: string; reason: string }[]; remaining: number; stoppedEarly: boolean };
 
 type Line = { at: number; who: "Customer" | "Dealership"; text: string };
 
-export async function scanPastConversations(opts: { days?: number; maxChecks?: number; maxAlerts?: number; deadline: number }): Promise<ScanResult> {
+export async function scanPastConversations(opts: { maxChecks?: number; maxAlerts?: number; deadline: number }): Promise<ScanResult> {
   const out: ScanResult = { checked: 0, alerted: [], remaining: 0, stoppedEarly: false };
   const sql = await readyDb();
   if (!sql) return out;
-  const since = new Date(Date.now() - (opts.days ?? 14) * 86400_000);
+  const since = zonedToUtc(dayKey(Date.now(), dealership.timeZone), "00:00", dealership.timeZone) ?? new Date(Date.now() - 12 * 3600_000);
   let done: string[] = [];
   try { const saved = JSON.parse((await getSetting(KEY)) ?? "{}"); if (saved?.since && new Date(saved.since).getTime() > since.getTime() - 3600_000 && Array.isArray(saved.keys)) done = saved.keys; } catch { /* start fresh */ }
 

@@ -20,7 +20,7 @@ export default function RepAlertLog({ alerts, live, canScan }: { alerts: RepAler
   return (
     <section className="panel p-5">
       <h2 className="text-[17px] font-semibold">Sales rep alerts sent to the dealership phone</h2>
-      <p className="mt-1 text-sm text-muted">Whenever a customer needs a person (asks for a rep or a Carfax, talks numbers, wants to buy, or the AI can't answer), the text it sends shows here, with whether it reached the phone. The last 30 are kept.</p>
+      <p className="mt-1 text-sm text-muted">Whenever a customer needs a person (asks for a rep or a Carfax, talks numbers, wants to buy, or the AI can't answer), the text it sends shows here, with whether it reached the phone. One text per customer per day, never repeated. The last 30 are kept.</p>
       {canScan && <RepAlertScan />}
       {alerts.length === 0 ? (
         <p className="mt-3 text-muted">None yet. Use “Send a test alert” above to see one.</p>
