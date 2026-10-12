@@ -141,9 +141,9 @@ export function UploadSheet() {
   const [pending, start] = useTransition();
   const router = useRouter();
   return (
-    <div className="flex flex-col items-end gap-1">
-      <label className="btn cursor-pointer">
-        {pending ? "Reading the sheet…" : "Upload inventory sheet"}
+    <div className="flex flex-col items-start gap-1">
+      <label className="btn btn-red cursor-pointer">
+        {pending ? "Reading the sheet…" : "Upload inventory sheet (PDF)"}
         <input type="file" accept="application/pdf,.pdf" className="sr-only" disabled={pending} onChange={(e) => {
           const file = e.target.files?.[0];
           e.target.value = "";
@@ -157,7 +157,7 @@ export function UploadSheet() {
           });
         }} />
       </label>
-      {msg && <p role={msg.ok ? "status" : "alert"} className={`max-w-md text-right text-sm ${msg.ok ? "text-go" : "text-signal"}`}>{msg.text}</p>}
+      {msg && <p role={msg.ok ? "status" : "alert"} className={`max-w-md text-sm ${msg.ok ? "text-go" : "text-signal"}`}>{msg.text}</p>}
     </div>
   );
 }

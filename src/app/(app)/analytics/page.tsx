@@ -119,8 +119,11 @@ async function SalesCars({ range }: { range: Range }) {
         <Panel title="Best-selling makes" note="Cars sold, by make.">
           <BarList items={inv.byMake.map((m) => ({ label: m.make, value: m.n, note: m.avg ? `avg ${money(m.avg)}` : undefined }))} emptyText="No sales recorded yet." />
         </Panel>
-        <Panel title="What price range sells" note="Cars sold, grouped by what they sold for." wide>
+        <Panel title="What price range sells" note="Cars sold, grouped by what they sold for.">
           <BarList items={inv.byPrice.map((p) => ({ label: p.label, value: p.n }))} emptyText="No sales recorded yet." />
+        </Panel>
+        <Panel title="What's on the lot now" note="Cars for sale, by make.">
+          <BarList items={inv.lotByMake.map((m) => ({ label: m.make, value: m.n }))} emptyText="Nothing on the lot yet." highlightFirst={false} />
         </Panel>
       </div>
     </>

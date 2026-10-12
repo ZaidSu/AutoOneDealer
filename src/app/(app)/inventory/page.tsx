@@ -1,5 +1,4 @@
 import type { Metadata } from "next";
-import { BarList, Columns, Panel, Stat } from "@/components/analytics/Charts";
 import { AddSale, BackOnLot, CheckNowButton, ConfirmMissing, ImportText, UploadSheet, MarkSold, RemoveCar, RestoreCar } from "@/components/inventory/InventoryActions";
 import DbNotice from "@/components/ui/DbNotice";
 import PageHeader from "@/components/ui/PageHeader";
@@ -15,7 +14,6 @@ export const maxDuration = 60;
 const TZ = "America/Chicago";
 const usd = (n: number | null | undefined) => (n == null ? "n/a" : n.toLocaleString("en-US", { style: "currency", currency: "USD", maximumFractionDigits: 0 }));
 const day = (ms: number | null) => (ms ? new Date(ms).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric", timeZone: TZ }) : "");
-const monthLabel = (m: string) => new Date(`${m}-15T12:00:00Z`).toLocaleDateString("en-US", { month: "short", year: "2-digit", timeZone: "UTC" });
 const ago = (ms: number) => {
   const min = Math.round((Date.now() - ms) / 60000);
   return min < 1 ? "just now" : min < 60 ? `${min} min ago` : min < 1440 ? `${Math.round(min / 60)} hours ago` : `${Math.round(min / 1440)} days ago`;
@@ -25,22 +23,28 @@ export default async function InventoryPage({ searchParams }: { searchParams?: P
   const staff = await requirePageStaff();
   const dev = can.useDeveloperTools(staff.role); // website-reading status and the paste box are for the developer only
   const q = String((await searchParams)?.q ?? "").trim().toLowerCase().slice(0, 60);
-  const header = <PageHeader title="Inventory" description="The cars on your website, what sold, and what sells best. The AI reads this to answer “is it still available?”." action={<div className="flex flex-wrap items-start justify-end gap-3"><UploadSheet /><CheckNowButton /></div>} />;
+  const header = <PageHeader title="Inventory" description="Your cars on the lot and the ones that sold. The AI reads this to answer “is it still available?”. Sales charts are under Analytics → Sales." action={<CheckNowButton />} />;
   const state = await dbState();
   if (state !== "ready") return <>{header}<DbNotice state={state} what="Inventory" /></>;
   await seedInventoryOnce().catch(() => undefined); // the first time, loads the cars from the website text sent on Oct 2
   const [sync, stats, lot, sold, deleted, aiView, pageStats, sheet] = await fresh("Inventory", () => Promise.all([getSyncState(), inventoryStats(TZ), listCars("available"), listCars("sold", 100), listCars("deleted", 100), aiViewOfInventory(), dev ? getPageStats() : Promise.resolve({}), getSheetState()]));
 
   const shown = q ? lot.filter((c) => `${c.title} ${c.vin ?? ""} ${c.make ?? ""} ${c.model ?? ""}`.toLowerCase().includes(q)) : lot;
-  const best = stats.byMonth.length ? [...stats.byMonth].sort((a, b) => b.n - a.n)[0] : null;
-  const bestMake = stats.byMake[0] ?? null;
 
   return (
     <div className="max-w-6xl">
       {header}
 
       <ConfirmMissing cars={sheet.pending} sheetAt={sheet.at} />
-      {sheet.at > 0 && <p className="mb-4 text-sm text-muted">Inventory sheet: {sheet.file || "uploaded"} on {new Date(sheet.at).toLocaleString("en-US", { month: "short", day: "numeric", hour: "numeric", minute: "2-digit", timeZone: TZ })} ({sheet.count} cars).</p>}
+
+      <section aria-labelledby="keep-up" className="panel mb-6 flex flex-wrap items-center justify-between gap-4 p-5">
+        <div className="max-w-xl">
+          <h2 id="keep-up" className="text-[17px] font-semibold">Keep the lot up to date</h2>
+          <p className="mt-1 text-sm text-muted">Upload the inventory sheet PDF from CarsForSale. Every car in it is on the lot, prices and VINs are updated, and any car missing from it comes off the lot (you then pick Sold or Remove).</p>
+          <p className="mt-1 text-sm text-muted">{sheet.at > 0 ? <>Last sheet: {sheet.file || "uploaded"} on {new Date(sheet.at).toLocaleString("en-US", { month: "short", day: "numeric", hour: "numeric", minute: "2-digit", timeZone: TZ })} ({sheet.count} cars).</> : "No sheet uploaded yet."}</p>
+        </div>
+        <UploadSheet />
+      </section>
 
       {dev && <>
       <p role="status" className={`mb-6 rounded-xl px-4 py-3 text-[15px] ${sync?.ok ? "bg-go-soft text-go" : "border border-lane/40 bg-[#fdf6e3]"}`}>
@@ -58,35 +62,12 @@ export default async function InventoryPage({ searchParams }: { searchParams?: P
       <div className="mb-6"><ImportText /></div>
       </>}
 
-      <div className="grid grid-cols-2 gap-3 lg:grid-cols-3">
-        <Stat value={stats.available} label="On the lot" color="#1f7a4d" />
-        <Stat value={stats.sold} label="Sold" color="#c8102e" sub={stats.soldUnknown ? `${stats.sold - stats.soldUnknown} with a sale date, ${stats.soldUnknown} sold before AutoDash was tracking` : stats.soldTotal ? `${usd(stats.soldTotal)} total` : "since AutoDash started tracking"} />
-        <Stat value={usd(stats.avgSold)} label="Average sold price" />
-      </div>
-
+      <p className="text-[15px]"><span className="font-semibold">{stats.available}</span> on the lot · <span className="font-semibold">{stats.sold}</span> sold{stats.soldTotal ? <> ({usd(stats.soldTotal)} total)</> : null}</p>
       {stats.soldUnknown > 0 && (
-        <p className="mt-4 text-sm text-muted">{stats.soldUnknown} car{stats.soldUnknown === 1 ? " was" : "s were"} already marked Sold on the website when AutoDash first saw {stats.soldUnknown === 1 ? "it" : "them"}, so there's no sale date or price. They're listed under Sold but left out of the charts below. Click Not sold to put one back on the lot, or add its real sale with Add a past sale.</p>
+        <p className="mt-2 text-sm text-muted">{stats.soldUnknown} car{stats.soldUnknown === 1 ? " was" : "s were"} already marked Sold when AutoDash first saw {stats.soldUnknown === 1 ? "it" : "them"}, so there's no sale date or price. Click Not sold to put one back on the lot, or add its real sale with Add a past sale.</p>
       )}
 
-      {stats.sold - stats.soldUnknown === 0 && <p className="mt-6 panel p-5 text-muted">Sales charts fill in once cars sell (or add past sales under Sold below). Until then, here is what is on the lot.</p>}
-      <div className="mt-6 grid gap-6 lg:grid-cols-2">
-        {stats.sold - stats.soldUnknown > 0 && <>
-        <Panel title="Sales by month" note={best ? `Best month so far: ${monthLabel(best.month)} with ${best.n} sold.` : "Fills in as cars sell. Add past sales below to include earlier months."}>
-          <Columns items={stats.byMonth.map((m) => ({ label: monthLabel(m.month), value: m.n }))} emptyText="No sales recorded yet." color="#c8102e" highlightLast />
-        </Panel>
-        <Panel title="Best-selling makes" note={bestMake ? `${bestMake.make} sells the most (${bestMake.n}${bestMake.avg ? `, about ${usd(bestMake.avg)} each` : ""}).` : "No sales recorded yet."}>
-          <BarList items={stats.byMake.map((m) => ({ label: m.make, value: m.n, note: m.avg ? `avg ${usd(m.avg)}` : undefined }))} emptyText="No sales recorded yet." />
-        </Panel>
-        <Panel title="What price range sells" note="Cars sold, grouped by what they sold for.">
-          <BarList items={stats.byPrice.map((p) => ({ label: p.label, value: p.n }))} emptyText="No sales recorded yet." />
-        </Panel>
-        </>}
-        <Panel title="What's on the lot now" note="Cars on your website, by make.">
-          <BarList items={stats.lotByMake.map((m) => ({ label: m.make, value: m.n }))} emptyText="Nothing read from the website yet." highlightFirst={false} />
-        </Panel>
-      </div>
-
-      <section aria-labelledby="lot" className="mt-10">
+      <section aria-labelledby="lot" className="mt-8">
         <h2 id="lot" className="mb-1 text-lg font-semibold">On the lot <span className="text-muted">{q ? `${shown.length} of ${lot.length}` : lot.length}</span></h2>
         <p className="mb-3 text-sm text-muted">Copied from your website. When a car disappears from the website it moves to Sold on its own. Sold by hand sooner? Use Mark sold. A car that isn't yours (it's on the website for someone else)? Use Delete.</p>
         <form method="get" className="mb-3 flex gap-2">
