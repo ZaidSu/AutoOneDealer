@@ -2,7 +2,7 @@
 import { useRouter } from "next/navigation";
 import { useState, useTransition } from "react";
 import { notifyChanged } from "@/lib/client/live";
-import { addSaleAction, importInventoryTextAction, markAvailableAction, markSoldAction, removeCarAction, syncInventoryNowAction } from "@/app/actions";
+import { addSaleAction, importInventorySheetAction, importInventoryTextAction, resolveMissingCarAction, markAvailableAction, markSoldAction, removeCarAction, syncInventoryNowAction } from "@/app/actions";
 
 type Msg = { ok: boolean; text: string } | null;
 const today = () => new Date().toLocaleDateString("en-CA", { timeZone: "America/Chicago" });
@@ -132,4 +132,70 @@ export function RestoreCar({ id }: { id: string }) {
   const [pending, start] = useTransition();
   const router = useRouter();
   return <button type="button" className="btn btn-sm" disabled={pending} onClick={() => start(async () => { await markAvailableAction(id); router.refresh(); notifyChanged(); })}>{pending ? "…" : "Restore"}</button>;
+}
+
+
+/** Upload the daily inventory sheet PDF from CarsForSale. */
+export function UploadSheet() {
+  const [msg, setMsg] = useState<Msg>(null);
+  const [pending, start] = useTransition();
+  const router = useRouter();
+  return (
+    <div className="flex flex-col items-end gap-1">
+      <label className="btn cursor-pointer">
+        {pending ? "Reading the sheet…" : "Upload inventory sheet"}
+        <input type="file" accept="application/pdf,.pdf" className="sr-only" disabled={pending} onChange={(e) => {
+          const file = e.target.files?.[0];
+          e.target.value = "";
+          if (!file) return;
+          const form = new FormData();
+          form.set("file", file);
+          start(async () => {
+            const r = await importInventorySheetAction(form);
+            setMsg(r.ok ? { ok: true, text: r.message ?? "Done." } : { ok: false, text: r.error });
+            router.refresh(); notifyChanged();
+          });
+        }} />
+      </label>
+      {msg && <p role={msg.ok ? "status" : "alert"} className={`max-w-md text-right text-sm ${msg.ok ? "text-go" : "text-signal"}`}>{msg.text}</p>}
+    </div>
+  );
+}
+
+/** Cars that were on the lot but are missing from the newest sheet: what happened to each? */
+export function ConfirmMissing({ cars, sheetAt }: { cars: { id: string; title: string; vin: string | null; price: number | null; mileage: number | null }[]; sheetAt: number }) {
+  const [msg, setMsg] = useState<Msg>(null);
+  const [busy, setBusy] = useState<string | null>(null);
+  const [pending, start] = useTransition();
+  const router = useRouter();
+  if (!cars.length) return null;
+  const go = (id: string, choice: "sold" | "remove") => { setBusy(id); start(async () => {
+    const r = await resolveMissingCarAction(id, choice);
+    setMsg(r.ok ? { ok: true, text: r.message ?? "Done." } : { ok: false, text: r.error });
+    setBusy(null); router.refresh(); notifyChanged();
+  }); };
+  return (
+    <section aria-labelledby="confirm" className="mb-6 rounded-xl border border-lane/40 bg-[#fff8e6] p-5">
+      <h2 id="confirm" className="text-[17px] font-semibold">{cars.length} car{cars.length === 1 ? "" : "s"} left the inventory sheet</h2>
+      <p className="mt-1 text-sm text-muted">
+        {cars.length === 1 ? "This car is" : "These cars are"} not in the sheet from {new Date(sheetAt).toLocaleDateString("en-US", { month: "short", day: "numeric", timeZone: "America/Chicago" })}, so {cars.length === 1 ? "it is" : "they are"} off the lot and the AI won&apos;t offer {cars.length === 1 ? "it" : "them"}.
+        Say what happened: <b>Sold</b> counts it as a sale; <b>Remove</b> deletes it (not ours, or a mistake). If {cars.length === 1 ? "it was" : "one was"} left out by mistake, upload the sheet again with the car in it and it comes back.
+      </p>
+      <ul className="mt-3 divide-y divide-line/60">
+        {cars.map((c) => (
+          <li key={c.id} className="flex flex-wrap items-center justify-between gap-3 py-2.5">
+            <div>
+              <p className="font-medium">{c.title}</p>
+              <p className="text-sm text-muted">{[c.vin ? `VIN ending ${c.vin.slice(-6)}` : null, c.mileage ? `${c.mileage.toLocaleString("en-US")} miles` : null, c.price ? `$${c.price.toLocaleString("en-US")}` : null].filter(Boolean).join(" · ")}</p>
+            </div>
+            <div className="flex flex-wrap gap-2">
+              <button type="button" className="btn btn-red" disabled={pending} onClick={() => go(c.id, "sold")}>{busy === c.id ? "Saving…" : "Sold"}</button>
+              <button type="button" className="btn" disabled={pending} onClick={() => go(c.id, "remove")}>Remove</button>
+            </div>
+          </li>
+        ))}
+      </ul>
+      {msg && <p role={msg.ok ? "status" : "alert"} className={`mt-2 text-sm ${msg.ok ? "text-go" : "text-signal"}`}>{msg.text}</p>}
+    </section>
+  );
 }

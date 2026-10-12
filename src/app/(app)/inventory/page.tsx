@@ -1,12 +1,12 @@
 import type { Metadata } from "next";
 import { BarList, Columns, Panel, Stat } from "@/components/analytics/Charts";
-import { AddSale, BackOnLot, CheckNowButton, ImportText, MarkSold, RemoveCar, RestoreCar } from "@/components/inventory/InventoryActions";
+import { AddSale, BackOnLot, CheckNowButton, ConfirmMissing, ImportText, UploadSheet, MarkSold, RemoveCar, RestoreCar } from "@/components/inventory/InventoryActions";
 import DbNotice from "@/components/ui/DbNotice";
 import PageHeader from "@/components/ui/PageHeader";
 import { can } from "@/lib/auth/access";
 import { requirePageStaff } from "@/lib/auth/guard";
 import { dbState, fresh } from "@/lib/db";
-import { aiViewOfInventory, getPageStats, getSyncState, inventoryStats, listCars, seedInventoryOnce } from "@/lib/inventory/store";
+import { aiViewOfInventory, getPageStats, getSheetState, getSyncState, inventoryStats, listCars, seedInventoryOnce } from "@/lib/inventory/store";
 
 export const metadata: Metadata = { title: "Inventory" };
 export const dynamic = "force-dynamic";
@@ -25,11 +25,11 @@ export default async function InventoryPage({ searchParams }: { searchParams?: P
   const staff = await requirePageStaff();
   const dev = can.useDeveloperTools(staff.role); // website-reading status and the paste box are for the developer only
   const q = String((await searchParams)?.q ?? "").trim().toLowerCase().slice(0, 60);
-  const header = <PageHeader title="Inventory" description="The cars on your website, what sold, and what sells best. The AI reads this to answer “is it still available?”." action={<CheckNowButton />} />;
+  const header = <PageHeader title="Inventory" description="The cars on your website, what sold, and what sells best. The AI reads this to answer “is it still available?”." action={<div className="flex flex-wrap items-start justify-end gap-3"><UploadSheet /><CheckNowButton /></div>} />;
   const state = await dbState();
   if (state !== "ready") return <>{header}<DbNotice state={state} what="Inventory" /></>;
   await seedInventoryOnce().catch(() => undefined); // the first time, loads the cars from the website text sent on Oct 2
-  const [sync, stats, lot, sold, deleted, aiView, pageStats] = await fresh("Inventory", () => Promise.all([getSyncState(), inventoryStats(TZ), listCars("available"), listCars("sold", 100), listCars("deleted", 100), aiViewOfInventory(), dev ? getPageStats() : Promise.resolve({})]));
+  const [sync, stats, lot, sold, deleted, aiView, pageStats, sheet] = await fresh("Inventory", () => Promise.all([getSyncState(), inventoryStats(TZ), listCars("available"), listCars("sold", 100), listCars("deleted", 100), aiViewOfInventory(), dev ? getPageStats() : Promise.resolve({}), getSheetState()]));
 
   const shown = q ? lot.filter((c) => `${c.title} ${c.vin ?? ""} ${c.make ?? ""} ${c.model ?? ""}`.toLowerCase().includes(q)) : lot;
   const best = stats.byMonth.length ? [...stats.byMonth].sort((a, b) => b.n - a.n)[0] : null;
@@ -38,6 +38,9 @@ export default async function InventoryPage({ searchParams }: { searchParams?: P
   return (
     <div className="max-w-6xl">
       {header}
+
+      <ConfirmMissing cars={sheet.pending} sheetAt={sheet.at} />
+      {sheet.at > 0 && <p className="mb-4 text-sm text-muted">Inventory sheet: {sheet.file || "uploaded"} on {new Date(sheet.at).toLocaleString("en-US", { month: "short", day: "numeric", hour: "numeric", minute: "2-digit", timeZone: TZ })} ({sheet.count} cars).</p>}
 
       {dev && <>
       <p role="status" className={`mb-6 rounded-xl px-4 py-3 text-[15px] ${sync?.ok ? "bg-go-soft text-go" : "border border-lane/40 bg-[#fdf6e3]"}`}>

@@ -654,6 +654,16 @@ export async function importInventoryTextAction(text: string): Promise<ActionRes
   if (t.length < 200) return fail("Paste the website's inventory text first.");
   if (t.length > 600_000) return fail("That's too much text. Paste just the pages of cars.");
   const { importPasted } = await import("@/lib/inventory/store");
+  // Text copied from the inventory sheet PDF (Year Make Model VIN Mileage Price) instead of the website pages.
+  const { parsePastedInventory } = await import("@/lib/inventory/match");
+  if (parsePastedInventory(t).cars.length === 0) {
+    const { parseSheetText } = await import("@/lib/inventory/sheet-parse");
+    const sheet = parseSheetText(t);
+    if (sheet.length >= 5) {
+      const { importSheet } = await import("@/lib/inventory/store");
+      try { const r = await importSheet(sheet, "pasted sheet"); revalidatePath("/inventory"); return { ok: true, message: sheetMessage(r) }; } catch { return NO_DB; }
+    }
+  }
   try {
     const r = await importPasted(t);
     revalidatePath("/inventory");
@@ -663,6 +673,46 @@ export async function importInventoryTextAction(text: string): Promise<ActionRes
     if (error instanceof Error && error.message === "no_cars") return fail("Couldn't find any cars in that text. On each page of the website's cars for sale, press Ctrl+A, Ctrl+C, and paste it all here.");
     return NO_DB;
   }
+}
+
+const money0 = (n: number) => `$${n.toLocaleString("en-US")}`;
+function sheetMessage(r: import("@/lib/inventory/store").SheetResult): string {
+  const changes = r.priceChanges.slice(0, 6).map((c) => `${c.title} ${money0(c.from)} → ${money0(c.to)}`).join("; ");
+  return `Read ${r.total} cars: ${r.updated} updated, ${r.added} new.`
+    + (r.priceChanges.length ? ` ${r.priceChanges.length} price change${r.priceChanges.length === 1 ? "" : "s"}: ${changes}${r.priceChanges.length > 6 ? "…" : ""}.` : " No price changes.")
+    + (r.backOnLot ? ` ${r.backOnLot} car${r.backOnLot === 1 ? " that was" : "s that were"} marked sold or removed ${r.backOnLot === 1 ? "is" : "are"} in the sheet, so ${r.backOnLot === 1 ? "it is" : "they are"} back on the lot.` : "")
+    + (r.pending.length ? ` ${r.pending.length} car${r.pending.length === 1 ? " is" : "s are"} not in this sheet, so ${r.pending.length === 1 ? "it is" : "they are"} off the lot and the AI won't offer ${r.pending.length === 1 ? "it" : "them"}. Tell me below whether ${r.pending.length === 1 ? "it" : "each"} sold or should be removed.` : " Every car on the lot is in the sheet.");
+}
+
+/** The daily inventory sheet from CarsForSale (PDF): prices and VINs updated, new cars added, missing cars listed for confirmation. */
+export async function importInventorySheetAction(formData: FormData): Promise<ActionResult> {
+  const staff = await requireStaff();
+  if (!staff) return fail("Your session ended. Sign in again.");
+  const file = formData.get("file");
+  if (!(file instanceof File) || file.size === 0) return fail("Choose the inventory sheet PDF first.");
+  if (file.size > 900_000) return fail("That file is too big to be the inventory sheet.");
+  const { parseInventorySheetPdf } = await import("@/lib/inventory/sheet-parse");
+  let cars;
+  try { cars = parseInventorySheetPdf(new Uint8Array(await file.arrayBuffer())); } catch { return fail("That doesn't look like a PDF. Choose the inventory sheet PDF from CarsForSale."); }
+  if (cars.length < 5) return fail("I couldn't find the cars in that PDF. Open it, press Ctrl+A and Ctrl+C, and paste the text with “Paste inventory text” instead.");
+  const { importSheet } = await import("@/lib/inventory/store");
+  try {
+    const r = await importSheet(cars, file.name);
+    revalidatePath("/inventory");
+    return { ok: true, message: sheetMessage(r) };
+  } catch { return NO_DB; }
+}
+
+/** Staff's answer for a car that dropped out of the newest inventory sheet: sold, or removed. */
+export async function resolveMissingCarAction(id: string, choice: string): Promise<ActionResult> {
+  const staff = await requireStaff();
+  if (!staff) return fail("Your session ended. Sign in again.");
+  if (!/^[\w-]{1,60}$/.test(id)) return fail("Unknown car.");
+  if (choice !== "sold" && choice !== "remove") return fail("Pick one of the choices.");
+  const { resolveMissing } = await import("@/lib/inventory/store");
+  try { await resolveMissing(id, choice, staff.name); } catch { return NO_DB; }
+  revalidatePath("/inventory");
+  return { ok: true, message: choice === "sold" ? "Marked sold." : "Removed from the inventory." };
 }
 
 export async function markSoldAction(id: string, price: string, date: string): Promise<ActionResult> {

@@ -12,11 +12,13 @@ import {
   billingStarted, billingStartProblem, billTone, draftItems, ensureInvoice, getBankMandate, getBillingSettings, getCardAutopay, listInvoices, periodOf, usageFor,
   type BillTone,
 } from "@/lib/billing";
+import { balanceView, WARN_DAYS, type BalanceView } from "@/lib/billing/balance";
 import { gocardlessConfigured, gocardlessSandbox } from "@/lib/billing/gocardless";
 import { stripeConfigured, stripeTestMode } from "@/lib/billing/stripe";
 import { stripeBillingOn, stripeDashboardUrl, stripeEmptyReason, stripePendingCharges, stripeSubscription, stripeUpcoming } from "@/lib/billing/stripe-sync";
 import { money, periodLabel, totals, type Invoice } from "@/lib/billing/types";
 import { dbState, fresh } from "@/lib/db";
+import { dayKey } from "@/lib/utils/time";
 
 export const metadata: Metadata = { title: "Billing" };
 export const dynamic = "force-dynamic";
@@ -65,6 +67,17 @@ export default async function BillingPage({ searchParams }: { searchParams: Prom
   const shown = current ?? preview ?? { items: [], subtotal: 0, tax: 0, total: 0 };
   const tone = current ? billTone(current, autopay) : null;
   const pastDue = invoices.filter((i) => billTone(i, autopay).tone === "red");
+  // The balance: $0 when paid up. A bill shows as owed 7 days before its due date.
+  const today = dayKey(Date.now(), "America/Chicago");
+  let balance = balanceView(invoices, today, settings.dueDay, null);
+  if (balance.kind === "clear" && !inStripe) {
+    const daysOut = Math.round((Date.parse(`${balance.nextDue}T12:00:00Z`) - Date.parse(`${today}T12:00:00Z`)) / 86400000);
+    if (daysOut <= WARN_DAYS) {
+      const items = await draftItems(balance.nextDue.slice(0, 7), settings).catch(() => null);
+      if (items) balance = balanceView(invoices, today, settings.dueDay, totals(items, settings).total);
+    }
+  }
+  const lastPaid = invoices.filter((i) => i.status === "paid" && i.paidAt).sort((a, b) => (b.paidAt ?? 0) - (a.paidAt ?? 0))[0] ?? null;
   const notice = params.paid ? { ok: true, text: "Payment received. Thank you!" }
     : params.pending ? { ok: true, text: "Payment is processing. It will show as paid in a minute." }
     : params.canceled ? { ok: false, text: "Payment canceled. Nothing was charged." }
@@ -89,6 +102,8 @@ export default async function BillingPage({ searchParams }: { searchParams: Prom
           </p>
         </div>
       )}
+
+      <BalanceCard view={balance} lastPaid={lastPaid} />
 
       <div className="grid gap-6 lg:grid-cols-[minmax(0,3fr)_minmax(0,2fr)] lg:items-start">
         {/* This month's bill */}
@@ -235,6 +250,24 @@ export default async function BillingPage({ searchParams }: { searchParams: Prom
         </section>
       )}
     </div>
+  );
+}
+
+function BalanceCard({ view, lastPaid }: { view: BalanceView; lastPaid: Invoice | null }) {
+  const box = view.kind === "past_due" ? TONE.red : view.kind === "due" ? TONE.yellow : TONE.green;
+  const amount = view.kind === "clear" ? 0 : view.amountCents;
+  const note = view.kind === "past_due" ? `Was due ${date(view.dueDate)} (${view.daysLate} day${view.daysLate === 1 ? "" : "s"} ago). Please pay now.`
+    : view.kind === "due" ? `Due ${date(view.dueDate)}${view.daysLeft > 0 ? ` (in ${view.daysLeft} day${view.daysLeft === 1 ? "" : "s"})` : " (today)"}`
+    : view.kind === "processing" ? "Your payment is processing."
+    : `You're all paid up${lastPaid?.paidAt ? `. Last payment ${date(lastPaid.paidAt)}` : ""}. Your next bill is due ${date(view.nextDue)}; the amount shows here 7 days before.`;
+  return (
+    <section aria-label="Balance" className={`mb-6 flex flex-wrap items-center justify-between gap-4 rounded-xl border px-5 py-4 ${box.box}`}>
+      <div>
+        <p className="text-sm font-semibold text-muted">{view.kind === "clear" || view.kind === "processing" ? "Balance" : "Balance due"}</p>
+        <p className="font-condensed text-4xl font-semibold tabular-nums">{money(amount)}</p>
+      </div>
+      <p className="max-w-md text-[15px]">{note}</p>
+    </section>
   );
 }
 

@@ -1,6 +1,6 @@
 // Billing shapes and the plan defaults. No database code, so browser components can import it.
 /** Bump when the standard plan changes, so saved settings from before are brought up to date once. */
-export const PLAN_VERSION = 2;
+export const PLAN_VERSION = 3;
 
 export type BillingSettings = {
   planVersion: number;
@@ -40,7 +40,7 @@ export const DEFAULT_BILLING: BillingSettings = {
   extraTextCents: 5,
   taxRatePercent: 0, // Auto One Motors is sales-tax exempt (certificate on file)
   taxablePercent: 80,
-  dueDay: 9,
+  dueDay: 3,
   emailRange: "100 to 400",
   textRange: "0 to 500",
   billedBy: "High Level Technologies",

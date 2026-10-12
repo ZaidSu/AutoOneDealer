@@ -13,11 +13,15 @@ export async function getBillingSettings(): Promise<BillingSettings> {
     const saved = JSON.parse(raw);
     // Saved settings from before the current plan (v2: $379 a month, no sales tax) are brought up to date once. After
     // that the developer's own edits in the form are kept.
+    let current: BillingSettings = { ...DEFAULT_BILLING, ...saved };
+    if (Number(saved.planVersion ?? 1) < 2) {
+      current = { ...current, monthlyCents: DEFAULT_BILLING.monthlyCents, taxRatePercent: 0, planParts: DEFAULT_BILLING.planParts };
+    }
+    // v3: bills are due on the 3rd of each month (once, for settings saved before).
     if (Number(saved.planVersion ?? 1) < PLAN_VERSION) {
-      const migrated: BillingSettings = { ...DEFAULT_BILLING, ...saved, monthlyCents: DEFAULT_BILLING.monthlyCents, taxRatePercent: 0,
-        planParts: DEFAULT_BILLING.planParts, planVersion: PLAN_VERSION };
-      await setSetting("billing", JSON.stringify(migrated)).catch(() => undefined);
-      return migrated;
+      current = { ...current, dueDay: DEFAULT_BILLING.dueDay, planVersion: PLAN_VERSION };
+      await setSetting("billing", JSON.stringify(current)).catch(() => undefined);
+      return current;
     }
     return { ...DEFAULT_BILLING, ...saved };
   } catch {
@@ -154,7 +158,7 @@ export async function ensureInvoice(period = periodOf(), { onlyIfStarted = false
   const s = await getBillingSettings();
   const items = await draftItems(period, s);
   const t = totals(items, s);
-  // Always due on the plan's due day (the 9th) of the bill's month. Only if a bill is made after that day already
+  // Always due on the plan's due day (the 3rd) of the bill's month. Only if a bill is made after that day already
   // passed (rare: billing started mid-month) is it due on that day of the next month instead, never "past due" at birth.
   const today = dayKey(Date.now(), dealership.timeZone);
   const day = String(s.dueDay).padStart(2, "0");
@@ -177,6 +181,13 @@ export async function repriceOpenInvoices(): Promise<number> {
   if (!sql) return 0;
   const s = await getBillingSettings();
   const rows = await sql`select * from billing_invoices where status = 'open' and period >= ${periodOf()}`;
+  // An unpaid bill that isn't past due yet follows the due day too (as long as the new date hasn't already passed).
+  const todayKey = dayKey(Date.now(), dealership.timeZone);
+  for (const row of rows) {
+    const due = row.due_date instanceof Date ? row.due_date.toISOString().slice(0, 10) : String(row.due_date).slice(0, 10);
+    const moved = `${due.slice(0, 8)}${String(s.dueDay).padStart(2, "0")}`;
+    if (due >= todayKey && moved !== due && moved >= todayKey) await sql`update billing_invoices set due_date = ${moved} where id = ${row.id} and status = 'open'`;
+  }
   const [{ first }] = await sql`select min(id)::int as first from billing_invoices where status <> 'void'`;
   let changed = 0;
   for (const row of rows) {

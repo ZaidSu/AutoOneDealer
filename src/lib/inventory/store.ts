@@ -7,6 +7,8 @@ import { foldAttempts, type Attempt, type PageStats } from "./attempts";
 import { fetchInventory, getHtml, type Inventory } from "./fetch";
 import { cached, dropCached } from "@/lib/utils/cache";
 import { seedText } from "./seed";
+import { makeSlug, matchSheetCar, priceChanges, sheetTitle, type ExistingCar, type PriceChange } from "./sheet-match";
+import type { SheetCar } from "./sheet-parse";
 import { dailyReadDue, inReadWindow, localClock } from "./schedule";
 import { dealership } from "@/lib/dealership";
 import { makeAndModel, mergePageStore, parseDetailPage, parsePastedInventory, SITE_PAGE, type Listing, type PageStore } from "./match";
@@ -112,7 +114,7 @@ export async function applyInventory(inv: Inventory): Promise<SyncState> {
         slug = excluded.slug, title = excluded.title, price = excluded.price, mileage = excluded.mileage, image_url = coalesce(excluded.image_url, inventory.image_url), last_seen = now(), missed = 0, updated_at = now(),
         -- A car that left the website and came back is available again, unless staff marked it sold by hand.
         -- A deleted car stays deleted even if the website lists it. Otherwise: available again, unless staff marked it sold by hand.
-        status = case when inventory.status in ('deleted', 'duplicate') then inventory.status when inventory.sold_by is not null then inventory.status else 'available' end,
+        status = case when inventory.status in ('deleted', 'duplicate', 'unconfirmed') then inventory.status when inventory.sold_by is not null then inventory.status else 'available' end,
         sold_at = case when inventory.sold_by is not null then inventory.sold_at else null end,
         sold_price = case when inventory.sold_by is not null then inventory.sold_price else null end,
         sold_note = case when inventory.sold_by is not null then inventory.sold_note else null end`;
@@ -127,6 +129,12 @@ export async function applyInventory(inv: Inventory): Promise<SyncState> {
       where id = any(${flaggedIds}) and status = 'available' returning id`;
     soldNow += rows.length;
   }
+  // Cars that came from the daily inventory sheet (ids "sheet-…") are replaced by the website's own row for the same car (same year,
+  // make and mileage), which carries the link. The sheet's VIN is copied over first.
+  await sql`update inventory w set vin = coalesce(w.vin, s.vin) from inventory s
+    where s.id like 'sheet-%' and w.id not like 'sheet-%' and w.status = 'available' and w.year = s.year and w.mileage = s.mileage and lower(w.make) = lower(s.make)`;
+  await sql`delete from inventory s where s.id like 'sheet-%' and exists (select 1 from inventory w where w.id not like 'sheet-%' and w.status = 'available'
+    and w.year = s.year and w.mileage = s.mileage and lower(w.make) = lower(s.make))`;
   // A car deleted by staff (not the dealership's own) stays deleted: any other row for the same car (same name and mileage), like one
   // that the website lists under a new id, is deleted too.
   await sql`update inventory r set status = 'deleted', updated_at = now() where r.status <> 'deleted' and exists (
@@ -396,4 +404,90 @@ export async function removeCar(id: string) {
   const sql = await readyDb();
   if (!sql) throw new Error("no_db");
   await sql`update inventory set status = 'deleted', sold_note = 'Deleted by staff', updated_at = now() where id = ${id}`;
+}
+
+
+// ---- the daily inventory sheet (PDF from CarsForSale) ----
+// Everything in the sheet is available. A car that was on the lot but is NOT in the newest sheet is no longer available for sure:
+// it is taken off the lot at once (status "unconfirmed", so the AI, the counts and the lists all skip it) until staff say whether
+// it was sold or should be removed.
+const SHEET_KEY = "inventory_sheet_state";
+export type PendingCar = { id: string; title: string; vin: string | null; price: number | null; mileage: number | null };
+export type SheetState = { at: number; file: string; count: number; pending: PendingCar[] };
+
+export async function getSheetState(): Promise<SheetState> {
+  let meta: { at?: number; file?: string; count?: number } = {};
+  try { const raw = await getSetting(SHEET_KEY); meta = raw ? JSON.parse(raw) : {}; } catch { /* none yet */ }
+  const sql = await readyDb();
+  const rows = sql ? await sql`select id, title, vin, price, mileage from inventory where status = 'unconfirmed' order by updated_at desc, title`.catch(() => []) : [];
+  return {
+    at: Number(meta.at) || 0, file: String(meta.file ?? ""), count: Number(meta.count) || 0,
+    pending: rows.map((r) => ({ id: r.id as string, title: (r.title as string) ?? "", vin: (r.vin as string) ?? null, price: (r.price as number) ?? null, mileage: (r.mileage as number) ?? null })),
+  };
+}
+
+export type SheetResult = { total: number; added: number; updated: number; priceChanges: PriceChange[]; pending: PendingCar[]; backOnLot: number; withLink: number };
+
+/** Saves the cars in an inventory sheet: prices, VINs and links are updated, new cars added, and cars missing from the sheet come off the lot. */
+export async function importSheet(cars: SheetCar[], fileName: string): Promise<SheetResult> {
+  const sql = await readyDb();
+  if (!sql) throw new Error("no_db");
+  dropCached("inv:");
+  const started = new Date();
+  const rows = await sql`select id, finance_id, title, year, make, vin, price, mileage, status, url from inventory where status in ('available', 'unconfirmed', 'sold', 'deleted')`;
+  const existing: ExistingCar[] = rows.map((r) => ({
+    id: r.id as string, financeId: (r.finance_id as string) ?? null, title: (r.title as string) ?? "", year: (r.year as number) ?? null, make: (r.make as string) ?? null,
+    vin: (r.vin as string) ?? null, price: (r.price as number) ?? null, mileage: (r.mileage as number) ?? null, status: r.status as string, url: (r.url as string) ?? null,
+  }));
+  const claimed = new Set<string>();
+  const out: SheetResult = { total: cars.length, added: 0, updated: 0, priceChanges: [], pending: [], backOnLot: 0, withLink: 0 };
+
+  for (const car of cars) {
+    const hit = matchSheetCar(car, existing, claimed);
+    const title = sheetTitle(car);
+    if (car.url) out.withLink++;
+    if (!hit) {
+      await sql`insert into inventory (id, url, year, make, model, slug, title, price, mileage, vin, status, last_seen, missed)
+        values (${`sheet-${car.vin}`}, ${car.url}, ${car.year}, ${car.make}, ${car.model}, ${makeSlug(car.make, car.model)}, ${title}, ${car.price}, ${car.mileage}, ${car.vin}, 'available', now(), 0)
+        on conflict (id) do update set url = coalesce(excluded.url, inventory.url), title = excluded.title, price = excluded.price, mileage = excluded.mileage, vin = excluded.vin,
+          status = 'available', last_seen = now(), missed = 0, updated_at = now()`;
+      out.added++;
+      continue;
+    }
+    claimed.add(hit.id);
+    const change = priceChanges(hit, car);
+    if (change) out.priceChanges.push(change);
+    // The sheet lists only cars that are available, so a car marked sold, removed or unconfirmed that appears in it is back on the lot.
+    if (hit.status !== "available") out.backOnLot++;
+    await sql`update inventory set vin = coalesce(${car.vin}, vin), price = coalesce(${car.price}, price), mileage = coalesce(${car.mileage}, mileage),
+        url = coalesce(${car.url}, url), title = case when id like 'sheet-%' then ${title} else title end,
+        last_seen = now(), missed = 0, updated_at = now(),
+        status = 'available', sold_at = null, sold_price = null, sold_by = null, sold_note = null
+      where id = ${hit.id}`;
+    out.updated++;
+  }
+
+  // On the lot before, not in this sheet: no longer available for sure.
+  await sql`update inventory set status = 'unconfirmed', updated_at = now() where status = 'available' and last_seen < ${started}`;
+  await setSetting(SHEET_KEY, JSON.stringify({ at: Date.now(), file: fileName.slice(0, 120), count: cars.length }));
+  out.pending = (await getSheetState()).pending;
+
+  // The sheet counts as a full, trusted copy of the lot for a day (like pasted text), so the AI uses it right away.
+  const state: SyncState = { at: Date.now(), ok: true, count: cars.length, complete: true, added: out.added, sold: 0, error: null, via: "pasted" };
+  await setSetting(SYNC_KEY, JSON.stringify(state)).catch(() => undefined);
+  await setSetting("inventory_last_good", String(state.at)).catch(() => undefined);
+  dropCached("inv:");
+  return out;
+}
+
+/** Staff's answer for a car that dropped out of the sheet: it sold, or it should be removed from the inventory. */
+export async function resolveMissing(id: string, choice: "sold" | "remove", by: string) {
+  const sql = await readyDb();
+  if (!sql) throw new Error("no_db");
+  dropCached("inv:");
+  if (choice === "sold") {
+    await sql`update inventory set status = 'sold', sold_at = now(), sold_price = price, sold_by = ${by}, sold_note = 'Marked sold by staff (left the inventory sheet)', updated_at = now() where id = ${id} and status = 'unconfirmed'`;
+  } else {
+    await sql`update inventory set status = 'deleted', sold_note = 'Removed by staff (left the inventory sheet)', updated_at = now() where id = ${id} and status = 'unconfirmed'`;
+  }
 }

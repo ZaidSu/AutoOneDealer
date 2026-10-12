@@ -26,10 +26,10 @@ test("Stripe webhook signatures: right secret passes, wrong or old ones fail", a
   assert.equal(verifyWebhook(body, `t=${t},v1=${sig}`, "whsec_test", (t + 900) * 1000), false);
 });
 
-test("the plan's parts add up to the monthly price and bills are due on the 9th", async () => {
+test("the plan's parts add up to the monthly price and bills are due on the 3rd", async () => {
   const { partsTotal } = await import("../../src/lib/billing/types.ts");
   assert.equal(partsTotal(DEFAULT_BILLING.planParts), DEFAULT_BILLING.monthlyCents);
-  assert.equal(DEFAULT_BILLING.dueDay, 9);
+  assert.equal(DEFAULT_BILLING.dueDay, 3);
 });
 
 test("GoCardless webhook signatures: only the right secret and untouched body pass", async () => {
