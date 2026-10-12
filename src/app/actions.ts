@@ -715,6 +715,35 @@ export async function resolveMissingCarAction(id: string, choice: string): Promi
   return { ok: true, message: choice === "sold" ? "Marked sold." : "Removed from the inventory." };
 }
 
+const carIds = (ids: unknown) => (Array.isArray(ids) ? ids : []).map(String).filter((i) => /^[\w-]{1,60}$/.test(i)).slice(0, 500);
+
+/** Several cars at once (checked boxes): Sold or Remove for cars that left the inventory sheet. */
+export async function resolveMissingCarsAction(ids: string[], choice: string): Promise<ActionResult> {
+  const staff = await requireStaff();
+  if (!staff) return fail("Your session ended. Sign in again.");
+  const list = carIds(ids);
+  if (!list.length) return fail("Check at least one car first.");
+  if (choice !== "sold" && choice !== "remove") return fail("Pick one of the choices.");
+  const { resolveMissing } = await import("@/lib/inventory/store");
+  let n = 0;
+  try { n = await resolveMissing(list, choice, staff.name); } catch { return NO_DB; }
+  revalidatePath("/inventory");
+  return { ok: true, message: `${n} car${n === 1 ? "" : "s"} ${choice === "sold" ? "marked sold" : "removed"}.` };
+}
+
+/** Several cars at once (checked boxes): delete them from the lot. */
+export async function removeCarsAction(ids: string[]): Promise<ActionResult> {
+  const staff = await requireStaff();
+  if (!staff) return fail("Your session ended. Sign in again.");
+  const list = carIds(ids);
+  if (!list.length) return fail("Check at least one car first.");
+  const { removeCar } = await import("@/lib/inventory/store");
+  let n = 0;
+  try { n = await removeCar(list); } catch { return NO_DB; }
+  revalidatePath("/inventory");
+  return { ok: true, message: `${n} car${n === 1 ? "" : "s"} deleted.` };
+}
+
 export async function markSoldAction(id: string, price: string, date: string): Promise<ActionResult> {
   const staff = await requireStaff();
   if (!staff) return fail("Your session ended. Sign in again.");

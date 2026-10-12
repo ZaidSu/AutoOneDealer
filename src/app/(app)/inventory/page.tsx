@@ -1,5 +1,5 @@
 import type { Metadata } from "next";
-import { AddSale, BackOnLot, CheckNowButton, ConfirmMissing, ImportText, UploadSheet, MarkSold, RemoveCar, RestoreCar } from "@/components/inventory/InventoryActions";
+import { AddSale, BackOnLot, CheckNowButton, ConfirmMissing, ImportText, LotTable, UploadSheet, RemoveCar, RestoreCar } from "@/components/inventory/InventoryActions";
 import DbNotice from "@/components/ui/DbNotice";
 import PageHeader from "@/components/ui/PageHeader";
 import { can } from "@/lib/auth/access";
@@ -76,31 +76,7 @@ export default async function InventoryPage({ searchParams }: { searchParams?: P
           {q && <a href="/inventory" className="btn">Clear</a>}
         </form>
         {shown.length === 0 ? <p className="panel p-5 text-muted">{q ? "No cars match that search." : "No cars yet."}</p> : (
-          <div className="panel overflow-x-auto">
-            <table className="w-full min-w-[760px] text-left text-[15px]">
-              <thead className="border-b border-line text-sm text-muted"><tr><th className="px-4 py-2.5 font-semibold">Car</th><th className="px-4 py-2.5 font-semibold">Price</th><th className="px-4 py-2.5 font-semibold">Miles</th><th className="px-4 py-2.5 font-semibold">VIN</th><th className="px-4 py-2.5 font-semibold">First seen</th><th className="px-4 py-2.5" /></tr></thead>
-              <tbody className="divide-y divide-line">
-                {shown.map((c) => (
-                  <tr key={c.id}>
-                    <td className="px-4 py-2.5 font-medium">
-                      <span className="flex items-center gap-3">
-                        {c.imageUrl && (
-                          // eslint-disable-next-line @next/next/no-img-element
-                          <img src={c.imageUrl} alt="" width={64} height={48} loading="lazy" className="h-12 w-16 shrink-0 rounded-md bg-line object-cover" />
-                        )}
-                        <span>{c.url ? <a href={c.url} target="_blank" rel="noopener noreferrer" className="hover:underline">{c.title}</a> : c.title}{c.images.length > 1 && <span className="font-normal text-muted"> · {c.images.length} photos</span>}</span>
-                      </span>
-                    </td>
-                    <td className="px-4 py-2.5 tabular-nums">{usd(c.price)}</td>
-                    <td className="px-4 py-2.5 tabular-nums">{c.mileage ? c.mileage.toLocaleString("en-US") : ""}</td>
-                    <td className="px-4 py-2.5 font-mono text-sm text-muted" title={c.vin ?? undefined}>{c.vin ? <><span>{c.vin.slice(0, -6)}</span><span className="font-semibold text-ink">{c.vin.slice(-6)}</span></> : <span title="Read from the car's own page a few cars at a time">not read yet</span>}</td>
-                    <td className="px-4 py-2.5 text-muted">{day(c.firstSeen)}</td>
-                    <td className="px-4 py-2.5 text-right"><span className="inline-flex flex-wrap items-center justify-end gap-2"><MarkSold id={c.id} price={c.price} /><RemoveCar id={c.id} /></span></td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
+          <LotTable rows={shown.map((c) => ({ id: c.id, title: c.title, url: c.url, imageUrl: c.imageUrl, photos: c.images.length, price: c.price, mileage: c.mileage, vin: c.vin, firstSeen: day(c.firstSeen) }))} />
         )}
       </section>
 

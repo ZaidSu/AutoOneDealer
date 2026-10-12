@@ -399,11 +399,13 @@ export async function seedInventoryOnce(): Promise<boolean> {
 
 /** For cars that aren't the dealership's (they're on the website for someone else): gone from the lot, the sold list, every number, and the AI.
  *  Stays deleted even if the website keeps listing it. Restore brings it back. */
-export async function removeCar(id: string) {
+export async function removeCar(id: string | string[]): Promise<number> {
+  const ids = Array.isArray(id) ? id : [id];
   dropCached("inv:");
   const sql = await readyDb();
   if (!sql) throw new Error("no_db");
-  await sql`update inventory set status = 'deleted', sold_note = 'Deleted by staff', updated_at = now() where id = ${id}`;
+  const rows = await sql`update inventory set status = 'deleted', sold_note = 'Deleted by staff', updated_at = now() where id = any(${ids}) returning id`;
+  return rows.length;
 }
 
 
@@ -481,13 +483,13 @@ export async function importSheet(cars: SheetCar[], fileName: string): Promise<S
 }
 
 /** Staff's answer for a car that dropped out of the sheet: it sold, or it should be removed from the inventory. */
-export async function resolveMissing(id: string, choice: "sold" | "remove", by: string) {
+export async function resolveMissing(id: string | string[], choice: "sold" | "remove", by: string): Promise<number> {
+  const ids = Array.isArray(id) ? id : [id];
   const sql = await readyDb();
   if (!sql) throw new Error("no_db");
   dropCached("inv:");
-  if (choice === "sold") {
-    await sql`update inventory set status = 'sold', sold_at = now(), sold_price = price, sold_by = ${by}, sold_note = 'Marked sold by staff (left the inventory sheet)', updated_at = now() where id = ${id} and status = 'unconfirmed'`;
-  } else {
-    await sql`update inventory set status = 'deleted', sold_note = 'Removed by staff (left the inventory sheet)', updated_at = now() where id = ${id} and status = 'unconfirmed'`;
-  }
+  const rows = choice === "sold"
+    ? await sql`update inventory set status = 'sold', sold_at = now(), sold_price = price, sold_by = ${by}, sold_note = 'Marked sold by staff (left the inventory sheet)', updated_at = now() where id = any(${ids}) and status = 'unconfirmed' returning id`
+    : await sql`update inventory set status = 'deleted', sold_note = 'Removed by staff (left the inventory sheet)', updated_at = now() where id = any(${ids}) and status = 'unconfirmed' returning id`;
+  return rows.length;
 }
