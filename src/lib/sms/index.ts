@@ -8,11 +8,12 @@ import { readyDb, trace } from "@/lib/db";
 import { getSetting, setSetting } from "@/lib/db/data";
 import { aiStartDate, dealership } from "@/lib/dealership";
 import { aiHoursOpen } from "@/lib/ai/schedule";
+import { hoursBlock } from "@/lib/ai/hours-block";
 import { channelOn } from "@/lib/ai/switches";
 import { actOnConversation } from "@/lib/ai/conversation-actions";
 import { availabilityNote } from "@/lib/inventory";
 import { keywordFor } from "./keywords";
-import { cleanDays, FOLLOWUP_WINDOW_DAYS, followupState, type FollowupState } from "./followup-rules";
+import { cleanDays, cleanFollowupMessage, FOLLOWUP_WINDOW_DAYS, followupState, renderFollowupMessage, type FollowupState } from "./followup-rules";
 import { sendSms, tenDigits, toE164, twilioConfigured } from "./twilio";
 
 export type TextMessage = {
@@ -209,11 +210,12 @@ export async function aiReplyToText(customerKey: string | null, phone: string, {
 - Answer what they asked using only the facts below. Never make up prices, financing approvals, rates, payments or trade-in values; if you don't know, say you'll check with the team and get right back to them. For availability, use the CARS ON OUR LOT list and the LIVE INVENTORY CHECK below: if they ask about a car that is on the list, say it's available and give the price, mileage and link. Only say you'll check with the team if there is no list or check at all.
 - Keep things moving toward a visit or a call: offer specific times when it fits. When they pick a day and time to come in, confirm it back clearly (day, date and time): it gets booked automatically. If they want to talk to a person, or you can't answer something, offer to have a sales rep call them; if they say yes, tell them a rep will call soon (the team is alerted automatically).
 - Don't claim to be a person. If they ask whether they're talking to a bot, say you're the dealership's assistant and a team member can call them.
-- Follow the dealership's instructions below. Reply with only the text message itself.`;
+- Follow the dealership's instructions below. If the prompt says the dealership is CLOSED right now, its closed-hours rules come first: never push a call or a visit right now, and say the team will follow up when we open. Reply with only the text message itself.`;
   const stillForSale = await availabilityNote(customer?.last_vehicle, { phone: info.phone });
   const prompt = `NOW: ${now} (Dallas time)
 DEALERSHIP: ${dealership.name}. Address: ${info.address || "not given"}. Phone: ${info.phone || "not given"}. Website: ${info.website || "not given"}.
 HOURS: ${hours}
+${hoursBlock(info)}
 LINKS: ${info.links || "none"}
 OTHER DETAILS: ${info.notes || "none"}
 INSTRUCTIONS FROM THE DEALERSHIP: ${training.instructions || "none"}
@@ -280,9 +282,10 @@ export async function textNewLeads({ max = 3 } = {}): Promise<{ drafted: number;
 - 1 to 2 short sentences, under 240 characters. No markdown, no lists, no emojis. Use their first name if you have it and name the car they asked about if you have it.
 - Say you got their inquiry and ask one easy question (what they'd like to know, or when they could come see it). Don't claim to be a person: you write for the dealership team.
 - Never make up prices, financing approvals or rates. For availability use the CARS ON OUR LOT list below; if they asked something you can't answer, say the team will confirm. Don't include the dealership name or an opt-out line, those are added automatically.
-- Follow the dealership's instructions below. If they wrote in Spanish, reply in Spanish. Reply with only the text message itself.`;
+- Follow the dealership's instructions below. If the prompt says the dealership is CLOSED right now, don't suggest calling now. If they wrote in Spanish, reply in Spanish. Reply with only the text message itself.`;
     const stillForSale = await availabilityNote(lead.vehicle as string | null, { vin: lead.vin as string | null, stock: lead.stock as string | null, phone: info.phone });
     const prompt = `DEALERSHIP: ${dealership.name}. Phone: ${info.phone || "not given"}. Hours/other details: ${info.notes || "none"}
+${hoursBlock(info)}
 INSTRUCTIONS FROM THE DEALERSHIP: ${training.instructions || "none"}
 ${stillForSale ? `${stillForSale}\n` : ""}CUSTOMER: ${firstName ?? "name unknown"}. Came from: ${lead.provider ?? "a listing site"}. Car: ${lead.vehicle ?? "not given"}.
 THEIR MESSAGE: ${String(lead.comments ?? "").slice(0, 600) || "(no message, just the inquiry)"}
@@ -309,13 +312,14 @@ Write the first text.`;
 }
 
 // ---- after-purchase follow-ups ----
-export async function getPurchaseFollowup(): Promise<{ on: boolean; days: number }> {
-  const [on, days] = await Promise.all([getSetting("purchase_followup").catch(() => null), getSetting("purchase_followup_days").catch(() => null)]);
-  return { on: on !== "off", days: cleanDays(days) };
+export async function getPurchaseFollowup(): Promise<{ on: boolean; days: number; message: string }> {
+  const [on, days, message] = await Promise.all([getSetting("purchase_followup").catch(() => null), getSetting("purchase_followup_days").catch(() => null), getSetting("purchase_followup_message").catch(() => null)]);
+  return { on: on !== "off", days: cleanDays(days), message: cleanFollowupMessage(message) };
 }
-export async function setPurchaseFollowup(on: boolean, days: number) {
+export async function setPurchaseFollowup(on: boolean, days: number, message?: string) {
   await setSetting("purchase_followup", on ? "on" : "off");
   await setSetting("purchase_followup_days", String(cleanDays(days)));
+  if (message !== undefined) await setSetting("purchase_followup_message", cleanFollowupMessage(message));
 }
 
 /** A few days after a customer is marked purchased, the AI texts them to ask how the car is doing. Each customer gets
@@ -357,6 +361,8 @@ export async function sendPurchaseFollowups({ max = 3 } = {}): Promise<{ drafted
     const firstName = String(customer.name ?? "").trim().split(/\s+/)[0] || null;
     const car = String(customer.purchased_vehicle ?? "").trim() || null;
     const boughtOn = new Date(customer.purchased_at).toLocaleDateString("en-US", { month: "long", day: "numeric", timeZone: dealership.timeZone });
+    // Staff wrote their own message under Automations: send it as written (with the name and car filled in), no AI.
+    const custom = settings.message ? renderFollowupMessage(settings.message, { firstName, car, dealership: dealership.name }) : "";
     const system = `You text a customer who bought a car from ${dealership.name}, a used car dealership in the Dallas area, about a week ago. Write one friendly check-in text, the way a real salesperson would:
 - Short: 1 to 3 sentences, under 280 characters. No lists, markdown or emojis.
 - Ask how they're liking the car and whether everything is going well. Invite them to text or call if anything comes up.
@@ -368,16 +374,16 @@ INSTRUCTIONS FROM THE DEALERSHIP: ${training.instructions || "none"}
 CUSTOMER: ${firstName ?? "name unknown"}. Bought: ${car ?? "a car (model not recorded)"} on ${boughtOn}.
 
 Write the check-in text.`;
-    let reply = "";
+    let reply = custom;
     try {
-      reply = (await askClaude({ system, prompt, maxTokens: 250 })).replace(/^["']|["']$/g, "").trim().slice(0, 500);
+      if (!reply) reply = (await askClaude({ system, prompt, maxTokens: 250 })).replace(/^["']|["']$/g, "").trim().slice(0, 500);
     } catch (error) {
       console.error("[autodash:sms] couldn't write a purchase follow-up:", error instanceof Error ? error.message : error);
       break; // tried again on the next check; the customer isn't marked
     }
     if (reply.length < 2) { out.skipped++; continue; }
     const [draft] = await sql`insert into sms_messages (customer_key, phone, direction, body, status, ai) values (${customer.key}, ${e164}, 'out', ${reply}, 'draft', true) returning id`;
-    await claim("AI wrote a purchase follow-up text");
+    await claim(custom ? "Purchase follow-up text queued (your own message)" : "AI wrote a purchase follow-up text");
     if (autoText) {
       const sent = await sendText({ customerKey: customer.key, phone: e164, body: reply, sentBy: "AI (automatic)", ai: true, draftId: Number(draft.id) });
       trace("sms", `purchase follow-up ${sent.ok ? "sent" : `left as draft: ${sent.error}`}`);

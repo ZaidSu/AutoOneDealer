@@ -70,7 +70,7 @@ export default async function AutomationsPage() {
           {!twilioConfigured() && " Nothing is sent until Twilio is connected; purchases made before then are texted once it is (if they're still within a few weeks)."}
         </p>
         <div className="mt-4 border-t border-line pt-4">
-          <PurchaseFollowupSettings initialOn={settings.on} initialDays={settings.days} canChange={canChange} />
+          <PurchaseFollowupSettings initialOn={settings.on} initialDays={settings.days} initialMessage={settings.message} canChange={canChange} />
         </div>
       </section>
 

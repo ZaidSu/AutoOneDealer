@@ -6,7 +6,7 @@ export { DAYS, type AiTraining, type DealershipInfo, type QA };
 
 const EMPTY_INFO: DealershipInfo = {
   address: "", phone: "", website: "", links: "", notes: "",
-  hours: DAYS.map((d) => ({ open: "10:00", close: "19:00", closed: d === "Sunday" })),
+  hours: DAYS.map((d) => ({ open: "09:00", close: "19:00", closed: d === "Sunday" })),
 };
 const EMPTY_TRAINING: AiTraining = { instructions: "", qa: [] };
 

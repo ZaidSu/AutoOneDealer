@@ -536,14 +536,15 @@ export async function setTextNewLeadsAction(on: boolean): Promise<ActionResult> 
   return { ok: true, message: on ? "New leads with a phone number will get a first text." : "New leads won't get a first text." };
 }
 
-export async function savePurchaseFollowupAction(on: boolean, days: number): Promise<ActionResult> {
+export async function savePurchaseFollowupAction(on: boolean, days: number, message?: string): Promise<ActionResult> {
   const staff = await requireStaff();
   if (!staff) return fail("Your session ended. Sign in again.");
   if (!can.editAiSettings(staff.role)) return fail(AI_EDIT_DENIED);
   const d = Math.round(Number(days));
   if (!Number.isFinite(d) || d < 1 || d > 60) return fail("Pick a number of days from 1 to 60.");
   const { setPurchaseFollowup } = await import("@/lib/sms");
-  try { await setPurchaseFollowup(Boolean(on), d); } catch { return NO_DB; }
+  if (message !== undefined && String(message).length > 500) return fail("Keep the message under 500 characters.");
+  try { await setPurchaseFollowup(Boolean(on), d, message); } catch { return NO_DB; }
   revalidatePath("/ai/automations");
   return { ok: true, message: on ? `Saved. Customers get a follow-up text ${d} day${d === 1 ? "" : "s"} after they're marked purchased.` : "Saved. Purchase follow-up texts are off." };
 }
@@ -704,15 +705,58 @@ export async function importInventorySheetAction(formData: FormData): Promise<Ac
 }
 
 /** Staff's answer for a car that dropped out of the newest inventory sheet: sold, or removed. */
-export async function resolveMissingCarAction(id: string, choice: string): Promise<ActionResult> {
+export async function resolveMissingCarAction(id: string, choice: string, sale?: SaleInput): Promise<ActionResult> {
   const staff = await requireStaff();
   if (!staff) return fail("Your session ended. Sign in again.");
   if (!/^[\w-]{1,60}$/.test(id)) return fail("Unknown car.");
   if (choice !== "sold" && choice !== "remove") return fail("Pick one of the choices.");
+  if (choice === "sold" && sale) return recordSale(staff.name, id, sale, "Marked sold by staff (left the inventory sheet)");
   const { resolveMissing } = await import("@/lib/inventory/store");
   try { await resolveMissing(id, choice, staff.name); } catch { return NO_DB; }
   revalidatePath("/inventory");
   return { ok: true, message: choice === "sold" ? "Marked sold." : "Removed from the inventory." };
+}
+
+/** Who bought the car: a customer already in AutoDash, a new one (name and phone), or nobody recorded. */
+export type BuyerInput = { mode: "none" } | { mode: "existing"; key: string } | { mode: "new"; name: string; phone: string; email?: string };
+export type SaleInput = { price: string; date: string; buyer: BuyerInput };
+
+/** Saves a sale: the car moves to Sold with its price, day and buyer, and the buyer (found or newly added) is marked Purchased with this car. */
+async function recordSale(staffName: string, id: string, sale: SaleInput, note: string): Promise<ActionResult> {
+  const dollars = String(sale?.price ?? "").replace(/[^\d]/g, "");
+  const amount = dollars ? Number(dollars) : null;
+  if (amount !== null && amount > 10_000_000) return fail("That price looks too high.");
+  const when = /^\d{4}-\d{2}-\d{2}$/.test(String(sale?.date)) ? new Date(`${sale.date}T12:00:00-05:00`) : new Date();
+  if (when.getTime() > Date.now() + 86400_000) return fail("The sale date can't be in the future.");
+  const store = await import("@/lib/inventory/store");
+  let car: { title: string; price: number | null } | null = null;
+  try { car = await store.carBasics(id); } catch { return NO_DB; }
+  if (!car) return fail("That car isn't in the inventory.");
+  const sql = await (await import("@/lib/db")).readyDb();
+  if (!sql) return NO_DB;
+  const buyer = sale?.buyer ?? { mode: "none" };
+  let who: { key: string; name: string | null } | null = null;
+  if (buyer.mode === "existing") {
+    if (!/^[\w@.+:-]{1,120}$/.test(String(buyer.key))) return fail("Pick the customer again.");
+    const [c] = await sql`select key, name from customers where key = ${buyer.key}`;
+    if (!c) return fail("That customer wasn't found. Search again, or add them as new.");
+    who = { key: c.key, name: c.name ?? null };
+  } else if (buyer.mode === "new") {
+    const added = await addCustomerAction({ name: buyer.name, phone: buyer.phone, email: buyer.email ?? "", vehicle: car.title, heardFrom: "", notes: "", purchased: true, purchasedOn: String(sale.date) });
+    if (!added.ok || !added.key) return fail(added.ok ? "Couldn't add the customer." : added.error);
+    who = { key: added.key, name: cleanName(buyer.name, 80) };
+  }
+  if (who && buyer.mode === "existing") {
+    await sql`update customers set status = 'purchased', purchased_at = ${when}, purchased_vehicle = ${car.title}, purchase_followup_at = null, contacted_at = coalesce(contacted_at, now()), updated_at = now() where key = ${who.key}`;
+  }
+  try { await store.markSold(id, amount, when, staffName, who, note); } catch { return NO_DB; }
+  if (who) {
+    const { logActivity } = await import("@/lib/crm/queries");
+    await logActivity(who.key, "status", `Purchased: ${car.title}${(amount ?? car.price) ? ` for $${(amount ?? car.price)!.toLocaleString("en-US")}` : ""}`, staffName).catch(() => undefined);
+    revalidatePath("/customers"); revalidatePath("/pipeline");
+  }
+  revalidatePath("/inventory");
+  return { ok: true, message: who ? `Marked sold to ${who.name || "the customer"}, who is now marked Purchased.` : "Marked sold." };
 }
 
 const carIds = (ids: unknown) => (Array.isArray(ids) ? ids : []).map(String).filter((i) => /^[\w-]{1,60}$/.test(i)).slice(0, 500);
@@ -744,19 +788,11 @@ export async function removeCarsAction(ids: string[]): Promise<ActionResult> {
   return { ok: true, message: `${n} car${n === 1 ? "" : "s"} deleted.` };
 }
 
-export async function markSoldAction(id: string, price: string, date: string): Promise<ActionResult> {
+export async function markSoldAction(id: string, sale: SaleInput): Promise<ActionResult> {
   const staff = await requireStaff();
   if (!staff) return fail("Your session ended. Sign in again.");
   if (!/^[\w-]{1,60}$/.test(id)) return fail("Unknown car.");
-  const dollars = String(price ?? "").replace(/[^\d]/g, "");
-  const amount = dollars ? Number(dollars) : null;
-  if (amount !== null && amount > 10_000_000) return fail("That price looks too high.");
-  const when = /^\d{4}-\d{2}-\d{2}$/.test(String(date)) ? new Date(`${date}T12:00:00-05:00`) : new Date();
-  if (when.getTime() > Date.now() + 86400_000) return fail("The sale date can't be in the future.");
-  const { markSold } = await import("@/lib/inventory/store");
-  try { await markSold(id, amount, when, staff.name); } catch { return NO_DB; }
-  revalidatePath("/inventory");
-  return { ok: true, message: "Marked sold." };
+  return recordSale(staff.name, id, sale, "Marked sold by staff");
 }
 
 export async function markAvailableAction(id: string): Promise<ActionResult> {

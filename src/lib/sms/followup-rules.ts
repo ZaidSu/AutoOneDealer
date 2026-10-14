@@ -23,3 +23,22 @@ export function followupState(c: { status: string; purchasedAt: Date | null; fol
   if (now.getTime() > dueOn.getTime() + FOLLOWUP_WINDOW_DAYS * 86_400_000) return { state: "too_late", dueOn };
   return { state: "due", dueOn };
 }
+
+/** The words a staff-written follow-up message can use; each is filled in per customer. */
+export const FOLLOWUP_PLACEHOLDERS = ["{first_name}", "{car}", "{dealership}"] as const;
+export const MAX_FOLLOWUP_MESSAGE = 500;
+
+export function cleanFollowupMessage(value: unknown): string {
+  return String(value ?? "").replace(/\r\n/g, "\n").trim().slice(0, MAX_FOLLOWUP_MESSAGE);
+}
+
+/** Fills {first_name}, {car} and {dealership} into the staff-written follow-up. No name reads "there", no car reads "your car". */
+export function renderFollowupMessage(template: string, v: { firstName: string | null; car: string | null; dealership: string }): string {
+  return cleanFollowupMessage(template)
+    .replace(/\{first_name\}/gi, v.firstName?.trim() || "there")
+    .replace(/\{car\}/gi, v.car?.trim() || "car").replace(/\b(your|the) car car\b/gi, "$1 car")
+    .replace(/\{dealership\}/gi, v.dealership)
+    .replace(/\{[a-z_]+\}/gi, "")
+    .replace(/[ \t]{2,}/g, " ")
+    .trim();
+}

@@ -9,6 +9,7 @@ import { readyDb, trace } from "@/lib/db";
 import { getSetting, setSetting } from "@/lib/db/data";
 import { aiStartDate, dataStartDate, dealership } from "@/lib/dealership";
 import { aiHoursOpen, aiHoursText, aiNextOpening } from "@/lib/ai/schedule";
+import { hoursBlock } from "@/lib/ai/hours-block";
 import { withGmail } from "@/lib/gmail";
 import { loadGmailConnection } from "@/lib/gmail/connection";
 import { channelOn } from "@/lib/ai/switches";
@@ -130,6 +131,7 @@ Phone: ${info.phone || "not given"}
 Website: ${info.website || "not given"}
 Hours:
 ${hours}
+${hoursBlock(info)}
 Links:
 ${info.links || "none"}
 Other details:

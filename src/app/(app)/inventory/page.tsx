@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import Link from "next/link";
 import { AddSale, BackOnLot, CheckNowButton, ConfirmMissing, ImportText, LotTable, UploadSheet, RemoveCar, RestoreCar } from "@/components/inventory/InventoryActions";
 import DbNotice from "@/components/ui/DbNotice";
 import PageHeader from "@/components/ui/PageHeader";
@@ -90,14 +91,15 @@ export default async function InventoryPage({ searchParams }: { searchParams?: P
         </div>
         {sold.length === 0 ? <p className="panel p-5 text-muted">No sales recorded yet. Once a car leaves your website it shows up here.</p> : (
           <div className="panel overflow-x-auto">
-            <table className="w-full min-w-[640px] text-left text-[15px]">
-              <thead className="border-b border-line text-sm text-muted"><tr><th className="px-4 py-2.5 font-semibold">Car</th><th className="px-4 py-2.5 font-semibold">Sold for</th><th className="px-4 py-2.5 font-semibold">Date</th><th className="px-4 py-2.5 font-semibold">How we know</th><th className="px-4 py-2.5" /></tr></thead>
+            <table className="w-full min-w-[760px] text-left text-[15px]">
+              <thead className="border-b border-line text-sm text-muted"><tr><th className="px-4 py-2.5 font-semibold">Car</th><th className="px-4 py-2.5 font-semibold">Sold for</th><th className="px-4 py-2.5 font-semibold">Date</th><th className="px-4 py-2.5 font-semibold">Customer</th><th className="px-4 py-2.5 font-semibold">How we know</th><th className="px-4 py-2.5" /></tr></thead>
               <tbody className="divide-y divide-line">
                 {sold.map((c) => (
                   <tr key={c.id}>
                     <td className="px-4 py-2.5 font-medium">{c.title}</td>
                     <td className="px-4 py-2.5 tabular-nums">{usd(c.soldPrice ?? c.price)}</td>
                     <td className="px-4 py-2.5 text-muted">{c.soldAt ? day(c.soldAt) : "date unknown"}</td>
+                    <td className="px-4 py-2.5">{c.soldCustomerKey ? <Link href={`/customers/${encodeURIComponent(c.soldCustomerKey)}`} className="font-medium hover:underline">{c.soldCustomerName || "Customer"}</Link> : <span className="text-muted">none recorded</span>}</td>
                     <td className="px-4 py-2.5 text-muted">{c.soldBy ? `${c.soldNote ?? "By hand"} (${c.soldBy})` : c.soldNote}</td>
                     <td className="px-4 py-2.5 text-right"><span className="inline-flex gap-2"><BackOnLot id={c.id} /><RemoveCar id={c.id} /></span></td>
                   </tr>

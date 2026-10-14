@@ -171,7 +171,7 @@ export async function applyInventory(inv: Inventory): Promise<SyncState> {
 // ---- reading ----
 export type StoredCar = {
   id: string; url: string | null; year: number | null; make: string | null; model: string | null; slug: string | null; title: string; price: number | null; mileage: number | null;
-  status: "available" | "sold" | "deleted"; firstSeen: number; lastSeen: number; soldAt: number | null; soldPrice: number | null; soldBy: string | null; soldNote: string | null;
+  status: "available" | "sold" | "deleted"; firstSeen: number; lastSeen: number; soldAt: number | null; soldPrice: number | null; soldBy: string | null; soldNote: string | null; soldCustomerKey: string | null; soldCustomerName: string | null;
   vin: string | null; imageUrl: string | null; images: string[];
 };
 const ms = (v: unknown) => (v ? new Date(v as string).getTime() : null);
@@ -180,6 +180,7 @@ const toCar = (r: Record<string, unknown>): StoredCar => ({
   title: (r.title as string) || [r.year, r.make, r.model].filter(Boolean).join(" "), price: (r.price as number) ?? null, mileage: (r.mileage as number) ?? null,
   status: r.status as "available" | "sold" | "deleted", firstSeen: ms(r.first_seen) ?? 0, lastSeen: ms(r.last_seen) ?? 0, soldAt: ms(r.sold_at), soldPrice: (r.sold_price as number) ?? null,
   soldBy: (r.sold_by as string) ?? null, soldNote: (r.sold_note as string) ?? null,
+  soldCustomerKey: (r.sold_customer_key as string) ?? null, soldCustomerName: (r.sold_customer_name as string) ?? null,
   vin: (r.vin as string) ?? null, imageUrl: (r.image_url as string) ?? null, images: Array.isArray(r.images) ? (r.images as string[]) : [],
 });
 
@@ -251,18 +252,27 @@ export async function aiViewOfInventory(): Promise<{ ok: boolean; text: string; 
 }
 
 // ---- by hand ----
-export async function markSold(id: string, price: number | null, soldOn: Date, by: string) {
+export async function markSold(id: string, price: number | null, soldOn: Date, by: string, buyer: { key: string; name: string | null } | null = null, note = "Marked sold by staff") {
   dropCached("inv:");
   const sql = await readyDb();
   if (!sql) throw new Error("no_db");
-  await sql`update inventory set status = 'sold', sold_at = ${soldOn}, sold_price = coalesce(${price}, price), sold_by = ${by}, sold_note = 'Marked sold by staff', updated_at = now() where id = ${id}`;
+  await sql`update inventory set status = 'sold', sold_at = ${soldOn}, sold_price = coalesce(${price}, price), sold_by = ${by}, sold_note = ${note},
+    sold_customer_key = ${buyer?.key ?? null}, sold_customer_name = ${buyer?.name ?? null}, updated_at = now() where id = ${id}`;
+}
+/** A car's title and listed price (for the sale form and the customer's record). */
+export async function carBasics(id: string): Promise<{ title: string; price: number | null } | null> {
+  const sql = await readyDb();
+  if (!sql) return null;
+  const [r] = await sql`select title, year, make, model, price from inventory where id = ${id}`;
+  if (!r) return null;
+  return { title: (r.title as string) || [r.year, r.make, r.model].filter(Boolean).join(" "), price: (r.price as number) ?? null };
 }
 export async function markAvailable(id: string) {
   dropCached("inv:");
   const sql = await readyDb();
   if (!sql) throw new Error("no_db");
   // Back on the lot. Cleared of the sale; the website decides from here (if it's still listed it stays available).
-  await sql`update inventory set status = 'available', sold_at = null, sold_price = null, sold_by = null, sold_note = null, missed = 0, last_seen = now(), updated_at = now() where id = ${id}`;
+  await sql`update inventory set status = 'available', sold_at = null, sold_price = null, sold_by = null, sold_note = null, sold_customer_key = null, sold_customer_name = null, missed = 0, last_seen = now(), updated_at = now() where id = ${id}`;
 }
 export async function addSale(input: { title: string; year: number | null; price: number; soldOn: Date }, by: string) {
   dropCached("inv:");

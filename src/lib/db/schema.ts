@@ -239,6 +239,9 @@ alter table inventory add column if not exists image_url text;
 alter table inventory add column if not exists vin text;
 alter table inventory add column if not exists images jsonb not null default '[]'::jsonb;
 alter table inventory add column if not exists details_at timestamptz;
+-- v24: who bought a sold car
+alter table inventory add column if not exists sold_customer_key text;
+alter table inventory add column if not exists sold_customer_name text;
 `;
 
 export async function setupDatabase(): Promise<void> {
