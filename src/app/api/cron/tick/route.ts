@@ -12,6 +12,7 @@ import { chargeDueBillsByCard, collectOpenBills, ensureInvoice, getBillingSettin
 import { addUsageChargesToStripe, stripeBillingOn } from "@/lib/billing/stripe-sync";
 import { periodLabel } from "@/lib/billing/types";
 import { withGmail } from "@/lib/gmail";
+import { recordGmailCheck } from "@/lib/gmail/health";
 import { syncLeads } from "@/lib/leads/sync";
 import { enrichInventory, inDailyWindow, runDailyRead, seedInventoryOnce } from "@/lib/inventory/store";
 import { syncReviews } from "@/lib/reviews/store";
@@ -42,9 +43,12 @@ export async function GET(req: NextRequest) {
     Promise.race([work, new Promise<T>((_, no) => setTimeout(() => no(new Error("took too long, will retry next run")), Math.max(1_000, ms)))]);
   try {
     const sync = await within(24_000, withGmail((gmail) => syncLeads(gmail, { timeLimitMs: 20_000 }), undefined, "background"));
+    // Remember whether Gmail works: a red bar on every page and a text to the dealership phone if it doesn't.
+    await recordGmailCheck(sync.status === "ok" ? { ok: true } : sync.status === "error" ? { ok: false, code: sync.code, message: sync.message } : { ok: false, code: "not_connected", message: "Gmail isn't connected, so lead emails aren't being read or answered. Open Settings and click Connect Gmail." });
     report.leads = sync.status === "ok" ? ("busy" in sync.data ? "already updating" : { added: sync.data.added ?? 0, total: sync.data.saved }) : sync.status === "error" ? sync.message : "Gmail isn't connected";
   } catch (error) {
     report.leads = `failed: ${error instanceof Error ? error.message : "unknown"}`;
+    // Taking too long once is not a broken connection, so this does not change the saved Gmail state.
   }
   // The update emails come right after the lead import and BEFORE the slow AI-writing steps below. Those can take most of this
   // run's 60 seconds, and a timer run that is cut off never reaches anything after them (which is why updates went missing).

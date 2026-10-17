@@ -76,6 +76,7 @@ type Me = { name: string; role?: string; roleLabel: string; dealershipName: stri
 
 export default function AppShell({ children }: { children: React.ReactNode }) {
   const me = useLive<Me>("/api/me", { every: 10 * 60_000 }).data;
+  const status = useLive<{ gmail: string | null }>("/api/status", { every: 5 * 60_000 }).data;
   const dealershipName = me?.dealershipName ?? "Auto One Motors";
   const pathname = usePathname();
   const [open, setOpen] = useState(false);
@@ -143,6 +144,12 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
       </aside>
 
       <div className="min-w-0">
+        {status?.gmail && (
+          <div role="alert" className="border-b border-signal/30 bg-warn-soft px-5 py-3 text-[15px] sm:px-8 lg:px-12">
+            <span className="font-semibold text-signal">Email is not working.</span> AutoDash can&apos;t read or answer lead emails right now (texts still work). {status.gmail}{" "}
+            <Link href="/settings" className="font-semibold text-signal underline">Reconnect Gmail</Link>
+          </div>
+        )}
         <div className="flex items-center gap-3 px-5 pt-5 sm:px-8 lg:px-12 lg:pt-7">
           <CommandSearch />
           {me?.canPreview && <ViewAsMenu current={me.viewAs ?? null} />}

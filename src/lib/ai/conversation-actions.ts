@@ -4,6 +4,7 @@
 //    the dealership's phone gets a text with their name, number, what they want and what was said
 import { aiConfigured, askClaude } from "@/lib/ai/claude";
 import { ACTIONS_SYSTEM, parseActions, repAlertText } from "@/lib/ai/action-parse";
+import { calendarTable, clock12, shortDate, stamp, withinOpeningHours } from "@/lib/ai/calendar";
 import { logRepAlert } from "@/lib/ai/rep-alerts";
 import { getDealershipInfo, repAlertNumber } from "@/lib/ai/settings";
 import { logActivity } from "@/lib/crm/queries";
@@ -12,9 +13,10 @@ import { createAppointment } from "@/lib/db/data";
 import { dealership } from "@/lib/dealership";
 import { sendSms, tenDigits, toE164, twilioConfigured } from "@/lib/sms/twilio";
 import { addDays, dayKey, zonedToUtc } from "@/lib/utils/time";
-import { formatDateTime } from "@/lib/utils/format";
 
-type Ctx = { customerKey: string | null; name: string | null; phone: string | null; email?: string | null; vehicle: string | null; conversation: string; channel: "text" | "email" };
+type Ctx = { customerKey: string | null; name: string | null; phone: string | null; email?: string | null; vehicle: string | null; conversation: string; channel: "text" | "email";
+  /** When the customer wrote their latest message (ms). "Tomorrow" and "Tuesday" are counted from this day, not from when the check runs. */
+  sentAt?: number };
 
 /** `backfill`: looking back through old conversations. No visits are booked, and anyone who was ever alerted before is skipped. */
 export async function actOnConversation(ctx: Ctx, opts: { backfill?: boolean } = {}): Promise<{ booked: boolean; repAlerted: boolean; reason?: string }> {
@@ -23,10 +25,19 @@ export async function actOnConversation(ctx: Ctx, opts: { backfill?: boolean } =
     if (!aiConfigured() || !ctx.customerKey || ctx.conversation.trim().length < 5) return none;
     const sql = await readyDb();
     if (!sql) return none;
-    const today = dayKey(Date.now(), dealership.timeZone);
-    const now = new Date().toLocaleString("en-US", { timeZone: dealership.timeZone, weekday: "long", month: "long", day: "numeric", year: "numeric", hour: "numeric", minute: "2-digit" });
-    const raw = await askClaude({ system: ACTIONS_SYSTEM, prompt: `NOW: ${now} (${today}, dealership local time)\nCAR ON FILE: ${ctx.vehicle ?? "unknown"}\n\nCONVERSATION (oldest first):\n${ctx.conversation.slice(-4000)}`, maxTokens: 250 });
-    const actions = parseActions(raw, today, addDays(today, 45));
+    const nowMs = Date.now();
+    const today = dayKey(nowMs, dealership.timeZone);
+    // The day the customer wrote ("tomorrow", "Tuesday" are counted from here); normally today.
+    const refMs = ctx.sentAt && ctx.sentAt <= nowMs && nowMs - ctx.sentAt < 3 * 86400_000 ? ctx.sentAt : nowMs;
+    const refDay = dayKey(refMs, dealership.timeZone);
+    const refClock = new Intl.DateTimeFormat("en-GB", { timeZone: dealership.timeZone, hour: "2-digit", minute: "2-digit", hour12: false }).format(new Date(refMs)).replace(/^24:/, "00:");
+    const info = await getDealershipInfo();
+    const raw = await askClaude({
+      system: ACTIONS_SYSTEM,
+      prompt: `NOW: ${stamp(nowMs, dealership.timeZone)} (${today}, dealership local time)\nTHE CUSTOMER'S LATEST MESSAGE WAS SENT: ${stamp(refMs, dealership.timeZone)}\nCAR ON FILE: ${ctx.vehicle ?? "unknown"}\n\nCALENDAR (read dates from here):\n${calendarTable(refDay, 21)}\n\nCONVERSATION (oldest first):\n${ctx.conversation.slice(-4000)}`,
+      maxTokens: 300,
+    });
+    const actions = parseActions(raw, refDay, addDays(today, 45), refClock);
     const out = { ...none };
     const digits = String(ctx.phone ?? "").replace(/\D/g, "");
     const phone10 = digits.length === 11 && digits.startsWith("1") ? digits.slice(1) : digits;
@@ -35,18 +46,31 @@ export async function actOnConversation(ctx: Ctx, opts: { backfill?: boolean } =
     if (actions.booking && !opts.backfill) {
       const startsAt = zonedToUtc(actions.booking.date, actions.booking.time, dealership.timeZone);
       if (startsAt && startsAt.getTime() > Date.now()) {
+        const when = `${shortDate(actions.booking.date)} at ${clock12(actions.booking.time)}`;
+        const closedNote = withinOpeningHours(info.hours, actions.booking.date, actions.booking.time) ? "" : " This time is outside your opening hours, so check it.";
+        const said = actions.booking.said ? ` The customer wrote: "${actions.booking.said}".` : "";
         // Already booked around then? Then it's the same visit.
         const [dupe] = await sql`select 1 from appointments where customer_key = ${ctx.customerKey} and status = 'scheduled'
           and starts_at between ${new Date(startsAt.getTime() - 3 * 3600_000)} and ${new Date(startsAt.getTime() + 3 * 3600_000)} limit 1`;
         if (!dupe) {
-          await createAppointment({
-            customerKey: ctx.customerKey, customerName: who, phone: phone10, email: ctx.email ?? null,
-            vehicle: actions.booking.vehicle ?? ctx.vehicle ?? null, repId: null, startsAt, durationMin: 60,
-            notes: `Booked by the AI from the ${ctx.channel} conversation. Check it, and assign a salesperson.`,
-          });
-          await logActivity(ctx.customerKey, "appointment", `AI booked a visit for ${formatDateTime(startsAt.getTime())}`, "AI (automatic)").catch(() => undefined);
-          trace("ai", `booked ${who} for ${actions.booking.date} ${actions.booking.time}`);
-          out.booked = true;
+          // The customer changed their mind? Move the visit the AI booked earlier instead of leaving two.
+          const [earlier] = await sql`select id from appointments where customer_key = ${ctx.customerKey} and status = 'scheduled' and starts_at > now()
+            and notes like 'Booked by the AI%' order by created_at desc limit 1`.catch(() => [] as Record<string, unknown>[]);
+          if (earlier) {
+            await sql`update appointments set starts_at = ${startsAt}, vehicle = coalesce(${actions.booking.vehicle ?? ctx.vehicle ?? null}, vehicle),
+              notes = ${`Moved by the AI from the ${ctx.channel} conversation (the customer changed the plan).${said}${closedNote}`} where id = ${earlier.id}`;
+            await logActivity(ctx.customerKey, "appointment", `AI moved the visit to ${when}`, "AI (automatic)").catch(() => undefined);
+            out.booked = true;
+          } else {
+            await createAppointment({
+              customerKey: ctx.customerKey, customerName: who, phone: phone10, email: ctx.email ?? null,
+              vehicle: actions.booking.vehicle ?? ctx.vehicle ?? null, repId: null, startsAt, durationMin: 60,
+              notes: `Booked by the AI from the ${ctx.channel} conversation. Check it, and assign a salesperson.${said}${closedNote}`,
+            });
+            await logActivity(ctx.customerKey, "appointment", `AI booked a visit for ${when}${actions.booking.said ? ` (they wrote: "${actions.booking.said}")` : ""}`, "AI (automatic)").catch(() => undefined);
+            trace("ai", `booked ${who} for ${actions.booking.date} ${actions.booking.time}`);
+            out.booked = true;
+          }
         }
       }
     }
@@ -58,7 +82,6 @@ export async function actOnConversation(ctx: Ctx, opts: { backfill?: boolean } =
         ? await sql`update customers set rep_requested_at = now() where key = ${ctx.customerKey} and rep_requested_at is null returning key`
         : await sql`update customers set rep_requested_at = now() where key = ${ctx.customerKey} and (rep_requested_at is null or rep_requested_at < now() - interval '24 hours') returning key`;
       if (claimed.length) {
-        const info = await getDealershipInfo();
         const to = toE164(repAlertNumber(info));
         const base = (process.env.APP_URL || "https://auto-one-dealer.vercel.app").replace(/\/$/, "");
         if (!twilioConfigured() || !to || tenDigits(to) === tenDigits(String(process.env.TWILIO_PHONE_NUMBER ?? ""))) {

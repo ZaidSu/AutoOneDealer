@@ -9,6 +9,8 @@ import { getSetting, setSetting } from "@/lib/db/data";
 import { aiStartDate, dealership } from "@/lib/dealership";
 import { aiHoursOpen } from "@/lib/ai/schedule";
 import { hoursBlock } from "@/lib/ai/hours-block";
+import { calendarTable, stamp } from "@/lib/ai/calendar";
+import { dayKey } from "@/lib/utils/time";
 import { channelOn } from "@/lib/ai/switches";
 import { actOnConversation } from "@/lib/ai/conversation-actions";
 import { availabilityNote } from "@/lib/inventory";
@@ -202,17 +204,21 @@ export async function aiReplyToText(customerKey: string | null, phone: string, {
   const [info, training] = await Promise.all([getDealershipInfo(), getAiTraining()]);
   const hours = info.hours.map((h, i) => `${DAYS[i]}: ${h.closed ? "Closed" : `${h.open} to ${h.close}`}`).join("; ");
   const firstName = String(customer?.name ?? "").trim().split(/\s+/)[0] || null;
-  const now = new Date().toLocaleString("en-US", { timeZone: dealership.timeZone, weekday: "long", hour: "numeric", minute: "2-digit" });
+  const now = stamp(Date.now(), dealership.timeZone);
+  const calendar = calendarTable(dayKey(Date.now(), dealership.timeZone), 21);
+  const line = (m: { direction: string; body: string; at: number }) => `[${stamp(m.at, dealership.timeZone)}] ${m.direction === "in" ? "Customer" : "Dealership"}: ${m.body}`;
 
   const system = `You text customers for ${dealership.name}, a used car dealership in the Dallas area. Text the way a friendly, sharp salesperson actually texts:
 - Short: usually 1 to 3 sentences, under 300 characters. One message, no lists, no markdown, no emojis unless the customer used them first.
 - Natural and warm, not stiff or salesy. Use their first name sometimes, not every message. Contractions are good. Never start with "Great question" or "Certainly".
 - Answer what they asked using only the facts below. Never make up prices, financing approvals, rates, payments or trade-in values; if you don't know, say you'll check with the team and get right back to them. For availability, use the CARS ON OUR LOT list and the LIVE INVENTORY CHECK below: if they ask about a car that is on the list, say it's available and give the price, mileage and link. Only say you'll check with the team if there is no list or check at all.
-- Keep things moving toward a visit or a call: offer specific times when it fits. When they pick a day and time to come in, confirm it back clearly (day, date and time): it gets booked automatically. If they want to talk to a person, or you can't answer something, offer to have a sales rep call them; if they say yes, tell them a rep will call soon (the team is alerted automatically).
+- Keep things moving toward a visit or a call: offer specific times when it fits. When they pick a day and time to come in, confirm it back clearly with the weekday, date and time, like "Tuesday, Oct 20 at 6:00 PM": it gets booked automatically. Take the date ONLY from the CALENDAR in the prompt (never work out a date yourself). If they only say a weekday, use the next one on the calendar and say the full date so they can correct you. Each message in the conversation shows when it was sent: a customer's "tomorrow" or "Tuesday" counts from that message, not from now. If the time they pick is outside our opening hours, offer the closest time we are open. If they want to talk to a person, or you can't answer something, offer to have a sales rep call them; if they say yes, tell them a rep will call soon (the team is alerted automatically).
 - Don't claim to be a person. If they ask whether they're talking to a bot, say you're the dealership's assistant and a team member can call them.
 - Follow the dealership's instructions below. If the prompt says the dealership is CLOSED right now, its closed-hours rules come first: never push a call or a visit right now, and say the team will follow up when we open. Reply with only the text message itself.`;
   const stillForSale = await availabilityNote(customer?.last_vehicle, { phone: info.phone });
   const prompt = `NOW: ${now} (Dallas time)
+CALENDAR (use these dates):
+${calendar}
 DEALERSHIP: ${dealership.name}. Address: ${info.address || "not given"}. Phone: ${info.phone || "not given"}. Website: ${info.website || "not given"}.
 HOURS: ${hours}
 ${hoursBlock(info)}
@@ -226,7 +232,7 @@ ${stillForSale ? `${stillForSale}\n\n` : ""}CUSTOMER: ${firstName ?? "name unkno
 WHAT'S HAPPENED SO FAR: ${summary?.summary ?? "no summary yet"}
 
 TEXT CONVERSATION (oldest first):
-${thread.map((m) => `${m.direction === "in" ? "Customer" : "Dealership"}: ${m.body}`).join("\n")}
+${thread.map(line).join("\n")}
 
 Write the dealership's next text.`;
   const reply = (await askClaude({ system, prompt, maxTokens: 300 })).replace(/^["']|["']$/g, "").trim().slice(0, 600);
@@ -235,7 +241,8 @@ Write the dealership's next text.`;
   // If they agreed to a visit time or asked for a sales rep, book it / alert the dealership (never blocks the reply).
   await actOnConversation({
     customerKey, name: customer?.name ?? null, phone: customer?.phone ?? e164, email: customer?.email ?? null, vehicle: customer?.last_vehicle ?? null, channel: "text",
-    conversation: `${thread.map((m) => `${m.direction === "in" ? "Customer" : "Dealership"}: ${m.body}`).join("\n")}\nDealership (reply being sent now): ${reply}`,
+    conversation: `${thread.map(line).join("\n")}\nDealership (reply being sent now): ${reply}`,
+    sentAt: last.direction === "in" ? last.at : undefined,
   });
   // One waiting draft per conversation: a newer customer text replaces the older draft.
   await sql`update sms_messages set status = 'discarded' where phone = ${e164} and status = 'draft'`;

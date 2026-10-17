@@ -10,6 +10,8 @@ import { getSetting, setSetting } from "@/lib/db/data";
 import { aiStartDate, dataStartDate, dealership } from "@/lib/dealership";
 import { aiHoursOpen, aiHoursText, aiNextOpening } from "@/lib/ai/schedule";
 import { hoursBlock } from "@/lib/ai/hours-block";
+import { calendarTable, stamp } from "@/lib/ai/calendar";
+import { dayKey } from "@/lib/utils/time";
 import { withGmail } from "@/lib/gmail";
 import { loadGmailConnection } from "@/lib/gmail/connection";
 import { channelOn } from "@/lib/ai/switches";
@@ -104,6 +106,7 @@ export async function draftNewReplies({ max = 4, force = false } = {}): Promise<
         await actOnConversation({
           customerKey: String(lead.customer_key), name: (lead.name as string) ?? null, phone: (lead.phone as string) ?? null, email, vehicle: (lead.vehicle as string) ?? null, channel: "email",
           conversation: `Customer (first message${lead.provider ? `, from ${lead.provider}` : ""}): ${String(lead.comments).slice(0, 1500)}\nDealership (reply being sent now): ${body}`,
+          sentAt: lead.received_at ? new Date(lead.received_at as string).getTime() : undefined,
         });
       }
       if (row && sendNow) {
@@ -132,6 +135,8 @@ Website: ${info.website || "not given"}
 Hours:
 ${hours}
 ${hoursBlock(info)}
+TODAY IS ${stamp(Date.now(), dealership.timeZone)}. CALENDAR (take every date from here, never work out a date yourself):
+${calendarTable(dayKey(Date.now(), dealership.timeZone), 21)}
 Links:
 ${info.links || "none"}
 Other details:
@@ -155,7 +160,7 @@ Write like a friendly, professional salesperson at the dealership. Rules:
 - Thank them by first name if you have it, mention the exact car they asked about, and answer their question if you can from the facts below.
 - Never make up prices, financing approvals, interest rates, trade-in values, or anything not in the facts. If you don't know, say a salesperson will confirm.
 - Availability: use the LIVE INVENTORY CHECK and the CARS ON OUR LOT list below. A car on the list is available; one the check says is not listed may be sold. If there is no check or list, say a salesperson will confirm it.
-- End by inviting them to come see the car, with a clear next step (reply with a time that works, or call).
+- End by inviting them to come see the car, with a clear next step (reply with a time that works, or call). When you name a visit day, write the weekday and date exactly as in the CALENDAR.
 - Sign off as "The team at ${dealership.name}" with the dealership phone number if you have it.
 - If the customer wrote in Spanish, reply in Spanish.
 - If the lead is from OfferUp, the customer is chatting inside the OfferUp app: answer their question directly in 40 to 90 words, in a conversational tone, with no "thank you for your inquiry" opening.

@@ -5,7 +5,7 @@ import { parseActions } from "../../src/lib/ai/action-parse.ts";
 const today = "2026-10-08", last = "2026-11-22";
 test("a clear booking and rep request are read", () => {
   const a = parseActions('Sure: {"booking": {"date": "2026-10-10", "time": "14:00", "vehicle": "2019 Camry"}, "wantsRep": {"reason": "wants to talk price"}}', today, last);
-  assert.deepEqual(a.booking, { date: "2026-10-10", time: "14:00", vehicle: "2019 Camry" });
+  assert.deepEqual(a.booking, { date: "2026-10-10", time: "14:00", vehicle: "2019 Camry", said: null });
   assert.equal(a.wantsRep?.reason, "wants to talk price");
 });
 test("vague, past, far-off or malformed bookings are ignored", () => {
@@ -34,4 +34,13 @@ test("the alert text has the name, phone, car, what they want and what was said,
   assert.ok(t.endsWith(link));
   const long = repAlertText({ who: "Sam", phone: null, car: null, reason: "x", summary: "y".repeat(900), link });
   assert.ok(long.length <= 462 && long.endsWith(link) && long.includes("…"));
+});
+
+test("the date comes from the customer's day words, not from a date the AI worked out", () => {
+  // Thu Oct 15 2026. The AI wrongly says Oct 15 for "tuesday"; the code gives the next Tuesday, Oct 20.
+  const a = parseActions('{"booking": {"day": "tuesday", "date": "2026-10-15", "time": "18:00", "said": "tuesday at 6pm"}}', "2026-10-15", "2026-11-29", "10:30");
+  assert.deepEqual(a.booking, { date: "2026-10-20", time: "18:00", vehicle: null, said: "tuesday at 6pm" });
+  assert.equal(parseActions('{"booking": {"day": "tomorrow", "time": "11:30"}}', "2026-10-15", "2026-11-29", "10:30").booking?.date, "2026-10-16");
+  assert.equal(parseActions('{"booking": {"day": "2026-10-24", "time": "11:30"}}', "2026-10-15", "2026-11-29").booking?.date, "2026-10-24");
+  assert.equal(parseActions('{"booking": {"day": "sometime", "time": "11:30"}}', "2026-10-15", "2026-11-29").booking, null);
 });

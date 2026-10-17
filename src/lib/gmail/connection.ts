@@ -33,6 +33,7 @@ export async function getGmailConnection(): Promise<GmailConnection | null> {
 
 export async function saveSharedGmailConnection(connection: GmailConnection) {
   cached = { value: connection, at: Date.now() };
+  await setSetting("gmail_health", null).catch(() => undefined); // freshly connected: the red bar goes away (the timer re-checks in 5 minutes)
   await setSetting(KEY, seal(connection, sessionSecret())).catch((e) => console.error("Couldn't save Gmail connection to database:", e?.message));
 }
 
