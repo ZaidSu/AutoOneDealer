@@ -805,6 +805,19 @@ export async function markAvailableAction(id: string): Promise<ActionResult> {
   return { ok: true, message: "Back on the lot." };
 }
 
+/** A customer put a deposit on a car (or it fell through). The AI then tells customers it is spoken for. */
+export async function setDepositAction(id: string, on: boolean): Promise<ActionResult> {
+  const staff = await requireStaff();
+  if (!staff) return fail("Your session ended. Sign in again.");
+  if (!/^[\w-]{1,60}$/.test(id)) return fail("Unknown car.");
+  const { setDeposit } = await import("@/lib/inventory/store");
+  let changed = false;
+  try { changed = await setDeposit(id, on, staff.name); } catch { return NO_DB; }
+  if (!changed) return fail("That car isn't on the lot any more.");
+  revalidatePath("/inventory");
+  return { ok: true, message: on ? "Marked as deposit taken. The AI will tell customers it's spoken for." : "Deposit removed. The car is available again." };
+}
+
 export async function removeCarAction(id: string): Promise<ActionResult> {
   const staff = await requireStaff();
   if (!staff) return fail("Your session ended. Sign in again.");
@@ -1060,5 +1073,94 @@ export async function sendTestTextAction(phone: string): Promise<ActionResult> {
     const base = (process.env.APP_URL || "https://auto-one-dealer.vercel.app").replace(/\/$/, "");
     const r = await sendSms(to, "AutoDash test: texting is working. Reply to this and it will show up in AutoDash.", `${base}/api/sms/status`);
     return { ok: true, message: `Sent to ${tenDigits(to)} (Twilio says: ${r.status}). It should arrive in a few seconds. Then reply to it to test incoming texts.` };
+  } catch (e) { return fail(e instanceof Error ? e.message : "The test text didn't send."); }
+}
+
+
+// ---- Registration stickers ----
+const regId = (v: unknown) => (Number.isInteger(Number(v)) && Number(v) > 0 ? Number(v) : null);
+
+export async function registrationStageAction(id: number, stage: string): Promise<ActionResult> {
+  const staff = await requireStaff();
+  if (!staff) return fail("Your session ended. Sign in again.");
+  const rules = await import("@/lib/registration/rules");
+  const st = rules.cleanStage(stage); const rid = regId(id);
+  if (!st || !rid) return fail("Unknown step.");
+  const store = await import("@/lib/registration/store");
+  try { await store.setStage(rid, st, staff.name); } catch { return NO_DB; }
+  revalidatePath("/registration");
+  return { ok: true };
+}
+
+export async function registrationCopyAction(id: number, copy: string): Promise<ActionResult> {
+  const staff = await requireStaff();
+  if (!staff) return fail("Your session ended. Sign in again.");
+  const rules = await import("@/lib/registration/rules");
+  const c = rules.cleanCopy(copy); const rid = regId(id);
+  if (!c || !rid) return fail("Unknown choice.");
+  const store = await import("@/lib/registration/store");
+  try { await store.setCopy(rid, c, staff.name); } catch { return NO_DB; }
+  revalidatePath("/registration");
+  return { ok: true };
+}
+
+export async function registrationDeferredAction(id: number, on: boolean): Promise<ActionResult> {
+  const staff = await requireStaff();
+  if (!staff) return fail("Your session ended. Sign in again.");
+  const rid = regId(id);
+  if (!rid) return fail("Unknown entry.");
+  const store = await import("@/lib/registration/store");
+  try { await store.setDeferred(rid, Boolean(on), staff.name); } catch { return NO_DB; }
+  revalidatePath("/registration");
+  return { ok: true };
+}
+
+export async function registrationEditAction(id: number, d: { name: string; phone: string; vehicle: string; note: string }): Promise<ActionResult> {
+  const staff = await requireStaff();
+  if (!staff) return fail("Your session ended. Sign in again.");
+  const rid = regId(id);
+  if (!rid) return fail("Unknown entry.");
+  const store = await import("@/lib/registration/store");
+  try { await store.editDetails(rid, { name: cleanName(d.name, 80), phone: cleanName(d.phone, 30), vehicle: cleanName(d.vehicle, 100), note: String(d.note ?? "").slice(0, 500) }, staff.name); } catch { return NO_DB; }
+  revalidatePath("/registration");
+  return { ok: true, message: "Saved." };
+}
+
+export async function registrationDeleteAction(id: number): Promise<ActionResult> {
+  const staff = await requireStaff();
+  if (!staff) return fail("Your session ended. Sign in again.");
+  const rid = regId(id);
+  if (!rid) return fail("Unknown entry.");
+  const store = await import("@/lib/registration/store");
+  try { await store.deleteRegistration(rid); } catch { return NO_DB; }
+  revalidatePath("/registration");
+  return { ok: true, message: "Deleted." };
+}
+
+export async function saveRegistrationSettingsAction(input: { on: boolean; phone: string; weeks: number }): Promise<ActionResult> {
+  const staff = await requireStaff();
+  if (!staff) return fail("Your session ended. Sign in again.");
+  const store = await import("@/lib/registration/store");
+  try {
+    const problem = await store.saveRegSettings({ on: Boolean(input.on), phone: String(input.phone ?? ""), weeks: Number(input.weeks) });
+    if (problem) return fail(problem);
+  } catch { return NO_DB; }
+  revalidatePath("/registration");
+  return { ok: true, message: "Saved." };
+}
+
+export async function sendRegistrationTestAction(): Promise<ActionResult> {
+  const staff = await requireStaff();
+  if (!staff) return fail("Your session ended. Sign in again.");
+  const { sendSms, toE164, twilioConfigured } = await import("@/lib/sms/twilio");
+  const store = await import("@/lib/registration/store");
+  const settings = await store.getRegSettings().catch(() => null);
+  if (!settings) return NO_DB;
+  const to = toE164(settings.phone);
+  if (!to) return fail("Save a manager number first.");
+  if (!twilioConfigured()) return fail("Texting isn't connected yet, so no text can be sent.");
+  try {
+    await sendSms(to, "AutoDash: this is a test. A few weeks after a sale, this number gets a text asking if the registration came in.");
+    return { ok: true, message: "Test sent. It should arrive in a few seconds." };
   } catch (e) { return fail(e instanceof Error ? e.message : "The test text didn't send."); }
 }

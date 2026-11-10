@@ -77,7 +77,7 @@ export default async function InventoryPage({ searchParams }: { searchParams?: P
           {q && <a href="/inventory" className="btn">Clear</a>}
         </form>
         {shown.length === 0 ? <p className="panel p-5 text-muted">{q ? "No cars match that search." : "No cars yet."}</p> : (
-          <LotTable rows={shown.map((c) => ({ id: c.id, title: c.title, url: c.url, imageUrl: c.imageUrl, photos: c.images.length, price: c.price, mileage: c.mileage, vin: c.vin, firstSeen: day(c.firstSeen) }))} />
+          <LotTable rows={shown.map((c) => ({ id: c.id, title: c.title, url: c.url, imageUrl: c.imageUrl, photos: c.images.length, price: c.price, mileage: c.mileage, vin: c.vin, firstSeen: day(c.firstSeen), deposit: c.depositAt != null }))} />
         )}
       </section>
 

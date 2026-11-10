@@ -2,6 +2,7 @@
 import { useState, useTransition } from "react";
 import { saveDealershipInfoAction, sendRepAlertTestAction } from "@/app/actions";
 import ReadOnlyNotice from "@/components/ai/ReadOnlyNotice";
+import { repAlertNumbers } from "@/lib/ai/rep-numbers";
 import { DAYS, type DealershipInfo } from "@/lib/ai/types";
 
 export default function DealershipInfoForm({ initial, canEdit }: { initial: DealershipInfo; canEdit: boolean }) {
@@ -31,23 +32,33 @@ export default function DealershipInfoForm({ initial, canEdit }: { initial: Deal
           <label className="field">Phone<input className="input" disabled={!canEdit} value={info.phone} onChange={set("phone")} inputMode="tel" placeholder="(214) 555-0123" /></label>
           <label className="field">Website<input className="input" disabled={!canEdit} value={info.website} onChange={set("website")} placeholder="https://…" /></label>
           <div className="field sm:col-span-2">
-            <label>Text a sales rep alert to
-              <input className="input" disabled={!canEdit} value={info.repAlertPhone ?? ""} onChange={set("repAlertPhone")} inputMode="tel" placeholder={info.phone || "(214) 555-0123"} />
-            </label>
+            <span>Text a sales rep alert to</span>
             <p className="mt-1 text-sm text-muted">
-              When a customer tells the AI they want a sales rep, AutoDash texts this number with their name, phone and car. Leave it blank to use the Phone above.
-              Right now it texts <span className="font-semibold text-ink">{(info.repAlertPhone ?? "").trim() || info.phone.trim() || "no number yet"}</span>.
-              Change it here whenever the number changes, then Save. It has to be a different number from the AutoDash texting number.
+              When a customer tells the AI they want a sales rep, AutoDash texts these numbers (up to 3 people) with the customer&apos;s name, phone and car. Leave the first blank to use the Phone above.
+              Change a number here whenever it changes, then Save. Each one has to be different from the AutoDash texting number.
             </p>
-            {canEdit && (
-              <div className="mt-2 flex flex-wrap items-center gap-3">
-                <button type="button" className="btn" disabled={testing} onClick={() => startTest(async () => {
-                  const r = await sendRepAlertTestAction((info.repAlertPhone ?? "").trim() || info.phone);
-                  setTest({ ok: r.ok, text: (r.ok ? r.message : r.error) ?? "" });
-                })}>{testing ? "Sending…" : "Send a test alert"}</button>
-                {test && <p role="status" className={`text-sm ${test.ok ? "text-go" : "text-signal"}`}>{test.text}</p>}
-              </div>
-            )}
+            <div className="mt-2 grid gap-3">
+              {(["repAlertPhone", "repAlertPhone2", "repAlertPhone3"] as const).map((k, i) => {
+                const value = (info[k] ?? "").trim() || (i === 0 ? info.phone.trim() : "");
+                return (
+                  <div key={k} className="flex flex-wrap items-center gap-2">
+                    <span aria-hidden className="grid size-8 shrink-0 place-items-center rounded-full bg-azure-soft text-sm font-bold text-azure">{i + 1}</span>
+                    <input className="input mt-0 min-w-[200px] flex-1" aria-label={`Alert number ${i + 1}`} disabled={!canEdit} value={info[k] ?? ""} onChange={(e) => { setInfo({ ...info, [k]: e.target.value }); setResult(null); }}
+                      inputMode="tel" placeholder={i === 0 ? info.phone || "(214) 555-0123" : "Optional: another person's number"} />
+                    {canEdit && value && (
+                      <button type="button" className="btn btn-sm" disabled={testing} onClick={() => startTest(async () => {
+                        const r = await sendRepAlertTestAction(value);
+                        setTest({ ok: r.ok, text: (r.ok ? r.message : r.error) ?? "" });
+                      })}>{testing ? "Sending…" : "Send a test"}</button>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+            <p className="mt-2 text-sm text-muted">
+              Right now it texts <span className="font-semibold text-ink">{repAlertNumbers(info).join(", ") || "no number yet"}</span>.
+            </p>
+            {test && <p role="status" className={`mt-1 text-sm ${test.ok ? "text-go" : "text-signal"}`}>{test.text}</p>}
           </div>
         </div>
       </section>

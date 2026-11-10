@@ -6,7 +6,8 @@ import { aiConfigured, askClaude } from "@/lib/ai/claude";
 import { ACTIONS_SYSTEM, parseActions, repAlertText } from "@/lib/ai/action-parse";
 import { calendarTable, clock12, shortDate, stamp, withinOpeningHours } from "@/lib/ai/calendar";
 import { logRepAlert } from "@/lib/ai/rep-alerts";
-import { getDealershipInfo, repAlertNumber } from "@/lib/ai/settings";
+import { repAlertNumbers } from "@/lib/ai/rep-numbers";
+import { getDealershipInfo } from "@/lib/ai/settings";
 import { logActivity } from "@/lib/crm/queries";
 import { readyDb, trace } from "@/lib/db";
 import { createAppointment } from "@/lib/db/data";
@@ -82,22 +83,32 @@ export async function actOnConversation(ctx: Ctx, opts: { backfill?: boolean } =
         ? await sql`update customers set rep_requested_at = now() where key = ${ctx.customerKey} and rep_requested_at is null returning key`
         : await sql`update customers set rep_requested_at = now() where key = ${ctx.customerKey} and (rep_requested_at is null or rep_requested_at < now() - interval '24 hours') returning key`;
       if (claimed.length) {
-        const to = toE164(repAlertNumber(info));
         const base = (process.env.APP_URL || "https://auto-one-dealer.vercel.app").replace(/\/$/, "");
-        if (!twilioConfigured() || !to || tenDigits(to) === tenDigits(String(process.env.TWILIO_PHONE_NUMBER ?? ""))) {
-          await logRepAlert({ kind: "alert", customer: who, customerKey: ctx.customerKey, to: to ? tenDigits(to) : null, ok: false, sid: null, status: null, error: !twilioConfigured() ? "Texting isn't connected" : !to ? "No alert number is set" : "The alert number is the AutoDash texting number itself", body: "" });
-          await logActivity(ctx.customerKey, "note", "Needs a person, but the dealership phone couldn't be texted (set the number under AI setup -> Dealership info -> \"Text a sales rep alert to\").", "AI (automatic)").catch(() => undefined);
+        // Up to 3 people get the same text. The AutoDash texting number itself can't be one of them.
+        const numbers = repAlertNumbers(info, [String(process.env.TWILIO_PHONE_NUMBER ?? "")]);
+        if (!twilioConfigured() || numbers.length === 0) {
+          await logRepAlert({ kind: "alert", customer: who, customerKey: ctx.customerKey, to: null, ok: false, sid: null, status: null, error: !twilioConfigured() ? "Texting isn't connected" : "No alert number is set (or it is the AutoDash texting number itself)", body: "" });
+          await logActivity(ctx.customerKey, "note", "Needs a person, but no phone could be texted (set the numbers under AI setup -> Dealership info -> \"Text a sales rep alert to\").", "AI (automatic)").catch(() => undefined);
         } else {
           const body = repAlertText({ who, phone: phone10 || null, car: ctx.vehicle, reason: actions.wantsRep.reason, summary: actions.wantsRep.summary, link: `${base}/customers/${ctx.customerKey}` });
-          try {
-            const sent = await sendSms(to, body);
-            await logRepAlert({ kind: "alert", customer: who, customerKey: ctx.customerKey, to: tenDigits(to), ok: true, sid: sent.sid, status: sent.status, error: null, body });
-            await logActivity(ctx.customerKey, "note", `Needs a person (${actions.wantsRep.reason || "sales rep"}): the AI texted the dealership phone`, "AI (automatic)").catch(() => undefined);
+          let delivered = 0;
+          for (const n of numbers) {
+            const to = toE164(n);
+            if (!to) continue;
+            try {
+              const sent = await sendSms(to, body);
+              await logRepAlert({ kind: "alert", customer: who, customerKey: ctx.customerKey, to: tenDigits(to), ok: true, sid: sent.sid, status: sent.status, error: null, body });
+              delivered++;
+            } catch (error) {
+              await logRepAlert({ kind: "alert", customer: who, customerKey: ctx.customerKey, to: tenDigits(to), ok: false, sid: null, status: null, error: error instanceof Error ? error.message : "unknown error", body });
+            }
+          }
+          if (delivered) {
+            await logActivity(ctx.customerKey, "note", `Needs a person (${actions.wantsRep.reason || "sales rep"}): the AI texted ${delivered === 1 ? "the dealership phone" : `${delivered} phones`}`, "AI (automatic)").catch(() => undefined);
             out.repAlerted = true;
             out.reason = actions.wantsRep.reason;
-          } catch (error) {
-            await logRepAlert({ kind: "alert", customer: who, customerKey: ctx.customerKey, to: tenDigits(to), ok: false, sid: null, status: null, error: error instanceof Error ? error.message : "unknown error", body });
-            await logActivity(ctx.customerKey, "note", `Needs a person, but the text to the dealership phone failed: ${error instanceof Error ? error.message : "unknown error"}`, "AI (automatic)").catch(() => undefined);
+          } else {
+            await logActivity(ctx.customerKey, "note", "Needs a person, but the alert text didn't send. See AI setup -> Dealership info.", "AI (automatic)").catch(() => undefined);
           }
         }
       }

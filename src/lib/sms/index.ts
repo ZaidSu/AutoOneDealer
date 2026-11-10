@@ -1,5 +1,6 @@
 // Texting: conversations with customers, STOP/START handling, and AI replies that sound like a real salesperson.
 // Every text (sent, received, or an AI draft waiting for approval) is a row in sms_messages.
+import { CONVERSATION_RULES, DEPOSIT_RULES, isNoReply } from "@/lib/ai/status-rules";
 import { askClaude, aiConfigured } from "@/lib/ai/claude";
 import { getAiTraining, getDealershipInfo } from "@/lib/ai/settings";
 import { DAYS } from "@/lib/ai/types";
@@ -214,6 +215,8 @@ export async function aiReplyToText(customerKey: string | null, phone: string, {
 - Answer what they asked using only the facts below. Never make up prices, financing approvals, rates, payments or trade-in values; if you don't know, say you'll check with the team and get right back to them. For availability, use the CARS ON OUR LOT list and the LIVE INVENTORY CHECK below: if they ask about a car that is on the list, say it's available and give the price, mileage and link. Only say you'll check with the team if there is no list or check at all.
 - Keep things moving toward a visit or a call: offer specific times when it fits. When they pick a day and time to come in, confirm it back clearly with the weekday, date and time, like "Tuesday, Oct 20 at 6:00 PM": it gets booked automatically. Take the date ONLY from the CALENDAR in the prompt (never work out a date yourself). If they only say a weekday, use the next one on the calendar and say the full date so they can correct you. Each message in the conversation shows when it was sent: a customer's "tomorrow" or "Tuesday" counts from that message, not from now. If the time they pick is outside our opening hours, offer the closest time we are open. If they want to talk to a person, or you can't answer something, offer to have a sales rep call them; if they say yes, tell them a rep will call soon (the team is alerted automatically).
 - Don't claim to be a person. If they ask whether they're talking to a bot, say you're the dealership's assistant and a team member can call them.
+${DEPOSIT_RULES}
+${CONVERSATION_RULES}
 - Follow the dealership's instructions below. If the prompt says the dealership is CLOSED right now, its closed-hours rules come first: never push a call or a visit right now, and say the team will follow up when we open. Reply with only the text message itself.`;
   const stillForSale = await availabilityNote(customer?.last_vehicle, { phone: info.phone });
   const prompt = `NOW: ${now} (Dallas time)
@@ -236,7 +239,7 @@ ${thread.map(line).join("\n")}
 
 Write the dealership's next text.`;
   const reply = (await askClaude({ system, prompt, maxTokens: 300 })).replace(/^["']|["']$/g, "").trim().slice(0, 600);
-  if (reply.length < 2) return "skipped";
+  if (reply.length < 2 || isNoReply(reply)) return "skipped"; // nothing left to say (the customer said goodbye)
 
   // If they agreed to a visit time or asked for a sales rep, book it / alert the dealership (never blocks the reply).
   await actOnConversation({
@@ -289,6 +292,7 @@ export async function textNewLeads({ max = 3 } = {}): Promise<{ drafted: number;
 - 1 to 2 short sentences, under 240 characters. No markdown, no lists, no emojis. Use their first name if you have it and name the car they asked about if you have it.
 - Say you got their inquiry and ask one easy question (what they'd like to know, or when they could come see it). Don't claim to be a person: you write for the dealership team.
 - Never make up prices, financing approvals or rates. For availability use the CARS ON OUR LOT list below; if they asked something you can't answer, say the team will confirm. Don't include the dealership name or an opt-out line, those are added automatically.
+${DEPOSIT_RULES}
 - Follow the dealership's instructions below. If the prompt says the dealership is CLOSED right now, don't suggest calling now. If they wrote in Spanish, reply in Spanish. Reply with only the text message itself.`;
     const stillForSale = await availabilityNote(lead.vehicle as string | null, { vin: lead.vin as string | null, stock: lead.stock as string | null, phone: info.phone });
     const prompt = `DEALERSHIP: ${dealership.name}. Phone: ${info.phone || "not given"}. Hours/other details: ${info.notes || "none"}
@@ -400,7 +404,7 @@ Write the check-in text.`;
   return { ...out, waiting: null };
 }
 
-export type PurchaseRow = { key: string; name: string | null; phone: string | null; vehicle: string | null; purchasedAt: number; state: FollowupState; dueOn: number | null };
+export type PurchaseRow = { key: string; name: string | null; phone: string | null; vehicle: string | null; purchasedAt: number; state: FollowupState; dueOn: number | null; sentAt: number | null };
 /** Recent purchases and where each one's follow-up text stands, for the Automations page. */
 export async function listPurchases(days: number, limit = 30): Promise<PurchaseRow[]> {
   const sql = await readyDb();
@@ -410,7 +414,7 @@ export async function listPurchases(days: number, limit = 30): Promise<PurchaseR
   return rows.map((r) => {
     const { state, dueOn } = followupState({ status: "purchased", purchasedAt: new Date(r.purchased_at), followupAt: r.purchase_followup_at ? new Date(r.purchase_followup_at) : null,
       off: Boolean(r.purchase_followup_off), phone: r.phone ?? null }, days);
-    return { key: r.key, name: r.name ?? null, phone: r.phone ?? null, vehicle: r.purchased_vehicle ?? r.last_vehicle ?? null, purchasedAt: new Date(r.purchased_at).getTime(), state, dueOn: dueOn ? dueOn.getTime() : null };
+    return { key: r.key, name: r.name ?? null, phone: r.phone ?? null, vehicle: r.purchased_vehicle ?? r.last_vehicle ?? null, purchasedAt: new Date(r.purchased_at).getTime(), state, dueOn: dueOn ? dueOn.getTime() : null, sentAt: r.purchase_followup_at ? new Date(r.purchase_followup_at).getTime() : null };
   });
 }
 

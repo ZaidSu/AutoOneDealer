@@ -41,7 +41,8 @@ export async function checkAvailability(vehicle: string | null | undefined, { vi
     const byVin = known.find((l) => (wanted.length === 17 ? l.vin!.toUpperCase() === wanted.toUpperCase() : l.vin!.toUpperCase().endsWith(wanted.toUpperCase())));
     if (byVin) return { status: "available", match: byVin, exact: true };
   }
-  if (candidates.length) return { status: "available", match: candidates[0], exact: candidates.length === 1 };
+  // If one of several matching cars has a deposit on it, the customer is told about one that is still open first.
+  if (candidates.length) return { status: "available", match: candidates.find((c) => !c.deposit) ?? candidates[0], exact: candidates.length === 1 };
   // Not on the website. Only say "may be sold" if every page was read; a half-read inventory proves nothing.
   if (!inv.complete) return { status: "unknown", reason: "Only part of the website could be read" };
   if (!vehicle?.trim() || !/\b(?:19|20)\d{2}\b/.test(vehicle)) return { status: "unknown", reason: "The lead didn't name a specific year, make and model" };
@@ -68,6 +69,11 @@ async function carNote(vehicle: string | null | undefined, opts: { vin?: string 
   if (!vehicle?.trim() && !opts.vin && !opts.stock) return "";
   const result = await checkAvailability(vehicle, opts).catch((): Availability => ({ status: "unknown", reason: "The check failed" }));
   const call = opts.phone ? `call us at ${opts.phone}` : "give the dealership a call";
+  if (result.status === "available" && result.match.deposit) {
+    return `LIVE INVENTORY CHECK (from our inventory, just now)
+RESULT: DEPOSIT TAKEN. ${describeListing(result.match)}.
+A customer has put a deposit on this car, so it is spoken for. Do NOT say it is available, do NOT invite them to come see it, and do NOT pressure them. Tell them plainly it has a deposit on it right now, and offer similar cars from the lot (with links) or say a sales rep can let them know if it comes back.`;
+  }
   if (result.status === "available") {
     return `LIVE INVENTORY CHECK (from our website inventory, just now)
 RESULT: AVAILABLE. ${result.exact ? "This car" : "A car like this"} is listed for sale on our website right now: ${describeListing(result.match)}.

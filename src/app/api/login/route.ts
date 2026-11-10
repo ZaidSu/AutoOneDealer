@@ -17,7 +17,7 @@ export async function POST(req: NextRequest) {
   const username = String(form?.get("username") ?? "").trim().replace(/[^\p{L}\p{N} .@'_-]/gu, "").slice(0, 60);
   const name = username.includes("@") ? username.split("@")[0] : username;
 
-  const res = NextResponse.redirect(new URL("/dashboard", req.url), 303);
+  const res = NextResponse.redirect(new URL("/home", req.url), 303);
   setStaffSession(res, { email: username.includes("@") ? username.toLowerCase() : "", name: name || "Team", role: "owner", open: true });
   return res;
 }

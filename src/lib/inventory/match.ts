@@ -19,6 +19,8 @@ export type Listing = {
   image?: string | null;
   /** The car's VIN, once its own page has been read. */
   vin?: string | null;
+  /** A customer's deposit is on this car: it is spoken for, not available to buy. Set by staff in AutoDash. */
+  deposit?: boolean;
 };
 
 export type Page = { listings: Listing[]; total: number | null; pages: number | null };
@@ -158,7 +160,7 @@ export const SITE_PAGE = "https://www.autoonemotorstx.com/cars-for-sale";
 export const vinTail = (vin: string | null | undefined) => (vin && vin.length >= 6 ? vin.slice(-6).toUpperCase() : null);
 
 export function describeListing(l: Listing): string {
-  return `${l.title || `${l.year ?? ""} ${l.slug.replace(/-/g, " ")}`.trim()}${l.price ? `, $${l.price.toLocaleString("en-US")}` : ""}${l.mileage ? `, ${l.mileage.toLocaleString("en-US")} miles` : ""}${vinTail(l.vin) ? `, VIN ending ${vinTail(l.vin)}` : ""} (${l.url || SITE_PAGE})`;
+  return `${l.title || `${l.year ?? ""} ${l.slug.replace(/-/g, " ")}`.trim()}${l.price ? `, $${l.price.toLocaleString("en-US")}` : ""}${l.mileage ? `, ${l.mileage.toLocaleString("en-US")} miles` : ""}${vinTail(l.vin) ? `, VIN ending ${vinTail(l.vin)}` : ""}${l.deposit ? " — DEPOSIT TAKEN (spoken for, not available right now)" : ""} (${l.url || SITE_PAGE})`;
 }
 
 /** The whole lot as text for the AI, so it can answer "do you have a Camry?" or "any SUVs under $15k?" from real cars. */
@@ -168,7 +170,7 @@ export function formatLot(listings: Listing[], opts: { complete: boolean; minute
   const ago = opts.minutesAgo < 60 ? `${Math.max(0, Math.round(opts.minutesAgo))} minutes ago` : opts.minutesAgo < 2880 ? `${Math.round(opts.minutesAgo / 60)} hours ago` : `${Math.round(opts.minutesAgo / 1440)} days ago`;
   return `CARS ON OUR LOT RIGHT NOW (${cars.length} cars, from our website inventory, saved ${ago})
 ${cars.map((l) => `- ${describeListing(l)}`).join("\n")}
-HOW TO USE THIS LIST: when the customer asks about a car, a make or model, or a kind of car (SUV, truck, under $15,000...), answer from this list with the price, mileage and link. A car on this list IS available. Never mention a car that is not on the list. ${opts.complete
+HOW TO USE THIS LIST: when the customer asks about a car, a make or model, or a kind of car (SUV, truck, under $15,000...), answer from this list with the price, mileage and link. A car on this list IS available unless it says DEPOSIT TAKEN: a car with a deposit on it is spoken for, so say so plainly and offer others. Never mention a car that is not on the list. ${opts.complete
     ? "If the car they ask about is not on the list, say it doesn't show on our website right now and may have sold, and offer the closest cars from the list."
     : "This list may be missing some cars, so if the car they ask about is not on it, say a salesperson will confirm rather than saying it is sold."}`;
 }

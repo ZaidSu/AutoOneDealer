@@ -8,7 +8,7 @@ import type { TextMessage } from "@/lib/sms";
 type Data = { configured: boolean; ai: boolean; phone: string | null; optedOut: boolean; messages: TextMessage[] };
 const time = (ms: number) => new Date(ms).toLocaleString("en-US", { month: "short", day: "numeric", hour: "numeric", minute: "2-digit", timeZone: "America/Chicago" });
 
-export default function TextThread({ customerKey, firstName }: { customerKey: string; firstName: string | null }) {
+export default function TextThread({ customerKey, firstName, className, tall }: { customerKey: string; firstName: string | null; className?: string; tall?: boolean }) {
   const [data, setData] = useState<Data | null>(null);
   const [loadError, setLoadError] = useState("");
   const [text, setText] = useState("");
@@ -52,7 +52,7 @@ export default function TextThread({ customerKey, firstName }: { customerKey: st
   const blocked = !data?.configured ? "Texting isn't set up yet." : !data.phone ? "This customer has no phone number that can get texts." : data.optedOut ? `${firstName ?? "This customer"} replied STOP, so they can't be texted unless they reply START.` : "";
 
   return (
-    <section id="texts" aria-labelledby="texts-title" className="panel mt-6 overflow-hidden">
+    <section id="texts" aria-labelledby="texts-title" className={className ?? "panel mt-6 overflow-hidden"}>
       <div className="flex flex-wrap items-center justify-between gap-3 border-b border-line px-5 py-4">
         <div>
           <h2 id="texts-title" className="text-[17px] font-semibold">Texts</h2>
@@ -65,7 +65,7 @@ export default function TextThread({ customerKey, firstName }: { customerKey: st
         )}
       </div>
 
-      <div className="max-h-[460px] overflow-y-auto bg-paper/50 px-4 py-4">
+      <div className={`${tall ? "h-[min(52vh,500px)]" : "max-h-[460px]"} overflow-y-auto bg-paper/50 px-4 py-4`}>
         {loadError && <p role="alert" className="text-sm text-signal">{loadError}</p>}
         {!data && !loadError && <p className="text-sm text-muted">Loading texts…</p>}
         {data && sent.length === 0 && <p className="py-6 text-center text-muted">No texts yet.</p>}
@@ -76,7 +76,7 @@ export default function TextThread({ customerKey, firstName }: { customerKey: st
               <li key={m.id} className={`flex ${mine ? "justify-end" : "justify-start"}`}>
                 <div className={`max-w-[78%] ${mine ? "text-right" : ""}`}>
                   <p className={`inline-block whitespace-pre-line rounded-2xl px-3.5 py-2 text-left text-[15px] leading-snug ${
-                    mine ? (m.status === "failed" ? "bg-warn-soft text-ink ring-1 ring-signal/30" : "bg-graphite text-white") : "bg-white ring-1 ring-line"}`}>
+                    mine ? (m.status === "failed" ? "bg-warn-soft text-ink ring-1 ring-signal/30" : (m.ai ? "bg-gradient-to-br from-[#7048e8] to-[#5a3fd1] text-white" : "bg-gradient-to-br from-[#2f6fed] to-[#2459c9] text-white")) : "bg-white ring-1 ring-line"}`}>
                     {m.body}
                   </p>
                   <p className="mt-0.5 px-1 text-xs text-muted">

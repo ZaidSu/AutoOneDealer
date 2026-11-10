@@ -16,6 +16,7 @@ import { recordGmailCheck } from "@/lib/gmail/health";
 import { syncLeads } from "@/lib/leads/sync";
 import { enrichInventory, inDailyWindow, runDailyRead, seedInventoryOnce } from "@/lib/inventory/store";
 import { syncReviews } from "@/lib/reviews/store";
+import { sendRegistrationReminders } from "@/lib/registration/store";
 import { sendPurchaseFollowups, textNewLeads } from "@/lib/sms";
 
 export const dynamic = "force-dynamic";
@@ -43,7 +44,7 @@ export async function GET(req: NextRequest) {
     Promise.race([work, new Promise<T>((_, no) => setTimeout(() => no(new Error("took too long, will retry next run")), Math.max(1_000, ms)))]);
   try {
     const sync = await within(24_000, withGmail((gmail) => syncLeads(gmail, { timeLimitMs: 20_000 }), undefined, "background"));
-    // Remember whether Gmail works: a red bar on every page and a text to the dealership phone if it doesn't.
+    // Remember whether Gmail works: a red bar on every page (and an email to the developer) if it doesn't.
     await recordGmailCheck(sync.status === "ok" ? { ok: true } : sync.status === "error" ? { ok: false, code: sync.code, message: sync.message } : { ok: false, code: "not_connected", message: "Gmail isn't connected, so lead emails aren't being read or answered. Open Settings and click Connect Gmail." });
     report.leads = sync.status === "ok" ? ("busy" in sync.data ? "already updating" : { added: sync.data.added ?? 0, total: sync.data.saved }) : sync.status === "error" ? sync.message : "Gmail isn't connected";
   } catch (error) {
@@ -96,6 +97,11 @@ export async function GET(req: NextRequest) {
     report.purchaseFollowups = left() > 8_000 ? await within(left() - 3_000, sendPurchaseFollowups({ max: 3 })) : "skipped (out of time, next run)";
   } catch (error) {
     report.purchaseFollowups = `failed: ${error instanceof Error ? error.message : "unknown"}`;
+  }
+  try {
+    report.registration = left() > 6_000 ? await within(Math.min(8_000, left() - 2_000), sendRegistrationReminders({ max: 3 })) : "skipped (out of time, next run)";
+  } catch (error) {
+    report.registration = `failed: ${error instanceof Error ? error.message : "unknown"}`;
   }
   try {
     if (left() < 6_000) throw new Error("out of time this run, will continue next run");

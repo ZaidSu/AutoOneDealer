@@ -242,6 +242,34 @@ alter table inventory add column if not exists details_at timestamptz;
 -- v24: who bought a sold car
 alter table inventory add column if not exists sold_customer_key text;
 alter table inventory add column if not exists sold_customer_name text;
+-- v25: a deposit is on this car (it is spoken for but not sold yet)
+alter table inventory add column if not exists deposit_at timestamptz;
+alter table inventory add column if not exists deposit_by text;
+-- v26: registration stickers (photo, who, where it is in the process)
+create table if not exists registrations (
+  id bigserial primary key,
+  customer_key text,
+  name text,
+  phone text,
+  vehicle text,
+  stage text not null default 'waiting',
+  copy text not null default 'needed',
+  deferred boolean not null default false,
+  note text not null default '',
+  purchased_at timestamptz,
+  reminders integer not null default 0,
+  reminder_at timestamptz,
+  photo bytea,
+  thumb bytea,
+  photo_type text,
+  history jsonb not null default '[]'::jsonb,
+  created_by text,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);
+create index if not exists registrations_stage on registrations (stage, created_at desc);
+create index if not exists registrations_customer on registrations (customer_key);
+alter table registrations enable row level security;
 `;
 
 export async function setupDatabase(): Promise<void> {

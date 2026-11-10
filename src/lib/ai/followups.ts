@@ -2,6 +2,7 @@
 // The timer looks for new inbox emails from people who are already customers, saves them, and has the AI write an
 // answer that goes back in the same Gmail thread, using the whole conversation so far.
 import { askClaude, aiConfigured } from "@/lib/ai/claude";
+import { CONVERSATION_RULES, DEPOSIT_RULES, isNoReply } from "@/lib/ai/status-rules";
 import { dealershipFacts, getAutoSend, sendReply } from "@/lib/ai/replies";
 import { getAiTraining, getDealershipInfo } from "@/lib/ai/settings";
 import { canSendFrom } from "@/lib/auth/google";
@@ -117,6 +118,8 @@ export async function draftFollowups({ max = 3, force = false } = {}): Promise<{
     const system = offerUp ? `You answer messages for ${dealership.name}, a used car dealership in the Dallas area. The customer is chatting on OfferUp and just wrote back.
 ${OFFERUP_TEXT_RULES}
 - Don't repeat what was already said; answer what they just wrote.
+${DEPOSIT_RULES}
+${CONVERSATION_RULES}
 Reply with only the message text.` : `You answer customer emails for ${dealership.name}, a used car dealership in the Dallas area. The customer is replying to an earlier email from the dealership.
 Write like a friendly, professional salesperson continuing the conversation:
 - Plain text only, no markdown. 40 to 120 words. Don't repeat what was already said; answer what they just wrote.
@@ -125,6 +128,8 @@ Write like a friendly, professional salesperson continuing the conversation:
 - If they pick a day and time to visit, confirm it back clearly (weekday, date and time, like "Tuesday, Oct 20 at 6:00 PM"): it gets booked automatically. Take the date only from the CALENDAR in the facts below; if they only say a weekday, use the next one on the calendar and state the full date. Each email in the conversation shows when it was sent: "tomorrow" counts from that email. If they want to talk to a person, offer to have a sales rep call them; if they say yes, say a rep will call soon (the team is alerted automatically).
 - End with one clear next step. Sign off as "The team at ${dealership.name}" with the dealership phone number if you have it.
 - If they wrote in Spanish, reply in Spanish.
+${DEPOSIT_RULES}
+${CONVERSATION_RULES}
 Reply with only the email body.`;
     const conversation = messages.length
       ? messages.map((m) => `${emailOf(m.from) === reply.from_email ? "CUSTOMER" : "DEALERSHIP"} (${new Date(m.receivedAt).toLocaleString("en-US", { timeZone: dealership.timeZone })}): ${newPartOnly(m.text || m.snippet).slice(0, 1500)}`).join("\n\n")
@@ -141,7 +146,7 @@ THE EMAIL TO ANSWER NOW:
 ${reply.body}`;
     const raw = (await askClaude({ system, prompt, maxTokens: 600 })).trim().slice(0, 4000);
     const body = offerUp ? textify(raw) : raw;
-    if (body.length < (offerUp ? 3 : 20)) { out.skipped++; continue; }
+    if (isNoReply(raw) || body.length < (offerUp ? 3 : 20)) { out.skipped++; continue; } // nothing left to say
     const [cust] = await sql`select name, phone, email, last_vehicle from customers where key = ${reply.customer_key}`.catch(() => [] as Record<string, unknown>[]);
     await actOnConversation({
       customerKey: reply.customer_key ?? null, name: (cust?.name as string) ?? reply.from_name ?? null, phone: (cust?.phone as string) ?? null, email: reply.from_email, vehicle: (cust?.last_vehicle as string) ?? null, channel: "email",

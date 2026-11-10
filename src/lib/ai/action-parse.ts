@@ -60,6 +60,7 @@ export const ACTIONS_SYSTEM = `You read a conversation between a used car dealer
    - the customer asked for a call, a person, or a sales rep (or said yes when offered one)
    - they asked for a Carfax, AutoCheck, vehicle history report, inspection or service records (the AI cannot send these)
    - they asked something the dealership could not answer, or the dealership said a salesperson will confirm (for example it isn't known whether the car is available, or the price, fees or delivery)
+   - they are upset: angry, say they were lied to or mistreated, or threaten a bad review or to tell people (reason like "upset customer, threatens bad review"; this one matters even if they are leaving)
    - they are ready to buy, want to hold or put a deposit on a car, or say they are coming in to buy
    - they are talking numbers: an offer, negotiating the price, out-the-door price, down payment, monthly payment, interest rate, trade-in value, or financing / a credit application
    Be strict: the CUSTOMER's own words must clearly show one of these. Do NOT report greetings, "is it available?" questions that the dealership answered, general questions answered from the dealership facts, thank-yous, a customer who only picked a visit time, or a customer who just said they are looking or will think about it. A text to the dealership phone interrupts real people, so when in doubt, use null.

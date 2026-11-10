@@ -2,7 +2,7 @@
 import { useRouter } from "next/navigation";
 import { useEffect, useState, useTransition } from "react";
 import { notifyChanged } from "@/lib/client/live";
-import { addSaleAction, type BuyerInput, importInventorySheetAction, importInventoryTextAction, resolveMissingCarAction, resolveMissingCarsAction, removeCarsAction, markAvailableAction, markSoldAction, removeCarAction, syncInventoryNowAction } from "@/app/actions";
+import { addSaleAction, type BuyerInput, importInventorySheetAction, importInventoryTextAction, resolveMissingCarAction, resolveMissingCarsAction, removeCarsAction, markAvailableAction, markSoldAction, removeCarAction, setDepositAction, syncInventoryNowAction } from "@/app/actions";
 
 type Msg = { ok: boolean; text: string } | null;
 const today = () => new Date().toLocaleDateString("en-CA", { timeZone: "America/Chicago" });
@@ -122,6 +122,16 @@ export function SoldForm({ id, title, price, sheet, onClose }: { id: string; tit
 }
 
 /** Mark a car sold: opens the sale form. */
+/** A customer put a deposit on this car: the AI then says it's spoken for instead of inviting people to see it. */
+export function DepositToggle({ id, on }: { id: string; on: boolean }) {
+  const [pending, start] = useTransition();
+  const router = useRouter();
+  return <button type="button" className="btn btn-sm" disabled={pending} title={on ? "The deposit fell through: the car is available again" : "A customer put a deposit on it: the AI will say it's spoken for"} onClick={() => {
+    if (on && !window.confirm("Take the deposit off? The AI will start offering this car again.")) return;
+    start(async () => { await setDepositAction(id, !on); router.refresh(); notifyChanged(); });
+  }}>{pending ? "…" : on ? "Deposit off" : "Deposit"}</button>;
+}
+
 export function MarkSold({ id, title, price }: { id: string; title: string; price: number | null }) {
   const [open, setOpen] = useState(false);
   return (
@@ -307,7 +317,7 @@ export function ConfirmMissing({ cars, sheetAt }: { cars: { id: string; title: s
   );
 }
 
-export type LotRow = { id: string; title: string; url: string | null; imageUrl: string | null; photos: number; price: number | null; mileage: number | null; vin: string | null; firstSeen: string };
+export type LotRow = { id: string; title: string; url: string | null; imageUrl: string | null; photos: number; price: number | null; mileage: number | null; vin: string | null; firstSeen: string; deposit: boolean };
 
 /** The cars on the lot, with a checkbox on each: check several and Delete selected. */
 export function LotTable({ rows }: { rows: LotRow[] }) {
@@ -354,14 +364,14 @@ export function LotTable({ rows }: { rows: LotRow[] }) {
                       // eslint-disable-next-line @next/next/no-img-element
                       <img src={c.imageUrl} alt="" width={64} height={48} loading="lazy" className="h-12 w-16 shrink-0 rounded-md bg-line object-cover" />
                     )}
-                    <span>{c.url ? <a href={c.url} target="_blank" rel="noopener noreferrer" className="hover:underline">{c.title}</a> : c.title}{c.photos > 1 && <span className="font-normal text-muted"> · {c.photos} photos</span>}</span>
+                    <span>{c.url ? <a href={c.url} target="_blank" rel="noopener noreferrer" className="hover:underline">{c.title}</a> : c.title}{c.deposit && <span className="ml-2 rounded-full bg-warn-soft px-2 py-0.5 text-xs font-semibold">Deposit taken</span>}{c.photos > 1 && <span className="font-normal text-muted"> · {c.photos} photos</span>}</span>
                   </span>
                 </td>
                 <td className="px-4 py-2.5 tabular-nums">{usd(c.price)}</td>
                 <td className="px-4 py-2.5 tabular-nums">{c.mileage ? c.mileage.toLocaleString("en-US") : ""}</td>
                 <td className="px-4 py-2.5 font-mono text-sm text-muted" title={c.vin ?? undefined}>{c.vin ? <><span>{c.vin.slice(0, -6)}</span><span className="font-semibold text-ink">{c.vin.slice(-6)}</span></> : <span title="Read from the car's own page a few cars at a time">not read yet</span>}</td>
                 <td className="px-4 py-2.5 text-muted">{c.firstSeen}</td>
-                <td className="px-4 py-2.5 text-right"><span className="inline-flex flex-wrap items-center justify-end gap-2"><MarkSold id={c.id} title={c.title} price={c.price} /><RemoveCar id={c.id} /></span></td>
+                <td className="px-4 py-2.5 text-right"><span className="inline-flex flex-wrap items-center justify-end gap-2"><DepositToggle id={c.id} on={c.deposit} /><MarkSold id={c.id} title={c.title} price={c.price} /><RemoveCar id={c.id} /></span></td>
               </tr>
             ))}
           </tbody>

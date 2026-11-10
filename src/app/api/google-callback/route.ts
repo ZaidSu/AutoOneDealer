@@ -51,7 +51,7 @@ export async function GET(req: NextRequest) {
       if (!email || profile.email_verified !== true) return fail("unverified");
       const role = staffRoleFor(email);
       if (!role) return fail("not_allowed");
-      const res = go(req, "/dashboard");
+      const res = go(req, "/home");
       setStaffSession(res, { email, name: profile.name || email, picture: profile.picture, role });
       return res;
     }

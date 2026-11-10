@@ -20,6 +20,8 @@ const PATHS: Record<string, string> = {
   phone: "M5 4h4l2 5-2.5 1.5a11 11 0 005 5L15 13l5 2v4a1 1 0 01-1 1A16 16 0 014 5a1 1 0 011-1z",
   chevron: "M9 6l6 6-6 6",
   logout: "M15 4h4v16h-4M10 16l-4-4 4-4M6 12h10",
+  home: "M4 11l8-7 8 7M6 10v10h12V10M10 20v-6h4v6",
+  registration: "M7 3h8l4 4v14H7zM15 3v4h4M10 12h6M10 16h6",
   sales: "M3 17h2l2-5h10l2 5h2M5 17v2h3v-2M16 17v2h3v-2M7 12l1.5-4h7L17 12",
 };
 

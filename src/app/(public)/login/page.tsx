@@ -16,7 +16,7 @@ const errors: Record<string, string> = {
 };
 
 export default async function LoginPage({ searchParams }: { searchParams: Promise<Record<string, string | undefined>> }) {
-  if (await getStaffSession()) redirect("/dashboard");
+  if (await getStaffSession()) redirect("/home");
   const params = await searchParams;
   const open = openLoginEnabled();
   // "Session ended" isn't worth showing on a fresh visit to an open login.
@@ -27,7 +27,7 @@ export default async function LoginPage({ searchParams }: { searchParams: Promis
   return (
     <main className="flex min-h-dvh flex-col bg-paper">
       <header className="flex items-center gap-2.5 px-6 py-5 sm:px-10">
-        <span aria-hidden className="size-2.5 rounded-[2px] bg-signal" />
+        <span aria-hidden className="grid size-8 place-items-center rounded-[10px] bg-gradient-to-br from-[#e11d48] to-[#f08c00] font-condensed text-lg font-semibold leading-none text-white shadow-[0_4px_14px_-4px_rgba(225,29,72,0.7)]">A</span>
         <span className="font-condensed text-[22px] font-semibold leading-none tracking-wide">AutoDash</span>
       </header>
 
