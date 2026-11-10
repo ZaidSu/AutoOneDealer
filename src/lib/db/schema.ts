@@ -245,6 +245,9 @@ alter table inventory add column if not exists sold_customer_name text;
 -- v25: a deposit is on this car (it is spoken for but not sold yet)
 alter table inventory add column if not exists deposit_at timestamptz;
 alter table inventory add column if not exists deposit_by text;
+-- v27: when a car was deleted (deleted cars are cleared 48 hours later) and the one-VIN-one-car cleanup
+alter table inventory add column if not exists deleted_at timestamptz;
+update inventory set deleted_at = now() where status = 'deleted' and deleted_at is null;
 -- v26: registration stickers (photo, who, where it is in the process)
 create table if not exists registrations (
   id bigserial primary key,

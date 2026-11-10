@@ -374,17 +374,19 @@ export async function sendPurchaseFollowups({ max = 3 } = {}): Promise<{ drafted
     const boughtOn = new Date(customer.purchased_at).toLocaleDateString("en-US", { month: "long", day: "numeric", timeZone: dealership.timeZone });
     // Staff wrote their own message under Automations: send it as written (with the name and car filled in), no AI.
     const custom = settings.message ? renderFollowupMessage(settings.message, { firstName, car, dealership: dealership.name }) : "";
+    const reviewUrl = (process.env.GOOGLE_REVIEW_URL ?? "").trim();
     const system = `You text a customer who bought a car from ${dealership.name}, a used car dealership in the Dallas area, about a week ago. Write one friendly check-in text, the way a real salesperson would:
-- Short: 1 to 3 sentences, under 280 characters. No lists, markdown or emojis.
+- Short: 1 to 3 sentences, under 320 characters. No lists, markdown or emojis.
 - Ask how they're liking the car and whether everything is going well. Invite them to text or call if anything comes up.
+- Then, in the same text, politely ask if they'd be willing to leave a quick Google review of their experience. ${reviewUrl ? `Include this review link exactly as written: ${reviewUrl}` : "You were not given a review link, so do not make up or include any link; just ask them to leave a Google review."}
 - Use their first name if you have it. Name the car only if you were given it. Don't claim to be a person: you're writing for the dealership team.
-- Never promise repairs, refunds, warranty coverage, prices or anything not in the facts. Don't ask for a review and don't try to sell anything.
+- Never promise repairs, refunds, warranty coverage, prices or anything not in the facts. Don't try to sell anything. Keep the review ask gentle and brief.
 - Follow the dealership's instructions below. Reply with only the text message itself.`;
     const prompt = `DEALERSHIP: ${dealership.name}. Phone: ${info.phone || "not given"}. Address: ${info.address || "not given"}.
 INSTRUCTIONS FROM THE DEALERSHIP: ${training.instructions || "none"}
 CUSTOMER: ${firstName ?? "name unknown"}. Bought: ${car ?? "a car (model not recorded)"} on ${boughtOn}.
 
-Write the check-in text.`;
+Write the check-in text and review request.`;
     let reply = custom;
     try {
       if (!reply) reply = (await askClaude({ system, prompt, maxTokens: 250 })).replace(/^["']|["']$/g, "").trim().slice(0, 500);

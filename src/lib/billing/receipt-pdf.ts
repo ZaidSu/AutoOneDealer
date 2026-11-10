@@ -16,6 +16,18 @@ export function pdfText(text: string): string {
     .replace(/[^\x20-\x7e]/g, "?").replace(/([\\()])/g, "\\$1");
 }
 
+/** Splits text into lines that fit a width (points), so long descriptions wrap instead of running off the page. */
+export function wrapText(text: string, size: number, maxWidth: number): string[] {
+  const lines: string[] = [];
+  let cur = "";
+  for (const word of String(text).split(/\s+/).filter(Boolean)) {
+    const next = cur ? `${cur} ${word}` : word;
+    if (cur && widthOf(next, size) * 0.9 > maxWidth) { lines.push(cur); cur = word; } else cur = next;
+  }
+  if (cur) lines.push(cur);
+  return lines;
+}
+
 export function receiptPdf(r: ReceiptData): Uint8Array {
   const ops: string[] = [];
   const text = (s: string, x: number, y: number, size = 11, bold = false, gray = false) =>
@@ -36,10 +48,10 @@ export function receiptPdf(r: ReceiptData): Uint8Array {
   y -= 34;
   line(y);
   y -= 24;
-  for (const item of r.items.slice(0, 14)) {
+  for (const item of r.items.slice(0, 8)) {
     text(item.label, 56, y, 12);
     right(item.amount, 556, y, 12);
-    if (item.detail) { y -= 14; text(item.detail, 56, y, 10, false, true); }
+    if (item.detail) for (const part of wrapText(item.detail, 10, 400)) { y -= 14; text(part, 56, y, 10, false, true); }
     y -= 12; line(y); y -= 20;
   }
   text("Subtotal", 56, y, 11, false, true); right(r.subtotal, 556, y, 11);

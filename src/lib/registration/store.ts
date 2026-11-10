@@ -78,16 +78,16 @@ export async function getPhoto(id: number, thumb: boolean): Promise<{ data: Buff
 }
 
 // ---- changes ----
-export async function createRegistration(i: { name: string; phone: string; vehicle: string; deferred: boolean; note: string; photo?: Buffer | null; thumb?: Buffer | null; type?: string; by: string }): Promise<number> {
+export async function createRegistration(i: { purchasedAt?: Date | null; name: string; phone: string; vehicle: string; deferred: boolean; note: string; photo?: Buffer | null; thumb?: Buffer | null; type?: string; by: string }): Promise<number> {
   const sql = await readyDb();
   if (!sql) throw new Error("no_db");
   const phone = tenDigits(toE164(i.phone) ?? "") || i.phone.replace(/\D/g, "").slice(0, 15) || null;
   // A phone number we already know links the sticker to that customer.
   const [known] = phone ? await sql`select key, name, last_vehicle, purchased_vehicle from customers where phone = ${phone} or key = ${`p-${phone}`} limit 1` : [];
   const stage: Stage = i.photo ? "pickup" : "waiting";
-  const [r] = await sql`insert into registrations (customer_key, name, phone, vehicle, stage, deferred, note, photo, thumb, photo_type, created_by, history)
+  const [r] = await sql`insert into registrations (customer_key, name, phone, vehicle, stage, deferred, note, photo, thumb, photo_type, created_by, history, purchased_at)
     values (${known?.key ?? null}, ${i.name || known?.name || null}, ${phone}, ${i.vehicle || known?.purchased_vehicle || known?.last_vehicle || null}, ${stage}, ${i.deferred}, ${i.note}, ${i.photo ?? null}, ${i.thumb ?? null}, ${i.type ?? null}, ${i.by},
-      ${event(i.by, i.photo ? "Added with a photo" : "Added")}::jsonb) returning id`;
+      ${event(i.by, i.photo ? "Added with a photo" : "Added")}::jsonb, ${i.purchasedAt ?? null}) returning id`;
   return Number(r.id);
 }
 

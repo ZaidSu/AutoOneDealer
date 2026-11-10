@@ -52,7 +52,8 @@ export async function GET(req: NextRequest) {
       const role = staffRoleFor(email);
       if (!role) return fail("not_allowed");
       const res = go(req, "/home");
-      setStaffSession(res, { email, name: profile.name || email, picture: profile.picture, role });
+      const shown = role === "owner" || role === "developer" ? "Auto One" : profile.name || email;
+      setStaffSession(res, { email, name: shown, picture: profile.picture, role });
       return res;
     }
 

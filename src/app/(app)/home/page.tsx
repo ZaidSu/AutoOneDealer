@@ -3,24 +3,34 @@ import Link from "next/link";
 import { requirePageStaff } from "@/lib/auth/guard";
 import { dbState } from "@/lib/db";
 import { registrationCounts } from "@/lib/registration/store";
+import { getTodos } from "@/lib/crm/todos";
 
 export const metadata: Metadata = { title: "Home" };
 export const dynamic = "force-dynamic";
 
 export default async function HomePage() {
-  const staff = await requirePageStaff();
+  await requirePageStaff();
   const reg = (await dbState()) === "ready" ? await registrationCounts().catch(() => null) : null;
-  const first = staff.name.trim().split(/\s+/)[0];
+  const ready = (await dbState()) === "ready";
+  const todo = ready ? await Promise.race([getTodos().then((t) => t.rows.length).catch(() => null), new Promise<null>((r) => setTimeout(() => r(null), 4000))]) : null;
   const hour = Number(new Intl.DateTimeFormat("en-US", { hour: "numeric", hour12: false, timeZone: "America/Chicago" }).format(new Date())) % 24;
   const hello = hour < 12 ? "Good morning" : hour < 17 ? "Good afternoon" : "Good evening";
 
   return (
     <div className="mx-auto max-w-5xl pt-4 sm:pt-10">
       <span aria-hidden className="mb-3 block h-1.5 w-12 rounded-full bg-gradient-to-r from-[#d7163b] via-[#f08c00] to-[#2f6fed]" />
-      <h1 className="page-title">{hello}, {first}.</h1>
+      <h1 className="page-title">{hello}, Auto One.</h1>
       <p className="mt-1.5 text-lg text-muted">What do you want to work on?</p>
 
-      <div className="mt-8 grid gap-5 md:grid-cols-2">
+      {(todo || (reg && reg.pickup > 0)) && (
+        <section aria-label="Needs attention" className="mt-6 flex flex-wrap items-center gap-3 rounded-2xl bg-[#fff6e5] p-4 ring-1 ring-[#f4d9a6]">
+          <span className="font-bold text-[#8a5300]">Needs attention</span>
+          {todo ? <Link href="/todo" className="rounded-full bg-[#e11d48] px-3.5 py-1.5 text-sm font-bold text-white hover:opacity-90">{todo} on your To do list</Link> : null}
+          {reg && reg.pickup > 0 ? <Link href="/registration" className="rounded-full bg-[#0ca7a0] px-3.5 py-1.5 text-sm font-bold text-white hover:opacity-90">{reg.pickup} registration{reg.pickup === 1 ? "" : "s"} to pick up</Link> : null}
+        </section>
+      )}
+
+      <div className="mt-6 grid gap-5 md:grid-cols-2">
         <Link href="/dashboard" className="group relative flex min-h-[260px] flex-col justify-between overflow-hidden rounded-3xl bg-gradient-to-br from-[#2f6fed] via-[#3b5bdb] to-[#7048e8] p-7 text-white shadow-[0_24px_50px_-24px_rgba(47,111,237,0.9)] transition-transform hover:-translate-y-1">
           <span aria-hidden className="absolute -top-16 -right-16 size-56 rounded-full bg-white/10" />
           <span aria-hidden className="absolute -bottom-20 right-10 size-44 rounded-full bg-white/10" />

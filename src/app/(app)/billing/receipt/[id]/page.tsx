@@ -42,7 +42,7 @@ export default async function ReceiptPage({ params }: { params: Promise<{ id: st
         <ul className="divide-y divide-line border-y border-line">
           {invoice.items.map((item, n) => (
             <li key={n} className="flex items-start justify-between gap-4 py-3">
-              <div><p className="font-medium">{item.label}</p>{item.detail && <p className="text-sm text-muted">{item.detail}</p>}</div>
+              <div className="min-w-0"><p className="font-medium">{item.label}</p>{item.detail && <p className="break-words text-sm text-muted">{item.detail}</p>}</div>
               <p className="tabular-nums">{money(item.cents)}</p>
             </li>
           ))}

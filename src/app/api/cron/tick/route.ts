@@ -14,7 +14,7 @@ import { periodLabel } from "@/lib/billing/types";
 import { withGmail } from "@/lib/gmail";
 import { recordGmailCheck } from "@/lib/gmail/health";
 import { syncLeads } from "@/lib/leads/sync";
-import { enrichInventory, inDailyWindow, runDailyRead, seedInventoryOnce } from "@/lib/inventory/store";
+import { enrichInventory, inventoryHousekeeping, inDailyWindow, runDailyRead, seedInventoryOnce } from "@/lib/inventory/store";
 import { syncReviews } from "@/lib/reviews/store";
 import { sendRegistrationReminders } from "@/lib/registration/store";
 import { sendPurchaseFollowups, textNewLeads } from "@/lib/sms";
@@ -72,6 +72,7 @@ export async function GET(req: NextRequest) {
     // The website is read once a day, during the 7 pm hour (dealership time). The timer's other 5-minute runs leave it alone.
     try { await seedInventoryOnce().catch(() => undefined); await runDailyRead(); } catch (error) { console.error("[autodash:inventory] sync failed:", error instanceof Error ? error.message : error); }
     // In that same hour, a few cars per run get their VIN and photos from their own page (only if there's time left in this run).
+    try { await inventoryHousekeeping(); } catch (error) { console.error("[autodash:inventory] housekeeping failed:", error instanceof Error ? error.message : error); }
     try { if (inDailyWindow()) await enrichInventory({ max: 3, deadline: started + 55_000 }); } catch (error) { console.error("[autodash:inventory] VIN/photo read failed:", error instanceof Error ? error.message : error); }
   });
   try {

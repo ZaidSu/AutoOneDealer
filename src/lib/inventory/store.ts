@@ -114,7 +114,7 @@ export async function applyInventory(inv: Inventory): Promise<SyncState> {
         slug = excluded.slug, title = excluded.title, price = excluded.price, mileage = excluded.mileage, image_url = coalesce(excluded.image_url, inventory.image_url), last_seen = now(), missed = 0, updated_at = now(),
         -- A car that left the website and came back is available again, unless staff marked it sold by hand.
         -- A deleted car stays deleted even if the website lists it. Otherwise: available again, unless staff marked it sold by hand.
-        status = case when inventory.status in ('deleted', 'duplicate', 'unconfirmed') then inventory.status when inventory.sold_by is not null then inventory.status else 'available' end,
+        status = case when inventory.status in ('deleted', 'removed', 'replaced', 'duplicate', 'unconfirmed') then inventory.status when inventory.sold_by is not null then inventory.status else 'available' end,
         sold_at = case when inventory.sold_by is not null then inventory.sold_at else null end,
         sold_price = case when inventory.sold_by is not null then inventory.sold_price else null end,
         sold_note = case when inventory.sold_by is not null then inventory.sold_note else null end`;
@@ -137,8 +137,8 @@ export async function applyInventory(inv: Inventory): Promise<SyncState> {
     and w.year = s.year and w.mileage = s.mileage and lower(w.make) = lower(s.make))`;
   // A car deleted by staff (not the dealership's own) stays deleted: any other row for the same car (same name and mileage), like one
   // that the website lists under a new id, is deleted too.
-  await sql`update inventory r set status = 'deleted', updated_at = now() where r.status <> 'deleted' and exists (
-    select 1 from inventory d where d.status = 'deleted' and d.id <> r.id and lower(d.title) = lower(r.title) and d.mileage is not distinct from r.mileage)`;
+  await sql`update inventory r set status = 'deleted', deleted_at = now(), updated_at = now() where r.status not in ('deleted', 'removed', 'replaced') and exists (
+    select 1 from inventory d where d.status in ('deleted', 'removed') and d.id <> r.id and lower(d.title) = lower(r.title) and d.mileage is not distinct from r.mileage)`;
   // Cars added from pasted text have made-up ids and no link. Once the website itself has been read in full, every real car is in the
   // table with its own link, so the made-up copies on the lot go (whether or not they matched a real one by name).
   if (inv.complete && inv.via !== "pasted") {
@@ -162,6 +162,7 @@ export async function applyInventory(inv: Inventory): Promise<SyncState> {
       where status = 'available' and missed >= 3 returning id`;
     soldNow += gone.length;
   }
+  await reconcileVins(sql);
   const state: SyncState = { at: Date.now(), ok: true, count: live.length, complete: inv.complete, added, sold: soldNow, error: null, via: inv.via, pagesRead: inv.pagesRead, pagesExpected: inv.pagesExpected };
   await setSetting(SYNC_KEY, JSON.stringify(state)).catch(() => undefined);
   await setSetting("inventory_last_good", String(state.at)).catch(() => undefined);
@@ -251,6 +252,87 @@ export async function aiViewOfInventory(): Promise<{ ok: boolean; text: string; 
   return { ok: true, text: `The AI is checking ${n} cars from a copy saved ${agoText}.${partial}`, noLink };
 }
 
+// ---- one VIN, one car ----
+type Sql = NonNullable<Awaited<ReturnType<typeof readyDb>>>;
+export const cleanVin = (v: unknown): string | null => {
+  const x = String(v ?? "").toUpperCase().replace(/[^A-Z0-9]/g, "");
+  return /^[A-HJ-NPR-Z0-9]{17}$/.test(x) ? x : null;
+};
+
+/** A VIN belongs to exactly one car. If the same VIN somehow sits on more than one row (a car deleted and added again, listed by the
+ *  website and the sheet under different ids), only one row is kept: a sale entered by staff first, then a deleted car (so deleting
+ *  sticks), then a car the system marked sold, then one for sale; the newest wins a tie. The others are set aside as "replaced"
+ *  (hidden everywhere, so a car can never be for sale and sold, or deleted and sold, at the same time). */
+export async function reconcileVins(sql: Sql): Promise<number> {
+  const rows = await sql`with ranked as (
+      select id, row_number() over (partition by upper(vin) order by
+        case when status = 'sold' and sold_by is not null then 0 when status = 'deleted' then 1 when status = 'sold' then 2 else 3 end,
+        updated_at desc, id desc) as rn
+      from inventory where vin is not null and length(trim(vin)) >= 11 and status in ('available', 'sold', 'deleted'))
+    update inventory i set status = 'replaced', updated_at = now() from ranked r where i.id = r.id and r.rn > 1 returning i.id`;
+  if (rows.length) dropCached("inv:");
+  return rows.length;
+}
+
+/** Deleted cars clear themselves 48 hours later: they can no longer be restored and drop off the Deleted list. (The row stays, hidden,
+ *  so the website listing the same car again doesn't bring it back.) */
+export async function clearOldDeletedCars(): Promise<number> {
+  const sql = await readyDb();
+  if (!sql) return 0;
+  const rows = await sql`update inventory set status = 'removed', updated_at = now()
+    where status = 'deleted' and coalesce(deleted_at, updated_at) < now() - interval '48 hours' returning id`;
+  if (rows.length) dropCached("inv:");
+  return rows.length;
+}
+
+/** Housekeeping the timer runs: clear old deleted cars and make sure no VIN is on two cars. */
+export async function inventoryHousekeeping(): Promise<{ cleared: number; merged: number }> {
+  const sql = await readyDb();
+  if (!sql) return { cleared: 0, merged: 0 };
+  const merged = await reconcileVins(sql);
+  const cleared = await clearOldDeletedCars();
+  return { cleared, merged };
+}
+
+export type SaleCarResult = { ok: true; id: string } | { ok: false; error: string };
+/** Gets the inventory row for a car sold by hand, never making a second row for a VIN we already have:
+ *  on the lot -> that car; already sold -> refused; deleted/removed -> that same row is used again. No VIN -> a new row. */
+export async function carForSale(input: { title: string; year: number | null; vin: string | null; price: number | null }): Promise<SaleCarResult> {
+  dropCached("inv:");
+  const sql = await readyDb();
+  if (!sql) throw new Error("no_db");
+  if (input.vin) {
+    const rows = await sql`select id, status, title, sold_at, sold_customer_name from inventory where upper(vin) = ${input.vin} and status in ('available', 'unconfirmed', 'sold', 'deleted', 'removed') order by
+      case status when 'sold' then 0 when 'available' then 1 when 'unconfirmed' then 2 else 3 end limit 1`;
+    const hit = rows[0];
+    if (hit?.status === "sold") {
+      const when = hit.sold_at ? new Date(hit.sold_at as string).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric", timeZone: "America/Chicago" }) : "earlier";
+      return { ok: false, error: `That VIN is already sold (${hit.title ?? "this car"}, ${when}${hit.sold_customer_name ? ` to ${hit.sold_customer_name}` : ""}). A car can only be sold once. If that sale fell through, open it under Recent sales and use "Sale fell through" first.` };
+    }
+    if (hit) {
+      // Same car: bring it back as the one row for this VIN (a deleted car being sold again is cleared of its deleted mark).
+      await sql`update inventory set deleted_at = null, status = 'available', title = coalesce(nullif(${input.title}, ''), title), year = coalesce(${input.year}, year), updated_at = now() where id = ${hit.id}`;
+      return { ok: true, id: hit.id as string };
+    }
+  }
+  const slug = input.title.replace(/^\s*(?:19|20)\d{2}\s+/, "").toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "");
+  const { make, model } = makeAndModel({ title: input.title, slug, year: input.year });
+  const id = `manual-${Date.now()}`;
+  await sql`insert into inventory (id, title, year, make, model, slug, price, vin, status, last_seen)
+    values (${id}, ${input.title}, ${input.year}, ${make}, ${model}, ${slug}, ${input.price}, ${input.vin}, 'available', now())`;
+  return { ok: true, id };
+}
+
+/** A sale that fell through: the car goes back on the lot and the customer is no longer marked as having bought it. */
+export async function undoSaleFor(customerKey: string): Promise<number> {
+  dropCached("inv:");
+  const sql = await readyDb();
+  if (!sql) throw new Error("no_db");
+  const rows = await sql`update inventory set status = 'available', sold_at = null, sold_price = null, sold_by = null, sold_note = null, sold_customer_key = null, sold_customer_name = null,
+      deposit_at = null, deposit_by = null, missed = 0, last_seen = now(), updated_at = now() where sold_customer_key = ${customerKey} and status = 'sold' returning id`;
+  return rows.length;
+}
+
 // ---- by hand ----
 export async function markSold(id: string, price: number | null, soldOn: Date, by: string, buyer: { key: string; name: string | null } | null = null, note = "Marked sold by staff") {
   dropCached("inv:");
@@ -323,6 +405,7 @@ export async function enrichInventory(opts: { max?: number; deadline?: number } 
     }
     await sleep(1_500);
   }
+  if (saved) await reconcileVins(sql);
   const [{ n }] = await sql`select count(*)::int as n from inventory where status = 'available' and vin is null and url is not null and url <> ''`;
   dropCached("inv:");
   return { saved, noVin, failed, waiting: n as number };
@@ -425,7 +508,7 @@ export async function removeCar(id: string | string[]): Promise<number> {
   dropCached("inv:");
   const sql = await readyDb();
   if (!sql) throw new Error("no_db");
-  const rows = await sql`update inventory set status = 'deleted', sold_note = 'Deleted by staff', updated_at = now() where id = any(${ids}) returning id`;
+  const rows = await sql`update inventory set status = 'deleted', deleted_at = now(), sold_note = 'Deleted by staff', updated_at = now() where id = any(${ids}) returning id`;
   return rows.length;
 }
 
@@ -492,6 +575,7 @@ export async function importSheet(cars: SheetCar[], fileName: string): Promise<S
 
   // On the lot before, not in this sheet: no longer available for sure.
   await sql`update inventory set status = 'unconfirmed', updated_at = now() where status = 'available' and last_seen < ${started}`;
+  await reconcileVins(sql);
   await setSetting(SHEET_KEY, JSON.stringify({ at: Date.now(), file: fileName.slice(0, 120), count: cars.length }));
   out.pending = (await getSheetState()).pending;
 
@@ -511,6 +595,6 @@ export async function resolveMissing(id: string | string[], choice: "sold" | "re
   dropCached("inv:");
   const rows = choice === "sold"
     ? await sql`update inventory set status = 'sold', sold_at = now(), sold_price = price, sold_by = ${by}, sold_note = 'Marked sold by staff (left the inventory sheet)', updated_at = now() where id = any(${ids}) and status = 'unconfirmed' returning id`
-    : await sql`update inventory set status = 'deleted', sold_note = 'Removed by staff (left the inventory sheet)', updated_at = now() where id = any(${ids}) and status = 'unconfirmed' returning id`;
+    : await sql`update inventory set status = 'deleted', deleted_at = now(), sold_note = 'Removed by staff (left the inventory sheet)', updated_at = now() where id = any(${ids}) and status = 'unconfirmed' returning id`;
   return rows.length;
 }

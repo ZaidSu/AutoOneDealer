@@ -3,7 +3,7 @@
 // whether a copy was made, and whether the customer has a deferred payment.
 import { useRouter } from "next/navigation";
 import { useMemo, useRef, useState, useTransition } from "react";
-import { registrationCopyAction, registrationDeferredAction, registrationDeleteAction, registrationEditAction, registrationStageAction, saveRegistrationSettingsAction, sendRegistrationTestAction } from "@/app/actions";
+import { undoSaleAction, registrationCopyAction, registrationDeferredAction, registrationDeleteAction, registrationEditAction, registrationStageAction, saveRegistrationSettingsAction, sendRegistrationTestAction } from "@/app/actions";
 import { shrink } from "./photo";
 import { COPIES, COPY_LABEL, matches, needsCopy, STAGE_LABEL, STAGES, type Filter } from "@/lib/registration/rules";
 import type { Reg, RegSettings } from "@/lib/registration/store";
@@ -137,6 +137,8 @@ function Card({ r, onView, onEdit }: { r: Reg; onView: () => void; onEdit: () =>
             <button type="button" className="btn btn-sm" onClick={onEdit}>Edit</button>
             {r.hasPhoto && <a className="btn btn-sm" href={`/api/registration/${r.id}/photo?download=1`}>Download</a>}
             <button type="button" className="btn btn-sm ml-auto text-signal" disabled={pending} onClick={() => window.confirm("Delete this registration entry and its photo?") && run(() => registrationDeleteAction(r.id))}>Delete</button>
+            {r.customerKey && r.stage !== "done" && <button type="button" className="btn btn-sm text-signal" disabled={pending} title="The car goes back on the lot and the customer is no longer marked as a buyer"
+              onClick={() => window.confirm("The sale fell through?\n\nThe car goes back on the lot, the customer is no longer marked as a buyer, and this registration is removed.") && run(() => undoSaleAction(r.id))}>Sale fell through</button>}
           </div>
         </div>
       </div>

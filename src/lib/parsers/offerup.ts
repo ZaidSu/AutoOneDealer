@@ -1,5 +1,5 @@
 // OfferUp: when a buyer messages about a car, OfferUp emails the dealership from a private address like
-// "Zaid (OfferUp) <reply-808138aa...@messages.offerup.com>" with the subject "Re: 2015 Nissan Murano".
+// "Jordan (OfferUp) <reply-808138aa...@messages.offerup.com>" with the subject "Re: 2015 Nissan Murano".
 // Replying to that address sends the answer to the buyer inside OfferUp. There is no phone number or real email in these emails.
 // No project imports other than the HTML helper (unit tested directly).
 import { htmlToText } from "./html.ts";

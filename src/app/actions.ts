@@ -1164,3 +1164,76 @@ export async function sendRegistrationTestAction(): Promise<ActionResult> {
     return { ok: true, message: "Test sent. It should arrive in a few seconds." };
   } catch (e) { return fail(e instanceof Error ? e.message : "The test text didn't send."); }
 }
+
+// ---- Registration area: log a sale by hand (like DeskManager), and undo one that fell through ----
+
+export type LogSaleInput = { carId?: string; car: string; vin: string; price: string; date: string; name: string; phone: string; deferred: boolean };
+
+/** One form: the car, its VIN, the price, the day, and the buyer. The car moves to Sold, the buyer is saved as a customer who
+ *  purchased (so the AI's check-in and review text go out a week later), and a registration entry is started. */
+export async function logSaleAction(input: LogSaleInput): Promise<ActionResult> {
+  const staff = await requireStaff();
+  if (!staff) return fail("Your session ended. Sign in again.");
+  const title = cleanName(input.car, 100);
+  const name = cleanName(input.name, 80);
+  const phone = String(input.phone ?? "").replace(/\D/g, "").replace(/^1(\d{10})$/, "$1");
+  const dollars = String(input.price ?? "").replace(/[^\d]/g, "");
+  const price = dollars ? Number(dollars) : null;
+  const store = await import("@/lib/inventory/store");
+  const vin = store.cleanVin(input.vin);
+  if (title.length < 4) return fail("Enter the car, like 2019 Toyota Camry SE.");
+  if (String(input.vin ?? "").trim() && !vin) return fail("That VIN doesn't look right. A VIN is 17 letters and numbers (no I, O or Q). Leave it blank if you don't have it.");
+  if (!name) return fail("Enter the customer's name.");
+  if (phone.length !== 10) return fail("Enter the customer's 10-digit phone number, so the follow-up text can reach them.");
+  if (price !== null && price > 10_000_000) return fail("That price looks too high.");
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(String(input.date))) return fail("Pick the day of the sale.");
+  const when = new Date(`${input.date}T12:00:00-05:00`);
+  if (when.getTime() > Date.now() + 86400_000) return fail("The sale date can't be in the future.");
+  const year = Number(/\b((?:19|20)\d{2})\b/.exec(title)?.[1]) || null;
+
+  let car: Awaited<ReturnType<typeof store.carForSale>>;
+  const pickedId = /^[\w-]{1,60}$/.test(String(input.carId ?? "")) ? String(input.carId) : null;
+  if (pickedId) {
+    // Picked from the cars on the lot: that car is the one sold (never a second copy of it).
+    const sqlDb = await (await import("@/lib/db")).readyDb();
+    if (!sqlDb) return NO_DB;
+    const [row] = await sqlDb`select status from inventory where id = ${pickedId}`;
+    if (!row) return fail("That car isn't on the lot anymore. Pick it again.");
+    if (row.status === "sold") return fail("That car is already sold. A car can only be sold once.");
+    car = { ok: true, id: pickedId };
+  } else {
+    try { car = await store.carForSale({ title, year, vin, price }); } catch { return NO_DB; }
+  }
+  if (!car.ok) return fail(car.error);
+  const sold = await recordSale(staff.name, car.id, { price: String(price ?? ""), date: String(input.date), buyer: { mode: "new", name, phone, email: "" } }, "Sale logged by hand");
+  if (!sold.ok) return sold;
+  try {
+    const reg = await import("@/lib/registration/store");
+    await reg.createRegistration({ name, phone, vehicle: title, deferred: Boolean(input.deferred), note: "", by: staff.name, purchasedAt: when });
+  } catch { return NO_DB; }
+  revalidatePath("/registration"); revalidatePath("/registration/sales"); revalidatePath("/inventory");
+  return { ok: true, message: `Sale saved. ${name} is now a customer who purchased, and a registration is started.` };
+}
+
+/** The sale fell through: the car goes back on the lot, the customer isn't marked as a buyer, and the registration is removed. */
+export async function undoSaleAction(registrationId: number): Promise<ActionResult> {
+  const staff = await requireStaff();
+  if (!staff) return fail("Your session ended. Sign in again.");
+  const id = Number(registrationId);
+  if (!Number.isInteger(id) || id < 1) return fail("Unknown registration.");
+  const sql = await (await import("@/lib/db")).readyDb();
+  if (!sql) return NO_DB;
+  const [row] = await sql`select customer_key, vehicle from registrations where id = ${id}`;
+  if (!row) return fail("That registration was already removed.");
+  const store = await import("@/lib/inventory/store");
+  let back = 0;
+  if (row.customer_key) {
+    try { back = await store.undoSaleFor(row.customer_key as string); } catch { return NO_DB; }
+    await sql`update customers set status = 'new', purchased_at = null, purchased_vehicle = null, purchase_followup_at = null, updated_at = now() where key = ${row.customer_key} and status = 'purchased'`;
+    const { logActivity } = await import("@/lib/crm/queries");
+    await logActivity(row.customer_key as string, "status", `Sale fell through${row.vehicle ? `: ${row.vehicle}` : ""}`, staff.name).catch(() => undefined);
+  }
+  await sql`delete from registrations where id = ${id}`;
+  revalidatePath("/registration"); revalidatePath("/registration/sales"); revalidatePath("/inventory"); revalidatePath("/customers");
+  return { ok: true, message: back ? "Removed. The car is back on the lot and the customer is no longer marked as a buyer." : "Removed. The customer is no longer marked as a buyer." };
+}

@@ -22,3 +22,11 @@ test("pdfText escapes and replaces what a PDF string can't hold", () => {
   assert.equal(pdfText("a (b) \\ c"), "a \\(b\\) \\\\ c");
   assert.equal(pdfText("Zaid’s café"), "Zaid's caf?");
 });
+
+import { wrapText } from "../../src/lib/billing/receipt-pdf.ts";
+test("long descriptions wrap onto several lines that each fit", () => {
+  const text = "November 2026. Covers software for Auto One Motors, AI email replies, AI texting, appointment setting, hosting, database and backups. Up to 1,000 emails and 1,000 texts a month.";
+  const lines = wrapText(text, 10, 400);
+  assert.ok(lines.length >= 2);
+  assert.equal(lines.join(" "), text);
+});

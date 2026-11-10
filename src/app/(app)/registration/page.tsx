@@ -11,7 +11,7 @@ export const dynamic = "force-dynamic";
 
 export default async function RegistrationPage() {
   await requirePageStaff();
-  const header = <PageHeader title="Registration" description="Registration stickers: what needs to be picked up, what needs a copy, and who has a deferred payment." />;
+  const header = <PageHeader title="Registration" description="Registration stickers: what needs to be picked up, what needs a copy, and who has a deferred payment." action={<a href="/registration/sales#log-sale" className="btn btn-red">+ Log a sale</a>} />;
   const state = await dbState();
   if (state !== "ready") return <>{header}<DbNotice state={state} what="Registration" /></>;
   const [rows, counts, settings] = await fresh("Registration", async () => {

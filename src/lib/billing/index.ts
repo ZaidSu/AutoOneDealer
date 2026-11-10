@@ -6,6 +6,9 @@ import { addDays, dayKey, zonedToUtc } from "@/lib/utils/time";
 import { listStripeInvoices, stripeBillingOn, stripeCard } from "./stripe-sync";
 import { DEFAULT_BILLING, PHONE_FEE_LABEL, PLAN_VERSION, SETUP_FEE_LABEL, periodLabel, repricedBill, totals, type BillingSettings, type Invoice, type InvoiceItem } from "./types";
 
+/** Bills used to say High Level Technologies; the company that bills is now Nawra Technologies. */
+const renamedBiller = (b: BillingSettings): BillingSettings => (/^high level technologies$/i.test(b.billedBy.trim()) ? { ...b, billedBy: "Nawra Technologies" } : b);
+
 export async function getBillingSettings(): Promise<BillingSettings> {
   try {
     const raw = await getSetting("billing");
@@ -20,10 +23,11 @@ export async function getBillingSettings(): Promise<BillingSettings> {
     // v3: bills are due on the 3rd of each month (once, for settings saved before).
     if (Number(saved.planVersion ?? 1) < PLAN_VERSION) {
       current = { ...current, dueDay: DEFAULT_BILLING.dueDay, planVersion: PLAN_VERSION };
+      current = renamedBiller(current);
       await setSetting("billing", JSON.stringify(current)).catch(() => undefined);
       return current;
     }
-    return { ...DEFAULT_BILLING, ...saved };
+    return renamedBiller({ ...DEFAULT_BILLING, ...saved });
   } catch {
     return DEFAULT_BILLING;
   }
@@ -104,6 +108,14 @@ export async function usageFor(period: string): Promise<{ emails: number; texts:
     sql`select count(*)::int as n from sms_messages where ai and direction = 'out' and status in ('sent', 'delivered', 'queued') and sent_at >= ${start} and sent_at < ${end}`,
   ]);
   return { emails: row.n, texts: texts.n };
+}
+
+/** Emails and texts sent in each of the last `count` months before this one, newest first. */
+export async function usageHistory(period: string, count = 6): Promise<{ period: string; emails: number; texts: number }[]> {
+  const periods: string[] = [];
+  let [y, m] = period.split("-").map(Number);
+  for (let i = 0; i < count; i++) { m -= 1; if (m < 1) { m = 12; y -= 1; } periods.push(`${y}-${String(m).padStart(2, "0")}`); }
+  return Promise.all(periods.map(async (p) => ({ period: p, ...(await usageFor(p)) })));
 }
 
 const toInvoice = (r: Record<string, unknown>): Invoice => ({

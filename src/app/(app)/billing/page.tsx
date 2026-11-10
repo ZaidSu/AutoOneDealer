@@ -9,7 +9,7 @@ import PageHeader from "@/components/ui/PageHeader";
 import { can } from "@/lib/auth/access";
 import { requirePageStaff } from "@/lib/auth/guard";
 import {
-  billingStarted, billingStartProblem, billTone, draftItems, ensureInvoice, getBankMandate, getBillingSettings, getCardAutopay, listInvoices, periodOf, usageFor,
+  billingStarted, billingStartProblem, billTone, draftItems, ensureInvoice, getBankMandate, getBillingSettings, getCardAutopay, listInvoices, periodOf, usageFor, usageHistory,
   type BillTone,
 } from "@/lib/billing";
 import { balanceView, WARN_DAYS, type BalanceView } from "@/lib/billing/balance";
@@ -52,8 +52,8 @@ export default async function BillingPage({ searchParams }: { searchParams: Prom
   }
   const whyNoBill = createError ? `Couldn't create this month's bill: ${createError}` : billingStartProblem(period);
   const acceptance = await getAcceptance();
-  const [settings, invoices, usage, mandate, card] = await fresh("Billing", () => Promise.all([
-    getBillingSettings(), listInvoices(), usageFor(period), getBankMandate().catch(() => null), getCardAutopay(),
+  const [settings, invoices, usage, mandate, card, history] = await fresh("Billing", () => Promise.all([
+    getBillingSettings(), listInvoices(), usageFor(period), getBankMandate().catch(() => null), getCardAutopay(), usageHistory(period, 6).catch(() => []),
   ]));
   const current = invoices.find((i) => i.period === period) ?? null;
   const autopay = Boolean(card || mandate);
@@ -137,7 +137,7 @@ export default async function BillingPage({ searchParams }: { searchParams: Prom
                 <ul className="mt-1 divide-y divide-line">
                   {settings.planParts.map((p) => (
                     <li key={p.label} className="flex items-start justify-between gap-4 py-2.5">
-                      <div><p className="font-medium">{p.label}</p>{p.detail && <p className="text-sm text-muted">{p.detail}</p>}</div>
+                      <div className="min-w-0"><p className="font-medium">{p.label}</p>{p.detail && <p className="break-words text-sm text-muted">{p.detail}</p>}</div>
                       <p className="shrink-0 tabular-nums">{money(p.cents)}</p>
                     </li>
                   ))}
@@ -174,6 +174,23 @@ export default async function BillingPage({ searchParams }: { searchParams: Prom
             <h2 id="usage" className="text-[17px] font-semibold">Used this month</h2>
             <Usage label="AI emails sent" used={usage.emails} included={settings.includedEmails} range={settings.emailRange} extra={settings.extraEmailCents} />
             <Usage label="AI texts sent" used={usage.texts} included={settings.includedTexts} range={settings.textRange} extra={settings.extraTextCents} />
+            {history.length > 0 && (
+              <details className="mt-4 border-t border-line pt-3">
+                <summary className="cursor-pointer text-[15px] font-semibold">See previous months</summary>
+                <table className="mt-2 w-full text-left text-[15px]">
+                  <thead className="text-sm text-muted"><tr><th className="py-1.5 font-medium">Month</th><th className="py-1.5 font-medium">AI emails</th><th className="py-1.5 font-medium">AI texts</th></tr></thead>
+                  <tbody className="divide-y divide-line">
+                    {history.map((h) => (
+                      <tr key={h.period}>
+                        <td className="py-2 font-medium">{periodLabel(h.period)}</td>
+                        <td className="py-2 tabular-nums">{h.emails.toLocaleString()} <span className="text-muted">of {settings.includedEmails.toLocaleString()}</span></td>
+                        <td className="py-2 tabular-nums">{h.texts.toLocaleString()} <span className="text-muted">of {settings.includedTexts.toLocaleString()}</span></td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </details>
+            )}
           </section>
         </div>
       </div>
@@ -319,7 +336,7 @@ function Breakdown({ items, subtotal, tax, total, taxNote }: { items: Invoice["i
       <ul className="divide-y divide-line">
         {items.map((item, n) => (
           <li key={n} className="flex items-start justify-between gap-4 py-3">
-            <div><p className="font-medium">{item.label}</p>{item.detail && <p className="text-sm text-muted">{item.detail}</p>}</div>
+            <div className="min-w-0"><p className="font-medium">{item.label}</p>{item.detail && <p className="break-words text-sm text-muted">{item.detail}</p>}</div>
             <p className="tabular-nums">{money(item.cents)}</p>
           </li>
         ))}
@@ -370,7 +387,6 @@ function Receipts({ invoices }: { invoices: Invoice[] }) {
                 </tr>
               ))}
             </tbody>
-            <tfoot><tr className="border-t border-line font-semibold"><td className="px-5 py-3" colSpan={2}>Total paid</td><td className="px-3 py-3 tabular-nums">{money(sum)}</td><td /></tr></tfoot>
           </table>
         </div>
       )}

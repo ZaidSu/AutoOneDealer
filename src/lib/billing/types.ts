@@ -43,7 +43,7 @@ export const DEFAULT_BILLING: BillingSettings = {
   dueDay: 3,
   emailRange: "100 to 400",
   textRange: "0 to 500",
-  billedBy: "High Level Technologies",
+  billedBy: "Nawra Technologies",
   documents: [],
   planParts: [
     { label: "Auto One Motors software, updates and support", detail: "The whole AutoDash system, kept up to date, with support and all your connections maintained", cents: 15900 },

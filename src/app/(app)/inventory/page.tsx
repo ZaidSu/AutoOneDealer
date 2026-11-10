@@ -112,7 +112,7 @@ export default async function InventoryPage({ searchParams }: { searchParams?: P
       {deleted.length > 0 && (
         <details className="mt-10">
           <summary className="cursor-pointer text-lg font-semibold">Deleted cars <span className="text-muted">{deleted.length}</span></summary>
-          <p className="mb-3 mt-1 text-sm text-muted">Cars you deleted (not yours). They don&apos;t count anywhere and the AI never offers them. Restore one if it was a mistake.</p>
+          <p className="mb-3 mt-1 text-sm text-muted">Cars you deleted (not yours). They don&apos;t count anywhere and the AI never offers them. Restore one if it was a mistake. Deleted cars clear themselves after 48 hours.</p>
           <ul className="panel divide-y divide-line">
             {deleted.map((c) => (
               <li key={c.id} className="flex flex-wrap items-center justify-between gap-3 px-5 py-3">
