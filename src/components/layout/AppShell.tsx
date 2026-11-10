@@ -20,8 +20,20 @@ const NAV: (NavEntry | NavHeading)[] = [
   { href: "/dashboard", label: "Dashboard", icon: "dashboard", tone: "#5b7cfa" },
   { href: "/todo", label: "To do", icon: "todo", tone: "#ff5d73" },
   { heading: "People" },
-  { href: "/ai/texts", label: "Texts", icon: "chat", tone: "#19c3bb" },
-  { href: "/ai/emails", label: "Emails", icon: "mail", tone: "#9b7bff" },
+  {
+    id: "texts", label: "Texts", icon: "chat", tone: "#19c3bb", items: [
+      { href: "/ai/texts", label: "Conversations", icon: "chat" },
+      { href: "/ai/texts/history", label: "History", icon: "chat" },
+    ],
+  },
+  {
+    id: "emails", label: "Emails", icon: "mail", tone: "#9b7bff", items: [
+      { href: "/ai/emails", label: "Replies", icon: "mail" },
+      { href: "/ai/emails/history", label: "History", icon: "mail" },
+      { href: "/inbox", label: "Inbox", icon: "inbox" },
+      { href: "/credit-applications", label: "Credit applications", icon: "credit" },
+    ],
+  },
   { href: "/leads", label: "Leads", icon: "leads", tone: "#f59f00" },
   { href: "/contacts", label: "Contacts", icon: "customers", tone: "#5b8def" },
   { href: "/customers", label: "Customers", icon: "customers", tone: "#5b8def" },
@@ -31,11 +43,7 @@ const NAV: (NavEntry | NavHeading)[] = [
   { href: "/appointments", label: "Appointments", icon: "appointments", tone: "#f06595" },
   { href: "/analytics", label: "Analytics", icon: "analytics", tone: "#38d98a" },
   {
-    id: "more", label: "More", icon: "settings", tone: "#8792ad", items: [
-      { href: "/credit-applications", label: "Credit applications", icon: "credit" },
-      { href: "/inbox", label: "Inbox", icon: "inbox" },
-      { href: "/ai/texts/history", label: "Text history", icon: "chat" },
-      { href: "/ai/emails/history", label: "Email history", icon: "mail" },
+    id: "more", label: "Other", icon: "settings", tone: "#8792ad", items: [
       { href: "/ai/texts/settings", label: "Text settings", icon: "chat" },
       { href: "/ai/emails/settings", label: "Email settings", icon: "mail" },
       { href: "/ai/train", label: "Train your AI", icon: "ai" },
@@ -59,8 +67,8 @@ const FOOTER: NavItem[] = [
 ];
 // The pages people open most load in the background, so clicking them is instant.
 const PRELOAD = new Set(["/dashboard", "/contacts", "/customers", "/appointments", "/leads", "/ai/texts"]);
-const DEFAULT_OPEN: Record<string, boolean> = { more: false };
-const OPEN_KEY = "ad:nav-open2";
+const DEFAULT_OPEN: Record<string, boolean> = { texts: true, emails: true, more: false };
+const OPEN_KEY = "ad:nav-open3";
 
 const isHeading = (e: NavEntry | NavHeading): e is NavHeading => "heading" in e;
 const isGroup = (e: NavEntry | NavHeading): e is NavGroup => "items" in e;
@@ -194,12 +202,12 @@ function Nav({ pathname, regMode }: { pathname: string; regMode: boolean }) {
         const hasActive = entry.items.some((i) => isActive(pathname, i.href));
         const expanded = hasActive || Boolean(openGroups[entry.id]);
         return (
-          <li key={entry.id} className="pt-3">
+          <li key={entry.id} className="pt-0.5">
             <button
               type="button" onClick={() => toggle(entry.id)} aria-expanded={expanded} aria-controls={`nav-${entry.id}`}
               className="flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-left text-base text-[#b4bdd6] hover:bg-white/[0.07] hover:text-white"
             >
-              <span aria-hidden className="grid size-7 shrink-0 place-items-center text-[#7f8bb0]"><Icon name={entry.icon} className="size-[22px]" /></span>
+              <span aria-hidden className="grid size-7 shrink-0 place-items-center" style={{ color: hasActive ? entry.tone : "#7f8bb0" }}><Icon name={entry.icon} className="size-[22px]" /></span>
               <span className="flex-1">{entry.label}</span>
               <Icon name="chevron" className="nav-chevron size-4 text-[#7c87aa]" />
             </button>

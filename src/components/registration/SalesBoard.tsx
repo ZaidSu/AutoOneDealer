@@ -18,6 +18,9 @@ export default function SalesBoard({ sales, lot, today }: { sales: SaleRow[]; lo
   const [msg, setMsg] = useState<{ ok: boolean; text: string } | null>(null);
   const [pending, start] = useTransition();
   const [q, setQ] = useState("");
+  const [lq, setLq] = useState("");
+  const needleLot = lq.trim().toLowerCase();
+  const results = needleLot.length < 3 ? [] : lot.filter((c) => (c.vin ?? "").toLowerCase().includes(needleLot) || c.title.toLowerCase().includes(needleLot)).slice(0, 6);
 
   const pick = (id: string) => {
     const c = lot.find((x) => x.id === id);
@@ -25,7 +28,7 @@ export default function SalesBoard({ sales, lot, today }: { sales: SaleRow[]; lo
   };
   const save = () => start(async () => {
     const r = await logSaleAction(f);
-    if (r.ok) { setMsg({ ok: true, text: r.message ?? "Saved." }); setF({ ...blank, date: today }); router.refresh(); }
+    if (r.ok) { setMsg({ ok: true, text: r.message ?? "Saved." }); setF({ ...blank, date: today }); setLq(""); router.refresh(); }
     else setMsg({ ok: false, text: r.error });
   });
   const undo = (s: SaleRow) => {
@@ -43,14 +46,31 @@ export default function SalesBoard({ sales, lot, today }: { sales: SaleRow[]; lo
         <p className="mt-1 text-[15px] text-muted">
           Type the sale in here when a car is sold. The car moves to Sold, the customer is saved, a week later the AI texts to check in and ask for a Google review, and a registration is started for it.
         </p>
-        {lot.length > 0 && (
-          <label className="field mt-4">Pick the car from your lot <span className="font-normal text-muted">(or type it below)</span>
-            <select className="input" value={f.carId} onChange={(e) => pick(e.target.value)}>
-              <option value="">Choose a car…</option>
-              {lot.map((c) => <option key={c.id} value={c.id}>{c.title}{c.price ? ` · ${money(c.price)}` : ""}</option>)}
-            </select>
-          </label>
-        )}
+        <div className="field mt-4">
+          <label htmlFor="lot-search">Find the car on your lot <span className="font-normal text-muted">(type the VIN, or part of it, or the car&apos;s name)</span></label>
+          {f.carId ? (
+            <div className="mt-1 flex flex-wrap items-center gap-3 rounded-xl bg-go-soft px-4 py-3 ring-1 ring-go/30">
+              <span className="font-semibold">✓ {f.car}</span>{f.vin && <span className="text-sm text-muted">VIN {f.vin}</span>}
+              <button type="button" className="btn btn-sm ml-auto" onClick={() => { setF({ ...f, carId: "", car: "", vin: "" }); setLq(""); }}>Change car</button>
+            </div>
+          ) : (
+            <>
+              <input id="lot-search" className="input" value={lq} onChange={(e) => setLq(e.target.value)} placeholder="Search by VIN or car name" autoComplete="off" />
+              {lq.trim().length >= 3 && (
+                results.length === 0
+                  ? <p className="mt-2 text-sm text-muted">No car on your lot matches. You can type the car and its VIN in the boxes below instead.</p>
+                  : <ul className="mt-2 divide-y divide-line overflow-hidden rounded-xl ring-1 ring-line">
+                      {results.map((c) => (
+                        <li key={c.id}><button type="button" onClick={() => pick(c.id)} className="flex w-full flex-wrap items-center gap-x-3 px-4 py-2.5 text-left hover:bg-paper">
+                          <span className="font-semibold">{c.title}</span>{c.price ? <span className="text-muted">{money(c.price)}</span> : null}
+                          <span className="ml-auto text-xs text-muted">{c.vin ? `VIN ${c.vin}` : "VIN not read yet"}</span>
+                        </button></li>
+                      ))}
+                    </ul>
+              )}
+            </>
+          )}
+        </div>
         <div className="mt-3 grid gap-3 sm:grid-cols-2">
           <label className="field">Car<input className="input" value={f.car} onChange={(e) => setF({ ...f, car: e.target.value, carId: "" })} placeholder="2019 Toyota Camry SE" /></label>
           <label className="field">VIN <span className="font-normal text-muted">(17 characters, so a car is never sold twice)</span><input className="input uppercase" value={f.vin} onChange={(e) => setF({ ...f, vin: e.target.value.toUpperCase(), carId: "" })} maxLength={17} /></label>
