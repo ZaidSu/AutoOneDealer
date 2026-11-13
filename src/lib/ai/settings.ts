@@ -1,4 +1,5 @@
 // What the AI assistant knows about the dealership, saved in the database (app_settings).
+import { cleanTypingSpeed } from "./typing";
 import { getSetting, setSetting } from "@/lib/db/data";
 
 import { DAYS, type AiTraining, type DealershipInfo, type QA } from "./types";
@@ -45,6 +46,7 @@ export async function saveDealershipInfo(input: DealershipInfo) {
   const clean: DealershipInfo = {
     address: text(input.address, 200).trim(), phone: text(input.phone, 40).trim(), repAlertPhone: text(input.repAlertPhone, 40).trim(), repAlertPhone2: text(input.repAlertPhone2, 40).trim(), repAlertPhone3: text(input.repAlertPhone3, 40).trim(), website: text(input.website, 200).trim(),
     links: text(input.links, 4000), notes: text(input.notes, 4000),
+    carfaxLink: text(input.carfaxLink, 400).trim(), typingSpeed: cleanTypingSpeed(input.typingSpeed),
     hours: DAYS.map((_, i) => ({ open: time(input.hours?.[i]?.open, "10:00"), close: time(input.hours?.[i]?.close, "19:00"), closed: Boolean(input.hours?.[i]?.closed) })),
   };
   await setSetting("dealership_info", JSON.stringify(clean));

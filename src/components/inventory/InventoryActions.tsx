@@ -360,11 +360,7 @@ export function LotTable({ rows }: { rows: LotRow[] }) {
                 <td className="px-4 py-2.5"><input type="checkbox" className="size-4 accent-signal" checked={picked.has(c.id)} onChange={() => toggle(c.id)} aria-label={`Check ${c.title}`} /></td>
                 <td className="px-4 py-2.5 font-medium">
                   <span className="flex items-center gap-3">
-                    {c.imageUrl && (
-                      // eslint-disable-next-line @next/next/no-img-element
-                      <img src={c.imageUrl} alt="" width={64} height={48} loading="lazy" className="h-12 w-16 shrink-0 rounded-md bg-line object-cover" />
-                    )}
-                    <span>{c.url ? <a href={c.url} target="_blank" rel="noopener noreferrer" className="hover:underline">{c.title}</a> : c.title}{c.deposit && <span className="ml-2 rounded-full bg-warn-soft px-2 py-0.5 text-xs font-semibold">Deposit taken</span>}{c.photos > 1 && <span className="font-normal text-muted"> · {c.photos} photos</span>}</span>
+                    <span>{c.url ? <a href={c.url} target="_blank" rel="noopener noreferrer" className="hover:underline">{c.title}</a> : c.title}{c.deposit && <span className="ml-2 rounded-full bg-warn-soft px-2 py-0.5 text-xs font-semibold">Deposit taken</span>}</span>
                   </span>
                 </td>
                 <td className="px-4 py-2.5 tabular-nums">{usd(c.price)}</td>

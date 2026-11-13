@@ -64,3 +64,21 @@ test("price changes are reported", () => {
   assert.deepEqual(priceChanges(lot[0], car({ price: 22995 })), { title: "2021 Acura TLX SH-AWD w/A-SPEC", from: 23995, to: 22995 });
   assert.equal(priceChanges(lot[1], car({ price: 18995 })), null);
 });
+
+test("a row copied from a spreadsheet (car, price, mileage, VIN, date) is read, on one line or two", () => {
+  for (const text of [
+    "2025 Hyundai Sonata\n$21,995\t39,707\tKMHL54JC5SA442554\tNov 11, 2026\t",
+    "2025 Hyundai Sonata\t$21,995\t39,707\tKMHL54JC5SA442554\tNov 11, 2026",
+  ]) {
+    const [car, ...more] = parseSheetText(text);
+    assert.equal(more.length, 0);
+    assert.deepEqual([car.year, car.make, car.model, car.price, car.mileage, car.vin, car.listedOn], [2025, "Hyundai", "Sonata", 21995, 39707, "KMHL54JC5SA442554", "2026-11-11"]);
+  }
+});
+
+test("several pasted cars in the two-line layout are all read", () => {
+  const cars = parseSheetText("2025 Hyundai Sonata\n$21,995\t39,707\tKMHL54JC5SA442554\tNov 11, 2026\n2019 Toyota Camry SE\n$16,500\t81,200\t4T1B11HK5KU123456\t11/10/2026");
+  assert.equal(cars.length, 2);
+  assert.equal(cars[1].model, "Camry SE");
+  assert.equal(cars[1].listedOn, "2026-11-10");
+});

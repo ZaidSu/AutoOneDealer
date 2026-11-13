@@ -273,9 +273,9 @@ export async function mapLimit<T, R>(items: T[], limit: number, fn: (item: T) =>
 
 const NOT_OURS = "-in:sent -in:drafts";
 export const LEAD_QUERIES = {
-  all: `(subject:lead OR subject:"loan app" OR subject:"pre-qualification" OR subject:prequalification OR from:messages.offerup.com) ${NOT_OURS}`,
+  all: `(subject:lead OR subject:"loan app" OR subject:"pre-qualification" OR subject:prequalification OR from:messages.offerup.com OR from:carfax.com) ${NOT_OURS}`,
   application: `(subject:"loan app" OR subject:"pre-qualification" OR subject:prequalification) ${NOT_OURS}`,
-  inquiry: `(subject:lead OR from:messages.offerup.com) -subject:"loan app" ${NOT_OURS}`,
+  inquiry: `(subject:lead OR from:messages.offerup.com OR from:carfax.com) -subject:"loan app" ${NOT_OURS}`,
 } as const;
 export type LeadFilter = keyof typeof LEAD_QUERIES;
 

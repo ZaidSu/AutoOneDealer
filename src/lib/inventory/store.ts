@@ -97,7 +97,7 @@ export async function applyInventory(inv: Inventory): Promise<SyncState> {
   const started = new Date();
   const toRow = (l: Listing) => {
     const { make, model } = makeAndModel(l);
-    return { id: l.id, finance_id: l.financeId, url: l.url, year: l.year, make, model, slug: l.slug, title: l.title || `${l.year ?? ""} ${make} ${model}`.trim(), price: l.price, mileage: l.mileage, image_url: l.image ?? null };
+    return { id: l.id, finance_id: l.financeId, url: l.url, year: l.year, make, model, slug: l.slug, title: l.title || `${l.year ?? ""} ${make} ${model}`.trim(), price: l.price, mileage: l.mileage, image_url: null };
   };
   const live = inv.listings.filter((l) => !l.sold).map(toRow);
   const flagged = inv.listings.filter((l) => l.sold).map(toRow);
@@ -395,8 +395,8 @@ export async function enrichInventory(opts: { max?: number; deadline?: number } 
   for (const r of rows) {
     if (opts.deadline && Date.now() > opts.deadline - 25_000) break;
     try {
-      const { vin, images } = parseDetailPage(await getHtml(r.url as string), (r.image_url as string) ?? null);
-      await sql`update inventory set vin = ${vin}, images = ${sql.json(images)}, details_at = now(), updated_at = now() where id = ${r.id}`;
+      const { vin } = parseDetailPage(await getHtml(r.url as string), (r.image_url as string) ?? null);
+      await sql`update inventory set vin = ${vin}, details_at = now(), updated_at = now() where id = ${r.id}`;
       if (vin) saved++; else noVin++;
     } catch (error) {
       failed++;
@@ -553,8 +553,8 @@ export async function importSheet(cars: SheetCar[], fileName: string): Promise<S
     const title = sheetTitle(car);
     if (car.url) out.withLink++;
     if (!hit) {
-      await sql`insert into inventory (id, url, year, make, model, slug, title, price, mileage, vin, status, last_seen, missed)
-        values (${`sheet-${car.vin}`}, ${car.url}, ${car.year}, ${car.make}, ${car.model}, ${makeSlug(car.make, car.model)}, ${title}, ${car.price}, ${car.mileage}, ${car.vin}, 'available', now(), 0)
+      await sql`insert into inventory (id, url, year, make, model, slug, title, price, mileage, vin, status, last_seen, missed, first_seen)
+        values (${`sheet-${car.vin}`}, ${car.url}, ${car.year}, ${car.make}, ${car.model}, ${makeSlug(car.make, car.model)}, ${title}, ${car.price}, ${car.mileage}, ${car.vin}, 'available', now(), 0, coalesce(${car.listedOn ? `${car.listedOn}T12:00:00-06:00` : null}::timestamptz, now()))
         on conflict (id) do update set url = coalesce(excluded.url, inventory.url), title = excluded.title, price = excluded.price, mileage = excluded.mileage, vin = excluded.vin,
           status = 'available', last_seen = now(), missed = 0, updated_at = now()`;
       out.added++;

@@ -228,7 +228,7 @@ test("the last 6 of the VIN tells two cars of the same model apart in what the A
   assert.equal(vinTail(null), null);
   assert.equal(vinTail("12345"), null);
   const base = { id: "1", financeId: null, url: "https://www.autoonemotorstx.com/details/used-2019-honda-accord/1", year: 2019, slug: "honda-accord", title: "2019 Honda Accord", price: 21000, mileage: 40000, sold: false };
-  assert.match(describeListing({ ...base, vin: "1HGCV1F34KA123456" }), /40,000 miles, VIN ending 123456 \(https:/);
+  assert.match(describeListing({ ...base, vin: "1HGCV1F34KA123456" }), /40,000 miles, VIN 1HGCV1F34KA123456 \(https:/);
   assert.doesNotMatch(describeListing(base), /VIN/, "no VIN known yet: nothing is made up");
 });
 

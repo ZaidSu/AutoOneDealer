@@ -38,6 +38,7 @@ export function leadKind(subject: string): LeadKind | null {
 }
 
 const PROVIDERS: [RegExp, string][] = [
+  [/carfax/i, "Carfax"],
   [/carsforsale/i, "CarsForSale"],
   [/cars\.com/i, "Cars.com"],
   [/edmunds/i, "Edmunds"],
@@ -103,13 +104,22 @@ function empty(kind: LeadKind, provider: string, type: string): ParsedLead {
 }
 
 export function parseLead(email: LeadEmail): ParsedLead | null {
+  const lead = parseLeadEmail(email);
+  // A Carfax email with nobody's name, phone or email in it is not a lead (a notice or newsletter), so it isn't saved as one.
+  if (lead && lead.provider === "Carfax" && !lead.name && !lead.phone && !lead.email) return null;
+  return lead;
+}
+
+function parseLeadEmail(email: LeadEmail): ParsedLead | null {
   // 0. OfferUp: a buyer's message about a car. Its subject is "Re: <car>", which would otherwise be skipped as a reply.
   //    The buyer's contact is OfferUp's private reply address: answering there reaches them inside OfferUp.
   const offer = parseOfferUp(email);
   if (offer) {
     return { ...empty("inquiry", "OfferUp", "OfferUp message"), name: offer.name, email: offer.replyAddress, vehicle: offer.vehicle || null, comments: offer.message };
   }
-  const kind = leadKind(email.subject);
+  // Carfax sends its leads from its own addresses, and the subject doesn't always say "lead".
+  const fromCarfax = /carfax/i.test(email.from) && !/^\s*(re|fwd?)\s*:/i.test(email.subject) && !/receipt|invoice|newsletter|webinar|unsubscribe/i.test(email.subject);
+  const kind = leadKind(email.subject) ?? (fromCarfax ? "inquiry" : null);
   if (!kind) return null;
   const provider = providerFor(email.from, email.subject);
   const lead = empty(kind, provider, typeFromSubject(email.subject, kind));

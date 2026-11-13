@@ -1,5 +1,6 @@
 // Texting: conversations with customers, STOP/START handling, and AI replies that sound like a real salesperson.
 // Every text (sent, received, or an AI draft waiting for approval) is a row in sms_messages.
+import { typingDelayMs } from "@/lib/ai/typing";
 import { CONVERSATION_RULES, DEPOSIT_RULES, isNoReply } from "@/lib/ai/status-rules";
 import { askClaude, aiConfigured } from "@/lib/ai/claude";
 import { getAiTraining, getDealershipInfo } from "@/lib/ai/settings";
@@ -251,6 +252,14 @@ Write the dealership's next text.`;
   await sql`update sms_messages set status = 'discarded' where phone = ${e164} and status = 'draft'`;
   const [draft] = await sql`insert into sms_messages (customer_key, phone, direction, body, status, ai) values (${customerKey}, ${e164}, 'out', ${reply}, 'draft', true) returning id`;
   if ((await getAutoText()) && (await aiHoursOpen())) {
+    // Take a moment to "type", like a person would. If staff handled the draft meanwhile, or the customer texted again, don't send.
+    const wait = force ? 0 : typingDelayMs(reply, info.typingSpeed);
+    if (wait > 0) {
+      await new Promise((resolve) => setTimeout(resolve, wait));
+      const [still] = await sql`select status from sms_messages where id = ${Number(draft.id)}`;
+      const [newer] = await sql`select 1 from sms_messages where phone = ${e164} and direction = 'in' and created_at > (select created_at from sms_messages where id = ${Number(draft.id)}) limit 1`;
+      if (still?.status !== "draft" || newer) return "skipped";
+    }
     const sent = await sendText({ customerKey, phone: e164, body: reply, sentBy: "AI (automatic)", ai: true, draftId: Number(draft.id) });
     trace("sms", `AI reply ${sent.ok ? "sent" : `left as draft: ${sent.error}`}`);
     return sent.ok ? "sent" : "drafted";

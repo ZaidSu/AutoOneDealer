@@ -9,6 +9,8 @@ export type SheetCar = {
   url: string | null;
   /** The stock number, when the sheet has that column. */
   stock: string | null;
+  /** The day the car was added, when the pasted row has a date (YYYY-MM-DD). */
+  listedOn?: string | null;
 };
 
 const MULTI_WORD_MAKES = ["Land Rover", "Alfa Romeo", "Aston Martin", "Rolls Royce", "Rolls-Royce", "Mercedes-Benz", "Mercedes Benz", "Mini Cooper"];
@@ -28,20 +30,69 @@ const VIN = /^[A-HJ-NPR-Z0-9]{17}$/i;
 // ---- plain text rows ("2021 Acura TLX 19UUB6F51MA002066 62,127 $22,995") ----
 const ROW = /^((?:19|20)\d{2})\s+(.+?)\s+([A-HJ-NPR-Z0-9]{17})\s+([\d,]+)(?:\s+\$?\s*([\d,]+))?\s*$/i;
 
+const MONTHS = ["jan", "feb", "mar", "apr", "may", "jun", "jul", "aug", "sep", "oct", "nov", "dec"];
+const DATE = /\b(?:(Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)[a-z]*\.?\s+(\d{1,2}),?\s+((?:19|20)\d{2})|(\d{1,2})\/(\d{1,2})\/(\d{4}|\d{2})|((?:19|20)\d{2})-(\d{2})-(\d{2}))\b/i;
+const iso = (y: number, m: number, d: number) => (m >= 1 && m <= 12 && d >= 1 && d <= 31 ? `${y}-${String(m).padStart(2, "0")}-${String(d).padStart(2, "0")}` : null);
+
+/** One car written as: year make model, then price, mileage, VIN and the date added, in any spacing (a row copied from a spreadsheet, or the
+ *  car's name on one line and the numbers on the next). The price is the amount with a $; the other number is the mileage. */
+function looseCar(record: string): SheetCar | null {
+  const t = record.replace(/\s+/g, " ").trim();
+  const ym = /^((?:19|20)\d{2})\s+(.*)$/.exec(t);
+  if (!ym) return null;
+  let rest = ym[2];
+  const vm = /(?:^|\s)([A-HJ-NPR-Z0-9]{17})(?=\s|$)/i.exec(rest);
+  if (!vm) return null;
+  const vin = vm[1].toUpperCase();
+  rest = rest.replace(vm[1], " ");
+  let listedOn: string | null = null;
+  const dm = DATE.exec(rest);
+  if (dm) {
+    if (dm[1]) listedOn = iso(Number(dm[3]), MONTHS.indexOf(dm[1].toLowerCase().slice(0, 3)) + 1, Number(dm[2]));
+    else if (dm[4]) listedOn = iso(dm[6].length === 2 ? 2000 + Number(dm[6]) : Number(dm[6]), Number(dm[4]), Number(dm[5]));
+    else listedOn = iso(Number(dm[7]), Number(dm[8]), Number(dm[9]));
+    rest = rest.replace(dm[0], " ");
+  }
+  let price: number | null = null;
+  const pm = /\$\s*([\d,]+)(?:\.\d+)?/.exec(rest);
+  if (pm) { price = digits(pm[1]); rest = rest.replace(pm[0], " "); }
+  const tail = /((?:\s+[\d,]{3,})+)\s*$/.exec(rest);
+  let mileage: number | null = null;
+  if (tail) {
+    const nums = tail[1].trim().split(/\s+/);
+    if (price === null && nums.length > 1) { mileage = digits(nums[0]); price = digits(nums[1]); } else mileage = digits(nums[0]);
+    rest = rest.slice(0, tail.index);
+  }
+  const { make, model } = splitMakeModel(rest.replace(/\b(?:mi|miles)\b/gi, " "));
+  if (!make) return null;
+  return { year: Number(ym[1]), make, model, trim: null, vin, mileage, price, url: null, stock: null, listedOn };
+}
+
 /** Cars out of text lines, from the PDF's text or copied and pasted from it. Anything between the year and the VIN is the make, model and trim. */
 export function parseSheetText(text: string): SheetCar[] {
   const cars: SheetCar[] = [];
   const seen = new Set<string>();
+  const add = (car: SheetCar | null) => { if (car && !seen.has(car.vin)) { seen.add(car.vin); cars.push(car); } };
+  let pending = "";
+  const flush = () => { if (pending) add(looseCar(pending)); pending = ""; };
   for (const raw of text.replace(/\r/g, "").split("\n")) {
-    const m = ROW.exec(raw.replace(/[\t ]+/g, " ").replace(/\s+/g, " ").trim());
-    if (!m) continue;
-    const vin = m[3].toUpperCase();
-    if (seen.has(vin)) continue;
-    seen.add(vin);
-    const { make, model } = splitMakeModel(m[2]);
-    if (!make) continue;
-    cars.push({ year: Number(m[1]), make, model, trim: null, vin, mileage: digits(m[4]), price: digits(m[5]), url: null, stock: null });
+    const line = raw.replace(/[\t ]+/g, " ").replace(/\s+/g, " ").trim();
+    if (!line) continue;
+    const m = ROW.exec(line);
+    if (m) {
+      flush();
+      const vin = m[3].toUpperCase();
+      if (seen.has(vin)) continue;
+      const { make, model } = splitMakeModel(m[2]);
+      if (!make) continue;
+      seen.add(vin);
+      cars.push({ year: Number(m[1]), make, model, trim: null, vin, mileage: digits(m[4]), price: digits(m[5]), url: null, stock: null });
+      continue;
+    }
+    if (/^(?:19|20)\d{2}\s+[A-Za-z]/.test(line)) { flush(); pending = line; if (/[A-HJ-NPR-Z0-9]{17}/i.test(line)) flush(); }
+    else if (pending) { pending += ` ${line}`; if (/[A-HJ-NPR-Z0-9]{17}/i.test(pending)) flush(); }
   }
+  flush();
   return cars;
 }
 

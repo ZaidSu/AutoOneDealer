@@ -3,6 +3,7 @@
 // A car that's listed is available; one that isn't is "may be sold, please call". If there is no saved copy, the AI says a
 // salesperson will confirm (never "sold").
 import type { Inventory } from "./fetch";
+import { getDealershipInfo } from "@/lib/ai/settings";
 import { describeListing, formatLot, sameModel, similarTo, type Listing } from "./match";
 import { readSnapshot } from "./store";
 
@@ -58,30 +59,36 @@ export async function availabilityNote(vehicle: string | null | undefined, opts:
   return [specific, lot].filter(Boolean).join("\n\n");
 }
 
+/** The dealership's Carfax link pattern (blank until Carfax is set up). */
+async function carfaxTemplate(): Promise<string> {
+  return (await getDealershipInfo().catch(() => null))?.carfaxLink ?? "";
+}
+
 /** The list of cars on the lot (empty if the saved copy of the website is missing or too old). */
 export async function lotNote(): Promise<string> {
   const snap = await readSnapshot();
   if (!snap) return "";
-  return formatLot(snap.listings, { complete: snap.complete, minutesAgo: (Date.now() - snap.fetchedAt) / 60_000 });
+  return formatLot(snap.listings, { complete: snap.complete, minutesAgo: (Date.now() - snap.fetchedAt) / 60_000, carfax: await carfaxTemplate() });
 }
 
 async function carNote(vehicle: string | null | undefined, opts: { vin?: string | null; stock?: string | null; phone?: string }): Promise<string> {
   if (!vehicle?.trim() && !opts.vin && !opts.stock) return "";
   const result = await checkAvailability(vehicle, opts).catch((): Availability => ({ status: "unknown", reason: "The check failed" }));
+  const ct = await carfaxTemplate();
   const call = opts.phone ? `call us at ${opts.phone}` : "give the dealership a call";
   if (result.status === "available" && result.match.deposit) {
     return `LIVE INVENTORY CHECK (from our inventory, just now)
-RESULT: DEPOSIT TAKEN. ${describeListing(result.match)}.
+RESULT: DEPOSIT TAKEN. ${describeListing(result.match, ct)}.
 A customer has put a deposit on this car, so it is spoken for. Do NOT say it is available, do NOT invite them to come see it, and do NOT pressure them. Tell them plainly it has a deposit on it right now, and offer similar cars from the lot (with links) or say a sales rep can let them know if it comes back.`;
   }
   if (result.status === "available") {
     return `LIVE INVENTORY CHECK (from our website inventory, just now)
-RESULT: AVAILABLE. ${result.exact ? "This car" : "A car like this"} is listed for sale on our website right now: ${describeListing(result.match)}.
+RESULT: AVAILABLE. ${result.exact ? "This car" : "A car like this"} is listed for sale on our website right now: ${describeListing(result.match, ct)}.
 You may say it is available, share that link, and answer questions about its price and mileage from it. Invite them to come see it soon, since cars sell quickly.`;
   }
   if (result.status === "maybe_sold") {
-    const similar = result.similar.length ? `\nSimilar cars that ARE listed right now (offer these, with their links):\n${result.similar.map((l) => `- ${describeListing(l)}`).join("\n")}` : "";
-    const was = result.wasListed ? ` It was on our website recently (${describeListing(result.wasListed)}) and is no longer listed.` : "";
+    const similar = result.similar.length ? `\nSimilar cars that ARE listed right now (offer these, with their links):\n${result.similar.map((l) => `- ${describeListing(l, ct)}`).join("\n")}` : "";
+    const was = result.wasListed ? ` It was on our website recently (${describeListing(result.wasListed, ct)}) and is no longer listed.` : "";
     return `LIVE INVENTORY CHECK (from our website inventory, just now)
 RESULT: NOT LISTED. ${vehicle ?? "This car"} is not on our website's inventory, so it may be sold.${was}
 Tell the customer plainly that this vehicle may be sold, and ask them to ${call} so the team can confirm and help them find something that fits. Do NOT say it is available. Do NOT say it is definitely sold.${similar}`;

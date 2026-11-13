@@ -3,6 +3,7 @@ import { useState, useTransition } from "react";
 import { saveDealershipInfoAction, sendRepAlertTestAction } from "@/app/actions";
 import ReadOnlyNotice from "@/components/ai/ReadOnlyNotice";
 import { repAlertNumbers } from "@/lib/ai/rep-numbers";
+import { TYPING_SPEEDS } from "@/lib/ai/typing";
 import { DAYS, type DealershipInfo } from "@/lib/ai/types";
 
 export default function DealershipInfoForm({ initial, canEdit }: { initial: DealershipInfo; canEdit: boolean }) {
@@ -61,6 +62,34 @@ export default function DealershipInfoForm({ initial, canEdit }: { initial: Deal
             {test && <p role="status" className={`mt-1 text-sm ${test.ok ? "text-go" : "text-signal"}`}>{test.text}</p>}
           </div>
         </div>
+      </section>
+
+      <section className="panel p-5">
+        <h2 className="text-[17px] font-semibold">How the AI texts</h2>
+        <p className="mt-1 text-sm text-muted">The AI waits a moment before sending, so a reply doesn&apos;t land one second after the customer&apos;s text. The wait grows with the length of the reply, up to about 30 seconds.</p>
+        <div role="radiogroup" aria-label="Typing speed" className="mt-3 grid gap-2 sm:grid-cols-2">
+          {TYPING_SPEEDS.map((s) => {
+            const on = (info.typingSpeed ?? "natural") === s.value;
+            return (
+              <label key={s.value} className={`flex cursor-pointer items-start gap-3 rounded-xl p-3 ring-1 ${on ? "bg-azure-soft ring-azure" : "ring-line hover:bg-paper"}`}>
+                <input type="radio" name="typing" className="mt-1 size-4 accent-azure" disabled={!canEdit} checked={on} onChange={() => { setInfo({ ...info, typingSpeed: s.value }); setResult(null); }} />
+                <span><span className="block font-semibold">{s.label}</span><span className="block text-sm text-muted">{s.note}</span></span>
+              </label>
+            );
+          })}
+        </div>
+      </section>
+
+      <section className="panel p-5">
+        <h2 className="text-[17px] font-semibold">Carfax</h2>
+        <p className="mt-1 text-sm text-muted">
+          When Carfax is set up, paste the link to a car&apos;s report here and put <span className="font-mono font-semibold text-ink">{"{VIN}"}</span> where the VIN goes. The AI then sends the right report when a customer asks for the Carfax.
+          Until then it says the team will send it. It always gives the full VIN when asked.
+        </p>
+        <label className="field mt-3">Carfax report link
+          <input className="input" disabled={!canEdit} value={info.carfaxLink ?? ""} onChange={(e) => { setInfo({ ...info, carfaxLink: e.target.value }); setResult(null); }} placeholder="https://www.carfax.com/…vin={VIN}" />
+        </label>
+        {(info.carfaxLink ?? "").trim() && !(info.carfaxLink ?? "").includes("{VIN}") && <p role="alert" className="mt-1 text-sm text-signal">The link needs {"{VIN}"} in it, where the car&apos;s VIN goes.</p>}
       </section>
 
       <section className="panel p-5">

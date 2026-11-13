@@ -18,7 +18,9 @@ export async function POST(req: NextRequest) {
     return new NextResponse("bad signature", { status: 403 });
   }
   const result = await receiveText(params.From ?? "", params.Body ?? "", params.MessageSid ?? "");
-  if (result && !result.keyword) {
+  // Lead alerts from Carfax and other automated senders (short codes) are not customers: show them to staff, never auto-reply.
+  const automated = /carfax/i.test(params.Body ?? "") && /\blead\b|new customer|shopper/i.test(params.Body ?? "") || String(params.From ?? "").replace(/\D/g, "").length < 10;
+  if (result && !result.keyword && !automated) {
     after(async () => {
       // During AI hours the AI answers right away; outside them, staff see the text and can ask the AI for a draft.
       if (await aiHoursOpen()) await aiReplyToText(result.customerKey, result.phone).catch((e) => console.error("[autodash:sms] AI reply failed:", e instanceof Error ? e.message : e));
