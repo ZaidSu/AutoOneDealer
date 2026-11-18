@@ -8,7 +8,6 @@ const TIP = "Record a sale. The AI will follow up with the customer after some t
 
 export default function RecordSaleButton({ lot, today }: { lot: LotCar[]; today: string }) {
   const [open, setOpen] = useState(false);
-  const [tip, setTip] = useState(false);
   const tipId = useId();
   useEffect(() => {
     if (!open) return;
@@ -20,16 +19,14 @@ export default function RecordSaleButton({ lot, today }: { lot: LotCar[]; today:
 
   return (
     <>
-      <span className="inline-flex items-center gap-2">
-        <button type="button" className="btn btn-red" onClick={() => setOpen(true)}>Record a sale</button>
-        <span className="group relative inline-flex">
-          <button type="button" aria-label="What does Record a sale do?" aria-describedby={tipId} aria-expanded={tip}
-            className="grid size-7 place-items-center rounded-full border border-line bg-white text-sm font-bold italic text-muted hover:border-signal hover:text-signal focus-visible:border-signal focus-visible:text-signal"
-            onClick={() => setTip((v) => !v)} onBlur={() => setTip(false)}>i</button>
-          <span id={tipId} role="tooltip"
-            className={`absolute right-0 top-9 z-30 w-72 rounded-xl bg-ink px-4 py-3 text-left text-sm font-medium leading-snug text-white shadow-lg ${tip ? "block" : "hidden group-hover:block group-focus-within:block"}`}>
-            {TIP}
-          </span>
+      <span className="group relative inline-flex">
+        <button type="button" className="btn btn-red gap-2" aria-describedby={tipId} onClick={() => setOpen(true)}>
+          Record a sale
+          <span aria-hidden className="grid size-4 place-items-center rounded-full border border-white/70 text-[10px] font-bold not-italic leading-none">i</span>
+        </button>
+        <span id={tipId} role="tooltip"
+          className="pointer-events-none absolute left-0 top-full z-50 mt-2 hidden w-64 max-w-[calc(100vw-2rem)] rounded-xl bg-ink px-4 py-3 text-left text-sm font-medium leading-snug text-white shadow-lg group-focus-within:block group-hover:block">
+          {TIP}
         </span>
       </span>
       {open && (
