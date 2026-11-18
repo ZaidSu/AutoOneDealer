@@ -58,7 +58,7 @@ export const ACTIONS_SYSTEM = `You read a conversation between a used car dealer
    If the day or time is vague ("sometime next week", "maybe", "I'll let you know"), or the customer hasn't agreed, use null.
 2. "wantsRep": a human at the dealership must follow up, because the AI can't handle it. Report it when ANY of these is true:
    - the customer asked for a call, a person, or a sales rep (or said yes when offered one)
-   - they asked for a Carfax, AutoCheck, vehicle history report, inspection or service records (the AI cannot send these)
+   - they asked for a Carfax, AutoCheck, vehicle history report, inspection or service records (the AI cannot send these), or asked about a car's title (clean, salvage, rebuilt), which the AI cannot confirm (if they asked to be texted, say so in the reason, like "title question, wants a text")
    - they asked something the dealership could not answer, or the dealership said a salesperson will confirm (for example it isn't known whether the car is available, or the price, fees or delivery)
    - they are upset: angry, say they were lied to or mistreated, or threaten a bad review or to tell people (reason like "upset customer, threatens bad review"; this one matters even if they are leaving)
    - they are ready to buy, want to hold or put a deposit on a car, or say they are coming in to buy

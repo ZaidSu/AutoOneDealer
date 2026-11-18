@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { CONVERSATION_RULES, DEPOSIT_RULES, isNoReply } from "../../src/lib/ai/status-rules.ts";
+import { CONVERSATION_RULES, DEPOSIT_RULES, askedAQuestion, isAcknowledgment, isNoReply, staySilentAfter } from "../../src/lib/ai/status-rules.ts";
 import { describeListing, formatLot, type Listing } from "../../src/lib/inventory/match.ts";
 
 const car = (over: Partial<Listing> = {}): Listing => ({ id: "1", financeId: null, url: "https://x.test/1", year: 2027, slug: "kia-telluride", title: "2027 Kia Telluride S", price: 31995, mileage: 2226, sold: false, ...over });
@@ -23,4 +23,25 @@ test("the shared rules cover the deposit and goodbye cases", () => {
   assert.match(DEPOSIT_RULES, /believe them/);
   assert.match(CONVERSATION_RULES, /NO_REPLY/);
   assert.match(CONVERSATION_RULES, /bad review/);
+});
+
+test("short okays and thank-yous are acknowledgments", () => {
+  for (const t of ["Okay", "Ok", "okay 👍", "Okay.", "Thank you that will help", "Thanks!", "thx", "👍", "Sounds good", "Got it, thanks", "Perfect", "ok thank you so much"]) assert.equal(isAcknowledgment(t), true, t);
+});
+test("real answers and questions are not acknowledgments", () => {
+  for (const t of ["Yes", "No", "Ok but what about the price?", "Okay can I come at 5", "Pass thanks.", "Guess it was never approved never Hurd back", "Text pls", "Clean title?", "Thank you Rodney, see you at 2"]) assert.equal(isAcknowledgment(t), false, t);
+});
+test("a short okay after a question is an answer, after a statement it needs no reply", () => {
+  assert.equal(askedAQuestion("Mario can give you a quick call right now, want me to have him call you?"), true);
+  assert.equal(askedAQuestion("The 2025 Civic is available at $21,995. When could you come see it? Reply STOP to opt out."), true);
+  assert.equal(askedAQuestion("I'm sorry for the frustration, Rodney. A manager will call you shortly to go over your options."), false);
+  assert.equal(staySilentAfter("Okay", "Still trying for an approval w other lenders.Mario"), true);
+  assert.equal(staySilentAfter("Okay 👍", "A manager will call you shortly."), true);
+  assert.equal(staySilentAfter("Okay", "Want me to have him call you?"), false);
+  assert.equal(staySilentAfter("Okay", null), false);
+});
+test("the shared rules cover the title question and staying by text", () => {
+  assert.match(DEPOSIT_RULES, /TITLE:/);
+  assert.match(DEPOSIT_RULES, /BY TEXT:/);
+  assert.match(CONVERSATION_RULES, /SHORT "OKAY"/);
 });

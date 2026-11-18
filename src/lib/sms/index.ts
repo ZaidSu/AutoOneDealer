@@ -1,7 +1,7 @@
 // Texting: conversations with customers, STOP/START handling, and AI replies that sound like a real salesperson.
 // Every text (sent, received, or an AI draft waiting for approval) is a row in sms_messages.
 import { typingDelayMs } from "@/lib/ai/typing";
-import { CONVERSATION_RULES, DEPOSIT_RULES, isNoReply } from "@/lib/ai/status-rules";
+import { CONVERSATION_RULES, DEPOSIT_RULES, isNoReply, staySilentAfter } from "@/lib/ai/status-rules";
 import { askClaude, aiConfigured } from "@/lib/ai/claude";
 import { getAiTraining, getDealershipInfo } from "@/lib/ai/settings";
 import { DAYS } from "@/lib/ai/types";
@@ -200,6 +200,11 @@ export async function aiReplyToText(customerKey: string | null, phone: string, {
   const last = thread.at(-1);
   if (!last || (last.direction !== "in" && !force)) return "skipped"; // only answer when the customer is waiting
   if (last && /^(STOP|START|HELP|INFO|UNSUBSCRIBE|CANCEL|END|QUIT)\W*$/i.test(last.body.trim())) return "skipped";
+  // Just "Okay" / "Thanks" / a thumbs-up after a message that asked nothing: nothing to answer (staff texts count too).
+  if (!force && last.direction === "in") {
+    const before = thread.slice(0, -1).reverse().find((m) => m.direction !== "in");
+    if (staySilentAfter(last.body, before?.body)) return "skipped";
+  }
 
   const [customer] = customerKey ? await sql`select * from customers where key = ${customerKey}` : [];
   const [summary] = customerKey ? await sql`select summary from customer_summaries where customer_key = ${customerKey}` : [];
