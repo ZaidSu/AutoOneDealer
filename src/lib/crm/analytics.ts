@@ -32,7 +32,7 @@ async function computeAnalytics(since: Date, timeZone: string): Promise<Analytic
         group by 1, 2, 3, 4, 5, 6, 7`,
     sql`select rep_id, status, count(*)::int as n from appointments where starts_at >= ${since} and starts_at <= now() group by 1, 2`,
     sql`select coalesce(heard_from, first_provider, 'Not known') as source, rep_id, count(*)::int as n
-        from customers where status = 'purchased' and coalesce(purchased_at, updated_at) >= ${since} group by 1, 2`,
+        from customers where status = 'purchased' and co_buyer_of is null and coalesce(purchased_at, updated_at) >= ${since} group by 1, 2`,
   ]);
   return {
     leadsByDay: new Map(days.map((r) => [r.d as string, r.n as number])),

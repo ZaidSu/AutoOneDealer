@@ -245,6 +245,8 @@ alter table inventory add column if not exists sold_customer_name text;
 -- v25: a deposit is on this car (it is spoken for but not sold yet)
 alter table inventory add column if not exists deposit_at timestamptz;
 alter table inventory add column if not exists deposit_by text;
+-- v29: a sale can have a co-buyer; they are their own customer (so the AI follows up with both) tied to the main buyer
+alter table customers add column if not exists co_buyer_of text;
 -- v28: AutoDash keeps no car photos (the list is model, price, mileage, VIN and date), so clear any saved before
 update inventory set image_url = null, images = '[]'::jsonb where image_url is not null or images <> '[]'::jsonb;
 -- v27: when a car was deleted (deleted cars are cleared 48 hours later) and the one-VIN-one-car cleanup

@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import { AddSale, BackOnLot, CheckNowButton, ConfirmMissing, ImportText, LotTable, UploadSheet, RemoveCar, RestoreCar } from "@/components/inventory/InventoryActions";
+import RecordSaleButton from "@/components/sales/RecordSaleButton";
 import DbNotice from "@/components/ui/DbNotice";
 import PageHeader from "@/components/ui/PageHeader";
 import { can } from "@/lib/auth/access";
@@ -24,17 +25,21 @@ export default async function InventoryPage({ searchParams }: { searchParams?: P
   const staff = await requirePageStaff();
   const dev = can.useDeveloperTools(staff.role); // website-reading status and the paste box are for the developer only
   const q = String((await searchParams)?.q ?? "").trim().toLowerCase().slice(0, 60);
-  const header = <PageHeader title="Inventory" description="Your cars on the lot and the ones that sold. The AI reads this to answer “is it still available?”. Sales charts are under Analytics → Sales." action={<CheckNowButton />} />;
+  const desc = "Your cars on the lot and the ones that sold. The AI reads this to answer “is it still available?”. Sales charts are under Analytics → Sales.";
+  const header = <PageHeader title="Inventory" description={desc} action={<CheckNowButton />} />;
   const state = await dbState();
   if (state !== "ready") return <>{header}<DbNotice state={state} what="Inventory" /></>;
   await seedInventoryOnce().catch(() => undefined); // the first time, loads the cars from the website text sent on Oct 2
   const [sync, stats, lot, sold, deleted, aiView, pageStats, sheet] = await fresh("Inventory", () => Promise.all([getSyncState(), inventoryStats(TZ), listCars("available"), listCars("sold", 100), listCars("deleted", 100), aiViewOfInventory(), dev ? getPageStats() : Promise.resolve({}), getSheetState()]));
 
+  const today = new Intl.DateTimeFormat("en-CA", { timeZone: TZ }).format(new Date());
+  const saleHeader = <PageHeader title="Inventory" description={desc} action={<div className="flex flex-wrap items-center gap-3"><RecordSaleButton today={today} lot={lot.map((c) => ({ id: c.id, title: c.title, vin: c.vin, price: c.price }))} /><CheckNowButton /></div>} />;
+
   const shown = q ? lot.filter((c) => `${c.title} ${c.vin ?? ""} ${c.make ?? ""} ${c.model ?? ""}`.toLowerCase().includes(q)) : lot;
 
   return (
     <div className="max-w-6xl">
-      {header}
+      {saleHeader}
 
       <ConfirmMissing cars={sheet.pending} sheetAt={sheet.at} />
 
@@ -92,7 +97,7 @@ export default async function InventoryPage({ searchParams }: { searchParams?: P
         {sold.length === 0 ? <p className="panel p-5 text-muted">No sales recorded yet. Once a car leaves your website it shows up here.</p> : (
           <div className="panel overflow-x-auto">
             <table className="w-full min-w-[760px] text-left text-[15px]">
-              <thead className="border-b border-line text-sm text-muted"><tr><th className="px-4 py-2.5 font-semibold">Car</th><th className="px-4 py-2.5 font-semibold">Sold for</th><th className="px-4 py-2.5 font-semibold">Date</th><th className="px-4 py-2.5 font-semibold">Customer</th><th className="px-4 py-2.5 font-semibold">How we know</th><th className="px-4 py-2.5" /></tr></thead>
+              <thead className="border-b border-line text-sm text-muted"><tr><th className="px-4 py-2.5 font-semibold">Car</th><th className="px-4 py-2.5 font-semibold">Sold for</th><th className="px-4 py-2.5 font-semibold">Date</th><th className="px-4 py-2.5 font-semibold">Customer</th><th className="px-4 py-2.5 font-semibold">VIN</th><th className="px-4 py-2.5" /></tr></thead>
               <tbody className="divide-y divide-line">
                 {sold.map((c) => (
                   <tr key={c.id}>
@@ -100,7 +105,7 @@ export default async function InventoryPage({ searchParams }: { searchParams?: P
                     <td className="px-4 py-2.5 tabular-nums">{usd(c.soldPrice ?? c.price)}</td>
                     <td className="px-4 py-2.5 text-muted">{c.soldAt ? day(c.soldAt) : "date unknown"}</td>
                     <td className="px-4 py-2.5">{c.soldCustomerKey ? <Link href={`/customers/${encodeURIComponent(c.soldCustomerKey)}`} className="font-medium hover:underline">{c.soldCustomerName || "Customer"}</Link> : <span className="text-muted">none recorded</span>}</td>
-                    <td className="px-4 py-2.5 text-muted">{c.soldBy ? `${c.soldNote ?? "By hand"} (${c.soldBy})` : c.soldNote}</td>
+                    <td className="px-4 py-2.5 font-mono text-sm text-muted">{c.vin ?? "not read yet"}</td>
                     <td className="px-4 py-2.5 text-right"><span className="inline-flex gap-2"><BackOnLot id={c.id} /><RemoveCar id={c.id} /></span></td>
                   </tr>
                 ))}

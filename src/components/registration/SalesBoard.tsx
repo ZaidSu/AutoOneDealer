@@ -2,7 +2,8 @@
 // Registration area: type in a sale by hand (like DeskManager) and see the recent sales with where each registration stands.
 import { useRouter } from "next/navigation";
 import { useState, useTransition } from "react";
-import { logSaleAction, undoSaleAction } from "@/app/actions";
+import { undoSaleAction } from "@/app/actions";
+import RecordSaleForm from "@/components/sales/RecordSaleForm";
 import { STAGE_LABEL, cleanStage } from "@/lib/registration/rules";
 import type { LotCar, SaleRow } from "@/lib/registration/sales";
 
@@ -13,24 +14,9 @@ const STAGE_COLOR: Record<string, string> = { waiting: "#6b7794", pickup: "#f08c
 
 export default function SalesBoard({ sales, lot, today }: { sales: SaleRow[]; lot: LotCar[]; today: string }) {
   const router = useRouter();
-  const blank = { carId: "", car: "", vin: "", price: "", date: today, name: "", phone: "", deferred: false };
-  const [f, setF] = useState(blank);
   const [msg, setMsg] = useState<{ ok: boolean; text: string } | null>(null);
   const [pending, start] = useTransition();
   const [q, setQ] = useState("");
-  const [lq, setLq] = useState("");
-  const needleLot = lq.trim().toLowerCase();
-  const results = needleLot.length < 3 ? [] : lot.filter((c) => (c.vin ?? "").toLowerCase().includes(needleLot) || c.title.toLowerCase().includes(needleLot)).slice(0, 6);
-
-  const pick = (id: string) => {
-    const c = lot.find((x) => x.id === id);
-    setF(c ? { ...f, carId: id, car: c.title, vin: c.vin ?? "", price: c.price ? String(c.price) : f.price } : { ...f, carId: "", car: "", vin: "" });
-  };
-  const save = () => start(async () => {
-    const r = await logSaleAction(f);
-    if (r.ok) { setMsg({ ok: true, text: r.message ?? "Saved." }); setF({ ...blank, date: today }); setLq(""); router.refresh(); }
-    else setMsg({ ok: false, text: r.error });
-  });
   const undo = (s: SaleRow) => {
     if (!s.regId || !window.confirm(`The sale to ${s.name || "this customer"} fell through?\n\nThe car goes back on the lot, the customer is no longer marked as a buyer, and this registration is removed.`)) return;
     start(async () => { const r = await undoSaleAction(s.regId!); setMsg({ ok: r.ok, text: r.ok ? (r.message ?? "Removed.") : r.error }); router.refresh(); });
@@ -42,55 +28,19 @@ export default function SalesBoard({ sales, lot, today }: { sales: SaleRow[]; lo
     <div>
       <section id="log-sale" aria-labelledby="log-title" className="panel relative mb-8 scroll-mt-6 overflow-hidden p-5">
         <span aria-hidden className="absolute inset-x-0 top-0 h-1.5 bg-gradient-to-r from-[#2f6fed] via-[#0ca7a0] to-[#12a150]" />
-        <h2 id="log-title" className="section-title">Log a sale</h2>
+        <h2 id="log-title" className="section-title">Record a sale</h2>
         <p className="mt-1 text-[15px] text-muted">
-          Type the sale in here when a car is sold. The car moves to Sold, the customer is saved, a week later the AI texts to check in and ask for a Google review, and a registration is started for it.
+          Type the sale in here when a car is sold. The car moves to Sold, the customer (and co-buyer, if any) is saved, a week later the AI texts to check in and ask for a Google review, and a registration is started for it.
         </p>
-        <div className="field mt-4">
-          <label htmlFor="lot-search">Find the car on your lot <span className="font-normal text-muted">(type the VIN, or part of it, or the car&apos;s name)</span></label>
-          {f.carId ? (
-            <div className="mt-1 flex flex-wrap items-center gap-3 rounded-xl bg-go-soft px-4 py-3 ring-1 ring-go/30">
-              <span className="font-semibold">✓ {f.car}</span>{f.vin && <span className="text-sm text-muted">VIN {f.vin}</span>}
-              <button type="button" className="btn btn-sm ml-auto" onClick={() => { setF({ ...f, carId: "", car: "", vin: "" }); setLq(""); }}>Change car</button>
-            </div>
-          ) : (
-            <>
-              <input id="lot-search" className="input" value={lq} onChange={(e) => setLq(e.target.value)} placeholder="Search by VIN or car name" autoComplete="off" />
-              {lq.trim().length >= 3 && (
-                results.length === 0
-                  ? <p className="mt-2 text-sm text-muted">No car on your lot matches. You can type the car and its VIN in the boxes below instead.</p>
-                  : <ul className="mt-2 divide-y divide-line overflow-hidden rounded-xl ring-1 ring-line">
-                      {results.map((c) => (
-                        <li key={c.id}><button type="button" onClick={() => pick(c.id)} className="flex w-full flex-wrap items-center gap-x-3 px-4 py-2.5 text-left hover:bg-paper">
-                          <span className="font-semibold">{c.title}</span>{c.price ? <span className="text-muted">{money(c.price)}</span> : null}
-                          <span className="ml-auto text-xs text-muted">{c.vin ? `VIN ${c.vin}` : "VIN not read yet"}</span>
-                        </button></li>
-                      ))}
-                    </ul>
-              )}
-            </>
-          )}
-        </div>
-        <div className="mt-3 grid gap-3 sm:grid-cols-2">
-          <label className="field">Car<input className="input" value={f.car} onChange={(e) => setF({ ...f, car: e.target.value, carId: "" })} placeholder="2019 Toyota Camry SE" /></label>
-          <label className="field">VIN <span className="font-normal text-muted">(17 characters, so a car is never sold twice)</span><input className="input uppercase" value={f.vin} onChange={(e) => setF({ ...f, vin: e.target.value.toUpperCase(), carId: "" })} maxLength={17} /></label>
-          <label className="field">Sold for<input className="input" inputMode="numeric" value={f.price} onChange={(e) => setF({ ...f, price: e.target.value })} placeholder="$" /></label>
-          <label className="field">Day of the sale<input className="input" type="date" value={f.date} max={today} onChange={(e) => setF({ ...f, date: e.target.value })} /></label>
-          <label className="field">Customer name<input className="input" value={f.name} onChange={(e) => setF({ ...f, name: e.target.value })} /></label>
-          <label className="field">Customer phone<input className="input" inputMode="tel" value={f.phone} onChange={(e) => setF({ ...f, phone: e.target.value })} placeholder="(214) 555-0123" /></label>
-        </div>
-        <label className="mt-3 flex items-center gap-2 font-medium"><input type="checkbox" className="size-4 accent-signal" checked={f.deferred} onChange={(e) => setF({ ...f, deferred: e.target.checked })} /> Deferred payment</label>
-        <div className="mt-4 flex flex-wrap items-center gap-3">
-          <button type="button" className="btn btn-red" disabled={pending} onClick={save}>{pending ? "Saving…" : "Save this sale"}</button>
-          {msg && <p role={msg.ok ? "status" : "alert"} className={`text-[15px] font-medium ${msg.ok ? "text-go-dark" : "text-signal"}`}>{msg.text}</p>}
-        </div>
+        <div className="mt-4"><RecordSaleForm lot={lot} today={today} /></div>
       </section>
 
       <div className="mb-3 flex flex-wrap items-center gap-3">
         <h2 className="section-title">Recent sales <span className="text-muted">{sales.length}</span></h2>
         <input className="input mt-0 ml-auto h-10 max-w-[260px] flex-1" value={q} onChange={(e) => setQ(e.target.value)} placeholder="Search name, phone or car" aria-label="Search sales" />
       </div>
-      {shown.length === 0 ? <p className="panel p-6 text-muted">{sales.length ? "Nothing matches that search." : "No sales yet. Use Log a sale above."}</p> : (
+      {msg && <p role={msg.ok ? "status" : "alert"} className={`mb-3 text-[15px] font-medium ${msg.ok ? "text-go-dark" : "text-signal"}`}>{msg.text}</p>}
+      {shown.length === 0 ? <p className="panel p-6 text-muted">{sales.length ? "Nothing matches that search." : "No sales yet. Use Record a sale above."}</p> : (
         <ul className="grid gap-3">
           {shown.map((s) => {
             const stage = cleanStage(s.stage);
@@ -100,6 +50,7 @@ export default function SalesBoard({ sales, lot, today }: { sales: SaleRow[]; lo
                 <div className="min-w-[220px] flex-1">
                   <p className="text-[17px] font-bold">{s.name || "No name"}{s.deferred && <span className="ml-2 rounded-full bg-signal px-2.5 py-0.5 align-middle text-xs font-bold text-white">Deferred payment</span>}</p>
                   <p className="text-[15px] text-muted">{s.vehicle || "Car not entered"}{s.price ? ` · ${money(s.price)}` : ""}{s.phone ? ` · ${prettyPhone(s.phone)}` : ""}</p>
+                  {s.coName && <p className="text-[15px] text-muted">Co-buyer: {s.coName}{s.coPhone ? ` · ${prettyPhone(s.coPhone)}` : ""}</p>}
                   <p className="text-sm text-faint">Bought {day(s.purchasedAt)}{s.vin ? ` · VIN ${s.vin}` : ""}</p>
                 </div>
                 <span className="rounded-full px-3 py-1 text-sm font-semibold text-white" style={{ background: stage ? STAGE_COLOR[stage] : "#8792ad" }}>

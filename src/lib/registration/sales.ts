@@ -4,6 +4,7 @@ import { readyDb } from "@/lib/db";
 export type SaleRow = {
   key: string; name: string | null; phone: string | null; vehicle: string | null; purchasedAt: number; price: number | null; vin: string | null;
   regId: number | null; stage: string | null; deferred: boolean; hasPhoto: boolean;
+  coName: string | null; coPhone: string | null;
 };
 export type LotCar = { id: string; title: string; vin: string | null; price: number | null };
 
@@ -12,16 +13,18 @@ export async function recentSales(days = 120, limit = 120): Promise<SaleRow[]> {
   if (!sql) return [];
   const rows = await sql`
     select c.key, c.name, c.phone, coalesce(c.purchased_vehicle, c.last_vehicle) as vehicle, c.purchased_at, i.sold_price, i.vin,
-           r.id as reg_id, r.stage, r.deferred, r.has_photo
+           r.id as reg_id, r.stage, r.deferred, r.has_photo, co.name as co_name, co.phone as co_phone
     from customers c
     left join lateral (select sold_price, vin from inventory where sold_customer_key = c.key and status = 'sold' order by sold_at desc nulls last limit 1) i on true
     left join lateral (select id, stage, deferred, (photo is not null) as has_photo from registrations where customer_key = c.key order by created_at desc limit 1) r on true
-    where c.status = 'purchased' and c.purchased_at is not null and c.purchased_at > now() - make_interval(days => ${days})
+    left join lateral (select name, phone from customers where co_buyer_of = c.key and status = 'purchased' order by purchased_at limit 1) co on true
+    where c.status = 'purchased' and c.co_buyer_of is null and c.purchased_at is not null and c.purchased_at > now() - make_interval(days => ${days})
     order by c.purchased_at desc limit ${limit}`;
   return rows.map((r) => ({
     key: r.key as string, name: (r.name as string) ?? null, phone: (r.phone as string) ?? null, vehicle: (r.vehicle as string) ?? null,
     purchasedAt: new Date(r.purchased_at as string).getTime(), price: (r.sold_price as number) ?? null, vin: (r.vin as string) ?? null,
     regId: r.reg_id ? Number(r.reg_id) : null, stage: (r.stage as string) ?? null, deferred: Boolean(r.deferred), hasPhoto: Boolean(r.has_photo),
+    coName: (r.co_name as string) ?? null, coPhone: (r.co_phone as string) ?? null,
   }));
 }
 

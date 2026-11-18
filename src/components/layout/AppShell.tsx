@@ -39,7 +39,7 @@ const NAV: (NavEntry | NavHeading)[] = [
   { href: "/customers", label: "Customers", icon: "customers", tone: "#5b8def" },
   { href: "/follow-ups", label: "Follow-ups", icon: "appointments", tone: "#ff8a3d" },
   { heading: "Dealership" },
-  { href: "/inventory", label: "Cars", icon: "store", tone: "#4dabf7" },
+  { href: "/inventory", label: "Inventory", icon: "store", tone: "#4dabf7" },
   { href: "/appointments", label: "Appointments", icon: "appointments", tone: "#f06595" },
   { href: "/analytics", label: "Analytics", icon: "analytics", tone: "#38d98a" },
   {

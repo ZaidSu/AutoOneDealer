@@ -185,14 +185,17 @@ const toCar = (r: Record<string, unknown>): StoredCar => ({
   vin: (r.vin as string) ?? null, imageUrl: (r.image_url as string) ?? null, images: Array.isArray(r.images) ? (r.images as string[]) : [],
 });
 
+/** The columns the pages and the AI use. (Never `select *` here: this is read on every page and every reply, and the extra columns are saved data that is sent for nothing.) */
+const CAR_COLS = "id, finance_id, url, year, make, model, slug, title, price, mileage, vin, status, first_seen, last_seen, sold_at, sold_by, sold_customer_key, sold_customer_name, sold_note, sold_price, deposit_at";
+
 export async function listCars(status: "available" | "sold" | "deleted", limit = 200): Promise<StoredCar[]> {
   const sql = await readyDb();
   if (!sql) return [];
   const rows = status === "available"
-    ? await sql`select * from inventory where status = 'available' order by price desc nulls last limit ${limit}`
+    ? await sql`select ${sql.unsafe(CAR_COLS)} from inventory where status = 'available' order by price desc nulls last limit ${limit}`
     : status === "deleted"
-    ? await sql`select * from inventory where status = 'deleted' order by updated_at desc limit ${limit}`
-    : await sql`select * from inventory where status = 'sold' order by sold_at desc nulls last limit ${limit}`;
+    ? await sql`select ${sql.unsafe(CAR_COLS)} from inventory where status = 'deleted' order by updated_at desc limit ${limit}`
+    : await sql`select ${sql.unsafe(CAR_COLS)} from inventory where status = 'sold' order by sold_at desc nulls last limit ${limit}`;
   return rows.map(toCar);
 }
 
@@ -218,8 +221,8 @@ export async function readSnapshot(): Promise<{ listings: Listing[]; sold: Listi
   const age = lastGood ? Date.now() - lastGood : Infinity;
   if (!state || !lastGood || age > (state.via === "pasted" && state.ok ? PASTED_FRESH_MS : SNAPSHOT_STALE_MS)) return null;
   const [avail, sold] = await Promise.all([
-    sql`select * from inventory where status = 'available'`,
-    sql`select * from inventory where status = 'sold' and (sold_at is null or sold_at > now() - interval '90 days') and slug is not null`,
+    sql`select ${sql.unsafe(CAR_COLS)} from inventory where status = 'available'`,
+    sql`select ${sql.unsafe(CAR_COLS)} from inventory where status = 'sold' and (sold_at is null or sold_at > now() - interval '90 days') and slug is not null`,
   ]);
   if (avail.length === 0) return null;
   const toListing = (r: Record<string, unknown>, isSold: boolean): Listing => ({

@@ -1167,7 +1167,7 @@ export async function sendRegistrationTestAction(): Promise<ActionResult> {
 
 // ---- Registration area: log a sale by hand (like DeskManager), and undo one that fell through ----
 
-export type LogSaleInput = { carId?: string; car: string; vin: string; price: string; date: string; name: string; phone: string; deferred: boolean };
+export type LogSaleInput = { carId?: string; car: string; vin: string; price: string; date: string; name: string; phone: string; coName?: string; coPhone?: string; deferred: boolean };
 
 /** One form: the car, its VIN, the price, the day, and the buyer. The car moves to Sold, the buyer is saved as a customer who
  *  purchased (so the AI's check-in and review text go out a week later), and a registration entry is started. */
@@ -1186,6 +1186,14 @@ export async function logSaleAction(input: LogSaleInput): Promise<ActionResult> 
   if (!name) return fail("Enter the customer's name.");
   if (phone.length !== 10) return fail("Enter the customer's 10-digit phone number, so the follow-up text can reach them.");
   if (price !== null && price > 10_000_000) return fail("That price looks too high.");
+  // Co-buyer (optional): needs a name and a 10-digit phone, so the AI can follow up with them too.
+  const coName = cleanName(input.coName ?? "", 80);
+  const coPhone = String(input.coPhone ?? "").replace(/\D/g, "").replace(/^1(\d{10})$/, "$1");
+  if (coName || coPhone) {
+    if (!coName) return fail("Enter the co-buyer's name, or clear their phone number.");
+    if (coPhone.length !== 10) return fail("Enter the co-buyer's 10-digit phone number, or clear their name.");
+    if (coPhone === phone) return fail("The co-buyer's phone number is the same as the main buyer's. Use a different number.");
+  }
   if (!/^\d{4}-\d{2}-\d{2}$/.test(String(input.date))) return fail("Pick the day of the sale.");
   const when = new Date(`${input.date}T12:00:00-05:00`);
   if (when.getTime() > Date.now() + 86400_000) return fail("The sale date can't be in the future.");
@@ -1211,8 +1219,23 @@ export async function logSaleAction(input: LogSaleInput): Promise<ActionResult> 
     const reg = await import("@/lib/registration/store");
     await reg.createRegistration({ name, phone, vehicle: title, deferred: Boolean(input.deferred), note: "", by: staff.name, purchasedAt: when });
   } catch { return NO_DB; }
-  revalidatePath("/registration"); revalidatePath("/registration/sales"); revalidatePath("/inventory");
-  return { ok: true, message: `Sale saved. ${name} is now a customer who purchased, and a registration is started.` };
+  let coSaved = false;
+  if (coName) {
+    // The co-buyer is their own customer who purchased (so the AI follows up with them too), tied to the main buyer.
+    const added = await addCustomerAction({ name: coName, phone: coPhone, email: "", vehicle: title, heardFrom: "", notes: `Co-buyer with ${name} on the ${title}.`, purchased: true, purchasedOn: String(input.date) });
+    if (added.ok && added.key) {
+      const { customerKey } = await import("@/lib/customers");
+      const mainKey = customerKey({ phone, email: null } as never);
+      const sqlDb = await (await import("@/lib/db")).readyDb();
+      if (sqlDb && mainKey && mainKey !== added.key) {
+        await sqlDb`update customers set co_buyer_of = ${mainKey} where key = ${added.key}`;
+        await sqlDb`update customers set notes = trim(both from notes || E'\n' || ${`Co-buyer: ${coName} (${coPhone}).`}), updated_at = now() where key = ${mainKey}`;
+        coSaved = true;
+      }
+    }
+  }
+  revalidatePath("/registration"); revalidatePath("/registration/sales"); revalidatePath("/inventory"); revalidatePath("/customers");
+  return { ok: true, message: `Sale saved. ${name}${coSaved ? ` and ${coName} are` : " is"} now ${coSaved ? "customers who purchased" : "a customer who purchased"}, the AI will follow up${coSaved ? " with both" : ""}, and a registration is started.${coName && !coSaved ? ` The co-buyer (${coName}) could not be saved, so add them under Customers.` : ""}` };
 }
 
 /** The sale fell through: the car goes back on the lot, the customer isn't marked as a buyer, and the registration is removed. */
@@ -1230,6 +1253,8 @@ export async function undoSaleAction(registrationId: number): Promise<ActionResu
   if (row.customer_key) {
     try { back = await store.undoSaleFor(row.customer_key as string); } catch { return NO_DB; }
     await sql`update customers set status = 'new', purchased_at = null, purchased_vehicle = null, purchase_followup_at = null, updated_at = now() where key = ${row.customer_key} and status = 'purchased'`;
+    // A co-buyer on this sale goes back too (and is no longer tied to it).
+    await sql`update customers set status = 'new', purchased_at = null, purchased_vehicle = null, purchase_followup_at = null, co_buyer_of = null, updated_at = now() where co_buyer_of = ${row.customer_key}`;
     const { logActivity } = await import("@/lib/crm/queries");
     await logActivity(row.customer_key as string, "status", `Sale fell through${row.vehicle ? `: ${row.vehicle}` : ""}`, staff.name).catch(() => undefined);
   }
