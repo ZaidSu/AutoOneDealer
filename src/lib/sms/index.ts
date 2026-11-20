@@ -1,7 +1,8 @@
 // Texting: conversations with customers, STOP/START handling, and AI replies that sound like a real salesperson.
 // Every text (sent, received, or an AI draft waiting for approval) is a row in sms_messages.
 import { typingDelayMs } from "@/lib/ai/typing";
-import { CONVERSATION_RULES, DEPOSIT_RULES, isNoReply, staySilentAfter } from "@/lib/ai/status-rules";
+import { firstTextBody } from "@/lib/sms/first-text";
+import { CONVERSATION_RULES, DEPOSIT_RULES, isNoReply, riskyPromise, shippingRule, staySilentAfter } from "@/lib/ai/status-rules";
 import { askClaude, aiConfigured } from "@/lib/ai/claude";
 import { getAiTraining, getDealershipInfo } from "@/lib/ai/settings";
 import { DAYS } from "@/lib/ai/types";
@@ -121,9 +122,9 @@ export async function sendText(opts: { customerKey: string | null; phone: string
   let body = opts.body.trim().slice(0, 1200);
   if (body.length < 2) return { ok: false, error: "Write a message first." };
   const [earlier] = await sql`select 1 from sms_messages where phone = ${e164} and direction = 'out' and status in ('sent', 'delivered', 'queued') limit 1`;
-  // Phones show a number, not a business name (US carriers don't allow a name as the sender), so the first text says who it's from.
-  if (!earlier && !body.toLowerCase().includes(dealership.name.toLowerCase())) body = `${dealership.name}: ${body}`;
-  if (!earlier && !/\bSTOP\b/.test(body)) body += " Reply STOP to opt out.";
+  const [theyFirst] = earlier ? [undefined] : await sql`select 1 from sms_messages where phone = ${e164} and direction = 'in' limit 1`;
+  // A customer who texted us first already knows who we are, so no business name in front. A text we start says who it is from.
+  body = firstTextBody(body, { dealerName: dealership.name, sentBefore: Boolean(earlier), theyTextedFirst: Boolean(theyFirst) });
 
   // Claim the draft (so two people can't send it twice), or add a new row.
   const [row] = opts.draftId
@@ -222,6 +223,7 @@ export async function aiReplyToText(customerKey: string | null, phone: string, {
 - Keep things moving toward a visit or a call: offer specific times when it fits. When they pick a day and time to come in, confirm it back clearly with the weekday, date and time, like "Tuesday, Oct 20 at 6:00 PM": it gets booked automatically. Take the date ONLY from the CALENDAR in the prompt (never work out a date yourself). If they only say a weekday, use the next one on the calendar and say the full date so they can correct you. Each message in the conversation shows when it was sent: a customer's "tomorrow" or "Tuesday" counts from that message, not from now. If the time they pick is outside our opening hours, offer the closest time we are open. If they want to talk to a person, or you can't answer something, offer to have a sales rep call them; if they say yes, tell them a rep will call soon (the team is alerted automatically).
 - Don't claim to be a person. If they ask whether they're talking to a bot, say you're the dealership's assistant and a team member can call them.
 ${DEPOSIT_RULES}
+${shippingRule(info.shippingPerMile)}
 ${CONVERSATION_RULES}
 - Follow the dealership's instructions below. If the prompt says the dealership is CLOSED right now, its closed-hours rules come first: never push a call or a visit right now, and say the team will follow up when we open. Reply with only the text message itself.`;
   const stillForSale = await availabilityNote(customer?.last_vehicle, { phone: info.phone });
@@ -256,7 +258,9 @@ Write the dealership's next text.`;
   // One waiting draft per conversation: a newer customer text replaces the older draft.
   await sql`update sms_messages set status = 'discarded' where phone = ${e164} and status = 'draft'`;
   const [draft] = await sql`insert into sms_messages (customer_key, phone, direction, body, status, ai) values (${customerKey}, ${e164}, 'out', ${reply}, 'draft', true) returning id`;
-  if ((await getAutoText()) && (await aiHoursOpen())) {
+  const risk = riskyPromise(reply);
+  if (risk) trace("sms", `AI reply held for the team (${risk})`);
+  if (!risk && (await getAutoText()) && (await aiHoursOpen())) {
     // Take a moment to "type", like a person would. If staff handled the draft meanwhile, or the customer texted again, don't send.
     const wait = force ? 0 : typingDelayMs(reply, info.typingSpeed);
     if (wait > 0) {

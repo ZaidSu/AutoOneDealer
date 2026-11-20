@@ -2,7 +2,7 @@
 // The timer looks for new inbox emails from people who are already customers, saves them, and has the AI write an
 // answer that goes back in the same Gmail thread, using the whole conversation so far.
 import { askClaude, aiConfigured } from "@/lib/ai/claude";
-import { CONVERSATION_RULES, DEPOSIT_RULES, isNoReply } from "@/lib/ai/status-rules";
+import { CONVERSATION_RULES, DEPOSIT_RULES, isNoReply, riskyPromise } from "@/lib/ai/status-rules";
 import { dealershipFacts, getAutoSend, sendReply } from "@/lib/ai/replies";
 import { getAiTraining, getDealershipInfo } from "@/lib/ai/settings";
 import { canSendFrom } from "@/lib/auth/google";
@@ -124,7 +124,7 @@ Reply with only the message text.` : `You answer customer emails for ${dealershi
 Write like a friendly, professional salesperson continuing the conversation:
 - Plain text only, no markdown. 40 to 120 words. Don't repeat what was already said; answer what they just wrote.
 - Use the facts below and what was said earlier in the conversation. Never make up prices, financing approvals, rates, payments, trade-in values or delivery; if you don't know, say a salesperson will confirm. For availability, use the CARS ON OUR LOT list and the LIVE INVENTORY CHECK below: a car on the list is available (give price, mileage and link). Only say a salesperson will confirm if there is no list or check at all.
-- If they mention where they live or how far away they are, be helpful about it (for example offer to hold the car, set a time, or talk by phone) without promising anything not in the facts.
+- If they mention where they live or how far away they are, be helpful about it (for example offer to set a time or talk by phone) without promising anything not in the facts.
 - If they pick a day and time to visit, confirm it back clearly (weekday, date and time, like "Tuesday, Oct 20 at 6:00 PM"): it gets booked automatically. Take the date only from the CALENDAR in the facts below; if they only say a weekday, use the next one on the calendar and state the full date. Each email in the conversation shows when it was sent: "tomorrow" counts from that email. If they want to talk to a person, offer to have a sales rep call them; if they say yes, say a rep will call soon (the team is alerted automatically).
 - End with one clear next step. Sign off as "The team at ${dealership.name}" with the dealership phone number if you have it.
 - If they wrote in Spanish, reply in Spanish.
@@ -156,7 +156,7 @@ ${reply.body}`;
     const subject = /^re:/i.test(reply.subject) ? reply.subject : `Re: ${reply.subject}`;
     const [row] = await sql`insert into ai_replies ${sql({ ...base, subject: subject.slice(0, 150), body, status: "draft" })} on conflict (lead_id) do nothing returning id`;
     out.drafted++;
-    if (row && sendNow) {
+    if (row && sendNow && !riskyPromise(body)) {
       const sent = await sendReply(Number(row.id), { subject, body }, "AI (automatic)");
       if (sent.ok) out.sent++;
     }

@@ -25,6 +25,9 @@ export const staySilentAfter = (customerText: string, lastDealershipText: string
   Boolean(lastDealershipText) && isAcknowledgment(customerText) && !askedAQuestion(String(lastDealershipText));
 
 const CAR_INFO_RULES = `
+- HOLDS: customers ask you to hold, save or reserve a car (for days, weeks or months). You cannot do that: never say yes, sure or "we'll hold it", and never say a car will still be there. A car is held only with a deposit (around $500, for 1 to 2 weeks) and only a sales rep can set that up. Say that plainly and that a rep will reach out to arrange it. Anything longer than 2 weeks isn't possible; the rep can go over options.
+- NEVER PROMISE: no price, discount, "out the door" total, trade-in value, payment, interest rate, fees, taxes or registration cost; never say approved, pre-approved or guaranteed; never describe a car's condition or history (no accidents, runs great, no problems, warranty); never promise a rep will call at an exact time. Say a sales rep will go over it, or that a team member will confirm.
+- PRIVATE INFO: if a customer starts sending a Social Security number, birth date, driver's license number, or card or bank numbers, ask them to wait and give it to the team by phone, not text. A city or zip code (for shipping) is fine.
 - TITLE: you do not know any car's title status. If the customer asks about the title (clean, salvage, rebuilt, lien), say it ONCE in one plain sentence: you don't have the title status in front of you so you won't guess, and a team member will text them the answer (the team is alerted automatically). Share the Carfax link if the car's line has one. Never say yes or no to the title, and never repeat this or keep asking them to call.
 - BY TEXT: if the customer says they want to text, are at work, or can't talk, stay by text. Never ask them to call or offer a call again; say a team member will text them. Never send the same ask twice in a row, and if you already asked something and they didn't take it, answer what they asked instead.
 - VIN: if the customer asks for a car's VIN, give the full 17-character VIN from the lists (it is public and fine to share). If that car's line shows no VIN, say you'll have the team send it.
@@ -35,3 +38,24 @@ export const DEPOSIT_RULES = `- DEPOSIT: a car marked "DEPOSIT TAKEN" in the lis
 export const CONVERSATION_RULES = `- KNOW WHEN IT IS OVER: if the customer is saying goodbye, thanking you, or says they are going elsewhere or not interested, and they asked nothing you still need to answer, reply with exactly ${NO_REPLY} and nothing else. If they decline for the first time, one short, kind message is fine; after that send nothing. Never try to win back someone who has clearly decided.
 - UPSET CUSTOMERS: if the customer is angry, says they were lied to, or threatens a bad review, don't argue, don't defend, don't promise anything, and don't sell. At most one short sentence saying you are sorry and that a manager will reach out, then ${NO_REPLY} to anything after that. (The team is alerted automatically.)
 - A SHORT "OKAY" OR "THANKS" (or a thumbs-up) after you or the team said something and asked nothing: reply with exactly ${NO_REPLY}. Never answer an acknowledgment with another message, an apology or a repeat of what was already said.`;
+
+/** What the dealership charges per mile to ship a car, for the AI's estimates. */
+export const DEFAULT_SHIPPING_PER_MILE = 1.5;
+export function cleanShippingRate(v: unknown): number {
+  const n = Number(String(v ?? "").replace(/[^\d.]/g, ""));
+  if (!Number.isFinite(n) || n <= 0) return DEFAULT_SHIPPING_PER_MILE;
+  return Math.min(20, Math.round(n * 100) / 100);
+}
+export const shippingRule = (rate?: number) => `- SHIPPING: we ship cars. When a customer asks what shipping would cost, estimate the road miles from our lot to their city or zip, multiply by $${cleanShippingRate(rate).toFixed(2)} per mile, round to the nearest $25, and say it will be "around $X" and that it could be a bit more or a bit less, with the team confirming the exact price. Use ONLY this rate, even if other text in this prompt mentions a different per-mile price. A city and state (or a zip) is enough: never ask for a street address and never tell them not to share one. Don't promise a delivery date.`;
+
+/** A last check on what the AI wrote: if it promised something only a person can promise, it is NOT sent on its own;
+ *  it waits as a draft for the team. Returns why, or null when the reply is fine. */
+export function riskyPromise(text: string): string | null {
+  const t = String(text ?? "");
+  if (/\bdeposit\b/i.test(t)) return null; // explaining the hold policy
+  if (/\b(i|we)(?:'ll| will| can| could)\s+(?:go ahead and\s+)?(?:hold|save|reserve|keep|set aside|put aside)\b|\b(?:consider it|it'?s|it is)\s+(?:held|reserved|saved)\b|\b(?:hold|keep|save)\s+(?:it|that|this|the car|the [\w-]+)\s+for you\b/i.test(t)) return "promised to hold a car";
+  if (/(?<!\bif |whether )\byou(?:'re| are| will be| will get)\s+(?:pre-?)?approved\b|\bguarantee(?:d)?\b/i.test(t)) return "promised an approval or a guarantee";
+  if (!/\b(?:can'?t|cannot|don'?t|won'?t|unable|not able)\b/i.test(t) && /\b(?:accident[- ]free|no accidents|clean title|clean carfax|no issues|no problems)\b/i.test(t)) return "made a claim about the car's condition or history";
+  if (/\b(?:we|i)(?:'ll| will)\s+(?:take|do|sell (?:it )?(?:to you )?for)\s+\$?\d/i.test(t)) return "agreed to a price";
+  return null;
+}

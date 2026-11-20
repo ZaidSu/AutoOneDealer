@@ -19,3 +19,12 @@ test("only Twilio's signature is accepted", () => {
   assert.equal(validTwilioSignature(url, params, sig, "other"), false);
   assert.equal(validTwilioSignature(url, params, null, "tok"), false);
 });
+
+import { firstTextBody } from "../../src/lib/sms/first-text.ts";
+test("first text: no business name when the customer texted first, name when we start, nothing added after that", () => {
+  const o = { dealerName: "Auto One Motors", sentBefore: false, theyTextedFirst: true };
+  assert.equal(firstTextBody("Yes, it is available.", o), "Yes, it is available. Reply STOP to opt out.");
+  assert.equal(firstTextBody("Hi Sam, thanks for your inquiry.", { ...o, theyTextedFirst: false }), "Auto One Motors: Hi Sam, thanks for your inquiry. Reply STOP to opt out.");
+  assert.equal(firstTextBody("Auto One Motors: hello. Reply STOP to opt out.", { ...o, theyTextedFirst: false }), "Auto One Motors: hello. Reply STOP to opt out.");
+  assert.equal(firstTextBody("Sounds good.", { ...o, sentBefore: true }), "Sounds good.");
+});

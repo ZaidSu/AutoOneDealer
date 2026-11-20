@@ -3,6 +3,7 @@ export const DAYS = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Sa
 export type Hours = { open: string; close: string; closed: boolean };
 export type DealershipInfo = { address: string; phone: string; /** Where the AI texts when a customer wants a sales rep. Blank = use `phone`. */ repAlertPhone?: string; /** Two more people who get the same alert. */ repAlertPhone2?: string; repAlertPhone3?: string; website: string; hours: Hours[]; links: string; notes: string;
   /** A car's Carfax report link with {VIN} where the VIN goes, e.g. https://www.carfax.com/…?vin={VIN}. Blank until Carfax is set up. */ carfaxLink?: string;
+  /** What shipping a car costs per mile; the AI multiplies it by the miles for an estimate. Blank = $1.50. */ shippingPerMile?: number;
   /** How long the AI "types" before a text goes out: instant, fast, natural or slow. */ typingSpeed?: "instant" | "fast" | "natural" | "slow" };
 /** One question customers ask and the answer the AI should give. */
 export type QA = { id: string; question: string; answer: string };

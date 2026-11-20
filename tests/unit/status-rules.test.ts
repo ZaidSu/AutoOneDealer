@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { CONVERSATION_RULES, DEPOSIT_RULES, askedAQuestion, isAcknowledgment, isNoReply, staySilentAfter } from "../../src/lib/ai/status-rules.ts";
+import { CONVERSATION_RULES, DEPOSIT_RULES, askedAQuestion, cleanShippingRate, isAcknowledgment, isNoReply, riskyPromise, shippingRule, staySilentAfter } from "../../src/lib/ai/status-rules.ts";
 import { describeListing, formatLot, type Listing } from "../../src/lib/inventory/match.ts";
 
 const car = (over: Partial<Listing> = {}): Listing => ({ id: "1", financeId: null, url: "https://x.test/1", year: 2027, slug: "kia-telluride", title: "2027 Kia Telluride S", price: 31995, mileage: 2226, sold: false, ...over });
@@ -44,4 +44,26 @@ test("the shared rules cover the title question and staying by text", () => {
   assert.match(DEPOSIT_RULES, /TITLE:/);
   assert.match(DEPOSIT_RULES, /BY TEXT:/);
   assert.match(CONVERSATION_RULES, /SHORT "OKAY"/);
+});
+
+test("shipping rate: $1.50 a mile by default, cleaned when typed", () => {
+  assert.equal(cleanShippingRate(undefined), 1.5);
+  assert.equal(cleanShippingRate(""), 1.5);
+  assert.equal(cleanShippingRate("$1.75"), 1.75);
+  assert.equal(cleanShippingRate("0"), 1.5);
+  assert.equal(cleanShippingRate("999"), 20);
+  assert.match(shippingRule(), /\$1\.50 per mile/);
+  assert.match(shippingRule(2), /\$2\.00 per mile/);
+  assert.match(shippingRule(), /a bit more or a bit less/);
+  assert.match(shippingRule(), /never ask for a street address/);
+});
+
+test("a reply that promises what only a person can is held back, a normal answer is not", () => {
+  for (const t of ["Yes, for sure! I'll hold it for you for 3 months.", "We'll save it for you, no problem.", "Consider it reserved.", "Good news, you're approved!", "Financing is guaranteed.", "It's accident-free and has a clean title.", "We'll take $18,000 for it."]) assert.ok(riskyPromise(t), t);
+  for (const t of ["A car can be held with a deposit, around $500, for 1 to 2 weeks. A sales rep can set that up.", "A rep will see if you're approved.", "I can't confirm the clean title, a team member will text you.", "Yes, the 2025 Civic is available at $21,995 with 3,715 miles.", "We can't hold a car that long, but a sales rep can go over options."]) assert.equal(riskyPromise(t), null, t);
+});
+test("the shared rules say how to handle hold requests and private info", () => {
+  assert.match(DEPOSIT_RULES, /HOLDS:/);
+  assert.match(DEPOSIT_RULES, /around \$500, for 1 to 2 weeks/);
+  assert.match(DEPOSIT_RULES, /PRIVATE INFO:/);
 });

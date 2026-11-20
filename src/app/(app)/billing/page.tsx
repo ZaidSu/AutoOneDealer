@@ -367,7 +367,6 @@ function Usage({ label, used, included, range, extra }: { label: string; used: n
 /** A list of every payment received, one row per month, each opening a printable receipt. */
 function Receipts({ invoices }: { invoices: Invoice[] }) {
   const paid = invoices.filter((i) => i.status === "paid");
-  const sum = paid.reduce((n, i) => n + i.total, 0);
   return (
     <section aria-labelledby="receipts" className="mt-10">
       <h2 id="receipts" className="mb-3 text-lg font-semibold">Payment receipts</h2>

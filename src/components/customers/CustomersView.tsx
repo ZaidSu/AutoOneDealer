@@ -19,7 +19,6 @@ type Data = {
   pageIndex: number; perPage: number; search: string; reps: { id: number; name: string }[]; sources: string[];
   sync: SyncInfo; statuses: Option[]; financing: Option[]; today: string; since?: string;
 };
-const dbMessage = "The database isn't answering right now. Try again in a minute.";
 
 export default function CustomersView() {
   const sp = useSearchParams();

@@ -8,11 +8,12 @@ import { DAYS, type DealershipInfo } from "@/lib/ai/types";
 
 export default function DealershipInfoForm({ initial, canEdit }: { initial: DealershipInfo; canEdit: boolean }) {
   const [info, setInfo] = useState(initial);
+  const [rate, setRate] = useState(String(initial.shippingPerMile ?? 1.5));
   const [result, setResult] = useState<{ ok: boolean; text: string } | null>(null);
   const [pending, start] = useTransition();
   const [test, setTest] = useState<{ ok: boolean; text: string } | null>(null);
   const [testing, startTest] = useTransition();
-  const set = (k: "address" | "phone" | "repAlertPhone" | "website" | "links" | "notes") => (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => {
+  const set = (k: "address" | "phone" | "repAlertPhone" | "website" | "links") => (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => {
     setInfo({ ...info, [k]: e.target.value }); setResult(null);
   };
   const setHours = (i: number, patch: Partial<DealershipInfo["hours"][number]>) => {
@@ -81,6 +82,19 @@ export default function DealershipInfoForm({ initial, canEdit }: { initial: Deal
       </section>
 
       <section className="panel p-5">
+        <h2 className="text-[17px] font-semibold">Shipping</h2>
+        <p className="mt-1 text-sm text-muted">When a customer asks what shipping costs, the AI works out the miles from the lot to their city, multiplies by this price, and says it will be &ldquo;around $X, and could be a bit more or less.&rdquo; Your team confirms the exact price.</p>
+        <label className="field mt-3 max-w-[240px]">Shipping price per mile
+          <span className="relative block">
+            <span aria-hidden className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-muted">$</span>
+            <input className="input pl-7" inputMode="decimal" disabled={!canEdit} value={rate} placeholder="1.50"
+              onChange={(e) => { setRate(e.target.value); setInfo({ ...info, shippingPerMile: Number(e.target.value.replace(/[^\d.]/g, "")) || undefined }); setResult(null); }} />
+          </span>
+        </label>
+        <p className="mt-1 text-sm text-muted">Example: a 400-mile trip at ${(Number(rate) || 1.5).toFixed(2)} a mile is about ${Math.round(400 * (Number(rate) || 1.5)).toLocaleString("en-US")}.</p>
+      </section>
+
+      <section className="panel p-5">
         <h2 className="text-[17px] font-semibold">Carfax</h2>
         <p className="mt-1 text-sm text-muted">
           When Carfax is set up, paste the link to a car&apos;s report here and put <span className="font-mono font-semibold text-ink">{"{VIN}"}</span> where the VIN goes. The AI then sends the right report when a customer asks for the Carfax.
@@ -118,15 +132,11 @@ export default function DealershipInfoForm({ initial, canEdit }: { initial: Deal
       </section>
 
       <section className="panel p-5">
-        <h2 className="text-[17px] font-semibold">Helpful links and details</h2>
+        <h2 className="text-[17px] font-semibold">Helpful links</h2>
         <div className="mt-3 grid gap-4">
           <label className="field">Important links, one per line
             <textarea className="input" rows={4} disabled={!canEdit} value={info.links} onChange={set("links")}
               placeholder={"Credit application: https://…\nInventory: https://…\nGoogle reviews: https://…"} />
-          </label>
-          <label className="field">Anything else customers often ask about
-            <textarea className="input" rows={4} disabled={!canEdit} value={info.notes} onChange={set("notes")}
-              placeholder="Trade-ins welcome. Se habla español. Bring a driver's license for test drives." />
           </label>
         </div>
       </section>

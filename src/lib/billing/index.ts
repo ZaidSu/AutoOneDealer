@@ -21,9 +21,11 @@ export async function getBillingSettings(): Promise<BillingSettings> {
       current = { ...current, monthlyCents: DEFAULT_BILLING.monthlyCents, taxRatePercent: 0, planParts: DEFAULT_BILLING.planParts };
     }
     // v3: bills are due on the 3rd of each month (once, for settings saved before).
+    // v4: texts over the included amount cost 15 cents each (once, for settings saved before).
     if (Number(saved.planVersion ?? 1) < PLAN_VERSION) {
-      current = { ...current, dueDay: DEFAULT_BILLING.dueDay, planVersion: PLAN_VERSION };
-      current = renamedBiller(current);
+      if (Number(saved.planVersion ?? 1) < 3) current = { ...current, dueDay: DEFAULT_BILLING.dueDay };
+      if (Number(saved.planVersion ?? 1) < 4) current = { ...current, extraTextCents: DEFAULT_BILLING.extraTextCents };
+      current = renamedBiller({ ...current, planVersion: PLAN_VERSION });
       await setSetting("billing", JSON.stringify(current)).catch(() => undefined);
       return current;
     }

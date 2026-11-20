@@ -1,4 +1,5 @@
 // What the AI assistant knows about the dealership, saved in the database (app_settings).
+import { cleanShippingRate } from "./status-rules";
 import { cleanTypingSpeed } from "./typing";
 import { getSetting, setSetting } from "@/lib/db/data";
 
@@ -18,7 +19,21 @@ function parse<T extends object>(raw: string | null, fallback: T): T {
 export async function getDealershipInfo(): Promise<DealershipInfo> {
   const info = parse(await getSetting("dealership_info"), EMPTY_INFO);
   if (!Array.isArray(info.hours) || info.hours.length !== 7) info.hours = EMPTY_INFO.hours;
-  return info;
+  return moveOldNotes(info);
+}
+
+/** The old "Anything else customers often ask about" box is gone (it repeated Train your AI). Whatever was typed in it moves,
+ *  once, into "How the AI should talk" so nothing is lost, and the box is cleared. */
+async function moveOldNotes(info: DealershipInfo): Promise<DealershipInfo> {
+  const old = String(info.notes ?? "").trim();
+  if (!old) return info;
+  try {
+    const t = await getAiTraining();
+    if (!t.instructions.includes(old)) await saveAiTraining({ instructions: `${t.instructions.trim()}\n\nOther details:\n${old}`.trim().slice(0, 8000) });
+    const next = { ...info, notes: "" };
+    await setSetting("dealership_info", JSON.stringify(next));
+    return next;
+  } catch { return info; } // tried again next time; meanwhile the AI still reads them
 }
 
 /** The first phone the AI texts when a customer asks for a sales rep: the one set for that, otherwise the dealership phone. */
@@ -45,8 +60,8 @@ const text = (v: unknown, max: number) => String(v ?? "").slice(0, max);
 export async function saveDealershipInfo(input: DealershipInfo) {
   const clean: DealershipInfo = {
     address: text(input.address, 200).trim(), phone: text(input.phone, 40).trim(), repAlertPhone: text(input.repAlertPhone, 40).trim(), repAlertPhone2: text(input.repAlertPhone2, 40).trim(), repAlertPhone3: text(input.repAlertPhone3, 40).trim(), website: text(input.website, 200).trim(),
-    links: text(input.links, 4000), notes: text(input.notes, 4000),
-    carfaxLink: text(input.carfaxLink, 400).trim(), typingSpeed: cleanTypingSpeed(input.typingSpeed),
+    links: text(input.links, 4000), notes: "",
+    carfaxLink: text(input.carfaxLink, 400).trim(), shippingPerMile: cleanShippingRate(input.shippingPerMile), typingSpeed: cleanTypingSpeed(input.typingSpeed),
     hours: DAYS.map((_, i) => ({ open: time(input.hours?.[i]?.open, "10:00"), close: time(input.hours?.[i]?.close, "19:00"), closed: Boolean(input.hours?.[i]?.closed) })),
   };
   await setSetting("dealership_info", JSON.stringify(clean));

@@ -11,7 +11,7 @@ import { makeSlug, matchSheetCar, priceChanges, sheetTitle, type ExistingCar, ty
 import type { SheetCar } from "./sheet-parse";
 import { dailyReadDue, inReadWindow, localClock } from "./schedule";
 import { dealership } from "@/lib/dealership";
-import { makeAndModel, mergePageStore, parseDetailPage, parsePastedInventory, SITE_PAGE, type Listing, type PageStore } from "./match";
+import { makeAndModel, mergePageStore, parseDetailPage, parsePastedInventory, type Listing, type PageStore } from "./match";
 
 export type SyncState = { at: number; ok: boolean; count: number; complete: boolean; added: number; sold: number; error: string | null; via?: "direct" | "helper" | "pushed" | "pasted"; pagesRead?: number; pagesExpected?: number | null };
 const SYNC_KEY = "inventory_sync";

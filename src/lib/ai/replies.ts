@@ -1,6 +1,6 @@
 // AI email replies to new leads: Claude writes a draft, a person approves it, AutoDash sends it from the
 // dealership Gmail to the customer's own address. Every draft and every sent email is kept in ai_replies.
-import { DEPOSIT_RULES } from "@/lib/ai/status-rules";
+import { DEPOSIT_RULES, riskyPromise, shippingRule } from "@/lib/ai/status-rules";
 import { askClaude, aiConfigured } from "@/lib/ai/claude";
 import { DAYS } from "@/lib/ai/types";
 import { getAiTraining, getDealershipInfo } from "@/lib/ai/settings";
@@ -110,7 +110,7 @@ export async function draftNewReplies({ max = 4, force = false } = {}): Promise<
           sentAt: lead.received_at ? new Date(lead.received_at as string).getTime() : undefined,
         });
       }
-      if (row && sendNow) {
+      if (row && sendNow && !riskyPromise(body)) { // a reply that promises something only a person can promise waits as a draft
         const result = await sendReply(Number(row.id), { subject, body }, "AI (automatic)");
         if (result.ok) sent++;
         else console.error("[autodash:ai] automatic send failed, left as a draft:", result.error);
@@ -155,6 +155,7 @@ async function writeReply(lead: Record<string, unknown>, info: Awaited<ReturnTyp
   const system = offerUp ? `You write quick replies for ${dealership.name}, a used car dealership, to a customer who messaged about a car on OfferUp.
 ${OFFERUP_TEXT_RULES}
 ${DEPOSIT_RULES}
+${shippingRule(info.shippingPerMile)}
 - Follow the dealership's own instructions below over these defaults when they conflict, except never invent facts and never add a sign-off.
 Reply with only JSON: {"subject": "...", "body": "..."}` : `You write email replies for ${dealership.name}, a used car dealership, to customers who just sent a lead through a car listing site.
 Write like a friendly, professional salesperson at the dealership. Rules:
@@ -163,6 +164,7 @@ Write like a friendly, professional salesperson at the dealership. Rules:
 - Never make up prices, financing approvals, interest rates, trade-in values, or anything not in the facts. If you don't know, say a salesperson will confirm.
 - Availability: use the LIVE INVENTORY CHECK and the CARS ON OUR LOT list below. A car on the list is available; one the check says is not listed may be sold. If there is no check or list, say a salesperson will confirm it.
 ${DEPOSIT_RULES}
+${shippingRule(info.shippingPerMile)}
 - End by inviting them to come see the car, with a clear next step (reply with a time that works, or call). When you name a visit day, write the weekday and date exactly as in the CALENDAR.
 - Sign off as "The team at ${dealership.name}" with the dealership phone number if you have it.
 - If the customer wrote in Spanish, reply in Spanish.
